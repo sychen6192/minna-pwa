@@ -34,7 +34,7 @@
   做什麼:依 `docs/DATA_MODEL.md` §1.2 實作 `src/schemas/lesson.ts`。
   驗收:schema 單元測試通過(合法 / 非法樣本各 ≥ 3 例,含 id regex、PosEnum、ruby 結構)。
 
-- [ ] **T1.2 Fixture**
+- [x] **T1.2 Fixture**
   做什麼:手寫縮樣 `public/data/lessons/L13.json`(≥ 8 個單字、2 個文法點、1 段会話)+ `public/data/index.json`(50 筆,未抽取的課先給佔位 title 與 0 計數)。
   驗收:fixture 通過 schema;課程頁開發期間以此為資料。
 
