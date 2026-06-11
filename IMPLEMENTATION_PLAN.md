@@ -52,7 +52,7 @@
   做什麼:全域 layout、底部導覽(課程 / 複習 / 測驗 / 統計 / 設定)、`RubyText` 元件(吃 ruby 分段陣列,受 furigana 設定控制)。
   驗收:RubyText 單元測試(有 / 無讀音段、furigana 開關)。
 
-- [ ] **T2.2 課程列表頁**(`/lessons`)
+- [x] **T2.2 課程列表頁**(`/lessons`)
   做什麼:讀 index.json 渲染 50 課(課號、標題、單字數);進度標示先佔位。
   驗收:離線資料(fixture index)正確呈現。
 
