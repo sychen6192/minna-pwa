@@ -38,7 +38,7 @@
   做什麼:手寫縮樣 `public/data/lessons/L13.json`(≥ 8 個單字、2 個文法點、1 段会話)+ `public/data/index.json`(50 筆,未抽取的課先給佔位 title 與 0 計數)。
   驗收:fixture 通過 schema;課程頁開發期間以此為資料。
 
-- [ ] **T1.3 content.ts**
+- [x] **T1.3 content.ts**
   做什麼:`getLessonIndex()`、`getLesson(id)`——fetch + Zod parse + 記憶體快取;失敗丟出含課號與欄位路徑的明確錯誤。
   驗收:單元測試(mock fetch:成功、404、schema 不符)通過。
 
