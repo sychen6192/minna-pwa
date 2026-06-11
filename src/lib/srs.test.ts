@@ -1,6 +1,6 @@
 import { beforeEach } from "vitest";
 import { db, getSetting, setSetting } from "./db";
-import { addCards, buildQueue, previewIntervals, rate } from "./srs";
+import { addCards, buildQueue, countDue, previewIntervals, rate } from "./srs";
 
 const NOW = Date.UTC(2026, 0, 1, 9, 0, 0); // 固定時間,確定性測試
 const DAY = 86_400_000;
@@ -110,6 +110,16 @@ describe("rate", () => {
 
   it("找不到卡片時丟錯", async () => {
     await expect(rate("missing", 3, NOW)).rejects.toThrow(/找不到卡片/);
+  });
+});
+
+describe("countDue", () => {
+  it("計算指定時間前到期的複習卡(排除 New)", async () => {
+    await addCards(["a", "b", "new"], 13, NOW);
+    const dueA = (await rate("a", 3, NOW)).due;
+    await rate("b", 3, NOW); // 與 a 同 due
+    expect(await countDue(dueA - DAY)).toBe(0); // 尚未到期
+    expect(await countDue(dueA)).toBe(2); // a、b 到期;new 仍為 New 不計
   });
 });
 

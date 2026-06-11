@@ -74,7 +74,7 @@
   做什麼:包 ts-fsrs——`addCards(vocabIds, lessonId)`(冪等)、`buildQueue(now)`(到期卡 + 新卡,受每日上限)、`rate(cardId, rating, now)`(更新卡片 + 寫 log)、`previewIntervals(cardId, now)`(四鍵預估間隔)。
   驗收:單元測試覆蓋——新卡入列、上限裁切、四種評分後 due 變化合理(Again < Hard < Good < Easy)、log 欄位正確、重複 addCards 不產生重複卡。
 
-- [ ] **T3.3 複習頁**(`/review`)
+- [x] **T3.3 複習頁**(`/review`)
   做什麼:翻卡 UI、四鍵評分(顯示預估間隔)、鍵盤操作(空白翻面、1–4 評分)、session 結算頁。
   驗收:手動流程通過;佇列空時顯示「今日完成」狀態。
 

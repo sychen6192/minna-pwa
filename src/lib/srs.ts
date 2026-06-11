@@ -124,6 +124,18 @@ export async function buildQueue(now: number = Date.now()): Promise<CardRow[]> {
 }
 
 /**
+ * 計算在 `at`(epoch ms)前到期的複習卡數量(state≠New)。
+ * 用於結算頁的「明日到期預估」等統計。
+ */
+export async function countDue(at: number): Promise<number> {
+  return db.cards
+    .where("due")
+    .belowOrEqual(at)
+    .filter((c) => c.state !== State.New)
+    .count();
+}
+
+/**
  * 評分:更新卡片 FSRS 狀態並寫入複習紀錄(log)。回傳更新後的卡片。
  */
 export async function rate(
