@@ -1,0 +1,22 @@
+# deps / build
+node_modules/
+.next/
+out/
+coverage/
+
+# env(API key 不入庫)
+.env
+.env.*
+
+# pipeline — 版權內容與中間產物,絕不入庫
+pipeline/input/
+pipeline/work/
+pipeline/.venv/
+__pycache__/
+*.pyc
+
+# 注意:public/data/ 的 JSON「要」入庫(本 repo 為 private),不要把它加進來
+
+# misc
+.DS_Store
+*.log
