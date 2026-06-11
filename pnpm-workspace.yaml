@@ -3,5 +3,7 @@
 # unrs-resolver 有 JS fallback。設為 false 表示明確不執行其 build script,
 # 避免 build 期 deps 檢查因「待決定的 ignored builds」而中斷。
 allowBuilds:
+  # esbuild(tsx 依賴)需要 build script 連結原生執行檔,允許之
+  esbuild: true
   sharp: false
   unrs-resolver: false

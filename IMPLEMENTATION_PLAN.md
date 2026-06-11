@@ -42,7 +42,7 @@
   做什麼:`getLessonIndex()`、`getLesson(id)`——fetch + Zod parse + 記憶體快取;失敗丟出含課號與欄位路徑的明確錯誤。
   驗收:單元測試(mock fetch:成功、404、schema 不符)通過。
 
-- [ ] **T1.4 validate:content**
+- [x] **T1.4 validate:content**
   做什麼:`scripts/validate-content.ts` 掃描 `public/data/**` 全部驗證;接上 `pnpm validate:content`。
   驗收:現有 fixture 通過;塞一筆壞資料會失敗,且錯誤訊息指出檔案與欄位。
 
