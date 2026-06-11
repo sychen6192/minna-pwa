@@ -16,7 +16,7 @@
 
 ## Phase 0 — 專案初始化
 
-- [ ] **T0.1 腳手架**
+- [x] **T0.1 腳手架**
   做什麼:pnpm + Next.js 15(App Router、TypeScript strict)+ Tailwind + shadcn/ui;`next.config` 設 `output: 'export'`。
   驗收:`pnpm dev` 可啟動;`pnpm build` 產出 `out/`;首頁為佔位頁。
 
