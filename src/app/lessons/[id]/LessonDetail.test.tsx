@@ -8,6 +8,11 @@ vi.mock("@/lib/content", () => ({
   getLesson: () => getLesson(),
 }));
 
+const speak = vi.fn();
+vi.mock("@/lib/tts", () => ({
+  speak: (text: string) => speak(text),
+}));
+
 import { LessonDetail } from "./LessonDetail";
 
 const sampleLesson: Lesson = {
@@ -117,6 +122,18 @@ describe("LessonDetail", () => {
     expect(screen.getByText("本課沒有文型")).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "会話" }));
     expect(screen.getByText("本課沒有会話")).toBeInTheDocument();
+  });
+
+  it("單字發音鈕:點擊以該字 kana 呼叫 speak", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(
+      screen.getByRole("button", { name: "播放 あそびます 的發音" }),
+    );
+    expect(speak).toHaveBeenCalledWith("あそびます");
   });
 
   it("載入失敗顯示錯誤", async () => {

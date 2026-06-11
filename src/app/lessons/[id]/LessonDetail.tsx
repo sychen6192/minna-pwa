@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Volume2 } from "lucide-react";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
+import { speak } from "@/lib/tts";
 import { cn } from "@/lib/utils";
 import type { Lesson } from "@/schemas/lesson";
 
@@ -108,8 +110,16 @@ function VocabList({
       {lesson.vocab.map((v) => (
         <li key={v.id} className="border-b border-foreground/10 px-4 py-3">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-lg">
+            <span className="flex items-center gap-2 text-lg">
               <RubyText segments={v.ruby} furigana={furigana} />
+              <button
+                type="button"
+                aria-label={`播放 ${v.kana} 的發音`}
+                onClick={() => speak(v.kana)}
+                className="shrink-0 text-foreground/40 transition-colors active:text-foreground"
+              >
+                <Volume2 className="size-4" aria-hidden />
+              </button>
             </span>
             <span className="shrink-0 text-xs text-foreground/50">{v.pos}</span>
           </div>

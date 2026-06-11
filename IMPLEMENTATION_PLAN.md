@@ -60,7 +60,7 @@
   做什麼:単語 / 文型 / 会話 三分頁;`generateStaticParams` 產出 50 頁;頁內 furigana 快速切換。
   驗收:`pnpm build` 後 `out/` 含 50 課頁面;L13 三個分頁渲染正確。
 
-- [ ] **T2.4 TTS**
+- [x] **T2.4 TTS**
   做什麼:`src/lib/tts.ts` 包 Web Speech API(`ja-JP`、可取消、無可用 voice 時靜默降級);單字列表加發音鈕。
   驗收:tts.ts 單元測試(mock speechSynthesis:正常、無 voice、連點取消)。
 
