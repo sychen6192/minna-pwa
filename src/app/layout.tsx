@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BottomNav } from "@/components/BottomNav";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +14,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-Hant">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <div className="mx-auto flex min-h-screen max-w-screen-sm flex-col">
+          {/* pb-16 預留底部導覽高度 */}
+          <main className="flex-1 pb-16">{children}</main>
+          <BottomNav />
+        </div>
+      </body>
     </html>
   );
 }

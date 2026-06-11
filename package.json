@@ -15,9 +15,12 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.17.0",
     "next": "15.5.19",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

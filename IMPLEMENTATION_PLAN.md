@@ -48,7 +48,7 @@
 
 ## Phase 2 — App shell 與課程瀏覽(F1)
 
-- [ ] **T2.1 Shell 與共用元件**
+- [x] **T2.1 Shell 與共用元件**
   做什麼:全域 layout、底部導覽(課程 / 複習 / 測驗 / 統計 / 設定)、`RubyText` 元件(吃 ruby 分段陣列,受 furigana 設定控制)。
   驗收:RubyText 單元測試(有 / 無讀音段、furigana 開關)。
 
