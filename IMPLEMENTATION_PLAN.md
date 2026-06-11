@@ -24,7 +24,7 @@
   做什麼:ESLint + Prettier + Vitest(含 @testing-library/react、fake-indexeddb);scripts:`lint` / `typecheck` / `test` / `verify`。
   驗收:`pnpm verify` 全綠(至少含一個示範測試)。
 
-- [ ] **T0.3 CI**
+- [x] **T0.3 CI**
   做什麼:GitHub Actions——push / PR 觸發 `pnpm verify` 與 `pnpm build`。
   驗收:workflow 推上 GitHub 後跑通一次。
 
