@@ -56,7 +56,7 @@
   做什麼:讀 index.json 渲染 50 課(課號、標題、單字數);進度標示先佔位。
   驗收:離線資料(fixture index)正確呈現。
 
-- [ ] **T2.3 課程內頁**(`/lessons/[id]`)
+- [x] **T2.3 課程內頁**(`/lessons/[id]`)
   做什麼:単語 / 文型 / 会話 三分頁;`generateStaticParams` 產出 50 頁;頁內 furigana 快速切換。
   驗收:`pnpm build` 後 `out/` 含 50 課頁面;L13 三個分頁渲染正確。
 
