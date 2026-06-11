@@ -66,7 +66,7 @@
 
 ## Phase 3 — SRS 複習(F2,核心)
 
-- [ ] **T3.1 db.ts**
+- [x] **T3.1 db.ts**
   做什麼:Dexie schema v1(`docs/DATA_MODEL.md` §2)+ 首次啟動寫入預設 settings。
   驗收:fake-indexeddb 下開庫、讀寫、預設值測試通過。
 
