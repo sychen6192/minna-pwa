@@ -11,6 +11,8 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  // 關閉與 Prettier 衝突的格式規則(必須放在最後)
+  ...compat.extends("prettier"),
   {
     ignores: [
       "node_modules/**",

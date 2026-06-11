@@ -20,7 +20,7 @@
   做什麼:pnpm + Next.js 15(App Router、TypeScript strict)+ Tailwind + shadcn/ui;`next.config` 設 `output: 'export'`。
   驗收:`pnpm dev` 可啟動;`pnpm build` 產出 `out/`;首頁為佔位頁。
 
-- [ ] **T0.2 品質工具**
+- [x] **T0.2 品質工具**
   做什麼:ESLint + Prettier + Vitest(含 @testing-library/react、fake-indexeddb);scripts:`lint` / `typecheck` / `test` / `verify`。
   驗收:`pnpm verify` 全綠(至少含一個示範測試)。
 
