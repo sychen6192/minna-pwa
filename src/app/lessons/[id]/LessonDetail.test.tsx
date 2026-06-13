@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 import type { Lesson } from "@/schemas/lesson";
 
 const getLesson = vi.fn();
@@ -11,6 +11,13 @@ vi.mock("@/lib/content", () => ({
 const speak = vi.fn();
 vi.mock("@/lib/tts", () => ({
   speak: (text: string) => speak(text),
+}));
+
+const addCards = vi.fn();
+const existingCardIds = vi.fn();
+vi.mock("@/lib/srs", () => ({
+  addCards: (...a: unknown[]) => addCards(...a),
+  existingCardIds: (...a: unknown[]) => existingCardIds(...a),
 }));
 
 import { LessonDetail } from "./LessonDetail";
@@ -57,6 +64,11 @@ const sampleLesson: Lesson = {
     },
   ],
 };
+
+beforeEach(() => {
+  existingCardIds.mockResolvedValue([]);
+  addCards.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -134,6 +146,48 @@ describe("LessonDetail", () => {
       screen.getByRole("button", { name: "播放 あそびます 的發音" }),
     );
     expect(speak).toHaveBeenCalledWith("あそびます");
+  });
+
+  it("單字加入複習:點擊以該 id 呼叫 addCards 並標示已加入", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(
+      screen.getByRole("button", { name: "加入複習:あそびます" }),
+    );
+    expect(addCards).toHaveBeenCalledWith(["L13-V001"], 13);
+    expect(
+      await screen.findByLabelText("あそびます 已加入複習"),
+    ).toBeInTheDocument();
+  });
+
+  it("整課加入複習:以全部 id 呼叫 addCards", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(screen.getByRole("button", { name: "整課加入複習" }));
+    expect(addCards).toHaveBeenCalledWith(["L13-V001", "L13-V002"], 13);
+    expect(
+      await screen.findByRole("button", { name: "整課已加入" }),
+    ).toBeInTheDocument();
+  });
+
+  it("已加入的單字顯示已加入、不再顯示加入鈕", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    existingCardIds.mockResolvedValue(["L13-V001"]);
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    expect(
+      await screen.findByLabelText("あそびます 已加入複習"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "加入複習:あそびます" }),
+    ).not.toBeInTheDocument();
   });
 
   it("載入失敗顯示錯誤", async () => {

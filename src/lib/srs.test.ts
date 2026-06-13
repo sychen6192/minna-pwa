@@ -1,6 +1,13 @@
 import { beforeEach } from "vitest";
 import { db, getSetting, setSetting } from "./db";
-import { addCards, buildQueue, countDue, previewIntervals, rate } from "./srs";
+import {
+  addCards,
+  buildQueue,
+  countDue,
+  existingCardIds,
+  previewIntervals,
+  rate,
+} from "./srs";
 
 const NOW = Date.UTC(2026, 0, 1, 9, 0, 0); // 固定時間,確定性測試
 const DAY = 86_400_000;
@@ -120,6 +127,15 @@ describe("countDue", () => {
     await rate("b", 3, NOW); // 與 a 同 due
     expect(await countDue(dueA - DAY)).toBe(0); // 尚未到期
     expect(await countDue(dueA)).toBe(2); // a、b 到期;new 仍為 New 不計
+  });
+});
+
+describe("existingCardIds", () => {
+  it("回傳已加入的 id 子集", async () => {
+    await addCards(["a", "b"], 13, NOW);
+    expect((await existingCardIds(["a", "c"])).sort()).toEqual(["a"]);
+    expect(await existingCardIds([])).toEqual([]);
+    expect(await existingCardIds(["x", "y"])).toEqual([]);
   });
 });
 

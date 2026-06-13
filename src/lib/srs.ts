@@ -124,6 +124,15 @@ export async function buildQueue(now: number = Date.now()): Promise<CardRow[]> {
 }
 
 /**
+ * 回傳 `vocabIds` 中已加入複習(已建立卡片)的 id 子集。
+ * 用於課程頁標示「已加入」狀態。
+ */
+export async function existingCardIds(vocabIds: string[]): Promise<string[]> {
+  if (vocabIds.length === 0) return [];
+  return db.cards.where("cardId").anyOf(vocabIds).primaryKeys();
+}
+
+/**
  * 計算在 `at`(epoch ms)前到期的複習卡數量(state≠New)。
  * 用於結算頁的「明日到期預估」等統計。
  */

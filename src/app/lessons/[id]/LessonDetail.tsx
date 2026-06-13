@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Volume2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Check, Plus, Volume2 } from "lucide-react";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
+import { addCards, existingCardIds } from "@/lib/srs";
 import { speak } from "@/lib/tts";
 import { cn } from "@/lib/utils";
 import type { Lesson } from "@/schemas/lesson";
@@ -21,6 +22,7 @@ export function LessonDetail({ id }: { id: number }) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("vocab");
   const [furigana, setFurigana] = useState<FuriganaMode>("show");
+  const [added, setAdded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let active = true;
@@ -35,6 +37,36 @@ export function LessonDetail({ id }: { id: number }) {
       active = false;
     };
   }, [id]);
+
+  // 初始化「已加入複習」狀態
+  useEffect(() => {
+    if (!lesson) return;
+    let active = true;
+    existingCardIds(lesson.vocab.map((v) => v.id))
+      .then((ids) => {
+        if (active) setAdded(new Set(ids));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [lesson]);
+
+  const addOne = useCallback(
+    async (cardId: string) => {
+      if (!lesson) return;
+      await addCards([cardId], lesson.id);
+      setAdded((prev) => new Set(prev).add(cardId));
+    },
+    [lesson],
+  );
+
+  const addAll = useCallback(async () => {
+    if (!lesson) return;
+    const ids = lesson.vocab.map((v) => v.id);
+    await addCards(ids, lesson.id);
+    setAdded(new Set(ids));
+  }, [lesson]);
 
   if (error) {
     return (
@@ -89,7 +121,15 @@ export function LessonDetail({ id }: { id: number }) {
         ))}
       </div>
 
-      {tab === "vocab" && <VocabList lesson={lesson} furigana={furigana} />}
+      {tab === "vocab" && (
+        <VocabList
+          lesson={lesson}
+          furigana={furigana}
+          added={added}
+          onAddOne={addOne}
+          onAddAll={addAll}
+        />
+      )}
       {tab === "grammar" && <GrammarList lesson={lesson} furigana={furigana} />}
       {tab === "dialogue" && (
         <DialogueList lesson={lesson} furigana={furigana} />
@@ -101,33 +141,76 @@ export function LessonDetail({ id }: { id: number }) {
 function VocabList({
   lesson,
   furigana,
+  added,
+  onAddOne,
+  onAddAll,
 }: {
   lesson: Lesson;
   furigana: FuriganaMode;
+  added: Set<string>;
+  onAddOne: (cardId: string) => void;
+  onAddAll: () => void;
 }) {
+  const allAdded = lesson.vocab.every((v) => added.has(v.id));
   return (
-    <ul>
-      {lesson.vocab.map((v) => (
-        <li key={v.id} className="border-b border-foreground/10 px-4 py-3">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="flex items-center gap-2 text-lg">
-              <RubyText segments={v.ruby} furigana={furigana} />
-              <button
-                type="button"
-                aria-label={`播放 ${v.kana} 的發音`}
-                onClick={() => speak(v.kana)}
-                className="shrink-0 text-foreground/40 transition-colors active:text-foreground"
-              >
-                <Volume2 className="size-4" aria-hidden />
-              </button>
-            </span>
-            <span className="shrink-0 text-xs text-foreground/50">{v.pos}</span>
-          </div>
-          <div className="text-sm text-foreground/70">{v.meaning}</div>
-          {v.note && <div className="text-xs text-foreground/40">{v.note}</div>}
-        </li>
-      ))}
-    </ul>
+    <div>
+      <div className="flex justify-end px-4 py-2">
+        <button
+          type="button"
+          onClick={onAddAll}
+          disabled={allAdded}
+          className="rounded border border-foreground/20 px-3 py-1 text-xs disabled:opacity-40"
+        >
+          {allAdded ? "整課已加入" : "整課加入複習"}
+        </button>
+      </div>
+      <ul>
+        {lesson.vocab.map((v) => {
+          const isAdded = added.has(v.id);
+          return (
+            <li key={v.id} className="border-b border-foreground/10 px-4 py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="flex items-center gap-2 text-lg">
+                  <RubyText segments={v.ruby} furigana={furigana} />
+                  <button
+                    type="button"
+                    aria-label={`播放 ${v.kana} 的發音`}
+                    onClick={() => speak(v.kana)}
+                    className="shrink-0 text-foreground/40 transition-colors active:text-foreground"
+                  >
+                    <Volume2 className="size-4" aria-hidden />
+                  </button>
+                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs text-foreground/50">{v.pos}</span>
+                  {isAdded ? (
+                    <span
+                      aria-label={`${v.kana} 已加入複習`}
+                      className="text-green-600"
+                    >
+                      <Check className="size-4" aria-hidden />
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label={`加入複習:${v.kana}`}
+                      onClick={() => onAddOne(v.id)}
+                      className="text-foreground/40 transition-colors active:text-foreground"
+                    >
+                      <Plus className="size-4" aria-hidden />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="text-sm text-foreground/70">{v.meaning}</div>
+              {v.note && (
+                <div className="text-xs text-foreground/40">{v.note}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
