@@ -23,6 +23,7 @@
     "react-dom": "19.1.0",
     "tailwind-merge": "^3.6.0",
     "ts-fsrs": "^5.4.1",
+    "wanakana": "^5.3.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
