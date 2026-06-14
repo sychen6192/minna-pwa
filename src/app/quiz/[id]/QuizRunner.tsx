@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
 import { getSetting } from "@/lib/db";
@@ -12,6 +11,7 @@ import {
   type Question,
   type QuizCandidate,
 } from "@/lib/quiz";
+import { QuizResult } from "./QuizResult";
 
 const QUIZ_COUNT = 10;
 const NEIGHBOR_OFFSETS = [-2, -1, 1, 2];
@@ -75,21 +75,7 @@ export function QuizRunner({ id }: { id: number }) {
     );
 
   if (phase === "done") {
-    const correct = results.filter((r) => r.correct).length;
-    return (
-      <div className="px-4 py-8 text-center">
-        <h1 className="text-lg font-bold">測驗完成</h1>
-        <p className="mt-4 text-3xl font-bold">
-          {correct} / {results.length}
-        </p>
-        <Link
-          href={`/lessons/${id}`}
-          className="mt-6 inline-block text-sm text-sky-600 underline"
-        >
-          回課程
-        </Link>
-      </div>
-    );
+    return <QuizResult results={results} lessonId={id} furigana={furigana} />;
   }
 
   const q = questions[index];
