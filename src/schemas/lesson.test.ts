@@ -97,10 +97,17 @@ describe("GrammarPointSchema(id regex)", () => {
     expect(GrammarPointSchema.safeParse(g).success).toBe(true);
   });
 
+  it("接受省略 explanation(教材本冊無解說 prose)", () => {
+    const { explanation: _omit, ...noExplanation } = validGrammar;
+    void _omit;
+    expect(GrammarPointSchema.safeParse(noExplanation).success).toBe(true);
+  });
+
   it.each([
     { ...validGrammar, id: "L13-G1" }, // 流水碼需 2 位
     { ...validGrammar, id: "L13-V01" }, // 類型字母需為 G
     { ...validGrammar, examples: [] }, // examples 至少 1 例
+    { ...validGrammar, explanation: "" }, // 有給就不可為空
   ])("拒絕非法文法點 %o", (g) => {
     expect(GrammarPointSchema.safeParse(g).success).toBe(false);
   });

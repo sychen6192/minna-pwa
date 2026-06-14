@@ -98,23 +98,23 @@
 
 ## Phase 5 — 內容管線(依賴 Phase 1;可與 2–4 平行)
 
-> 程式碼由 Claude Code 完成;**跑批、API key、與 PDF 的人工對照由使用者本人執行**。規格詳見 `docs/PIPELINE.md`。
+> ADR 變更:PDF 含文字層,改用 **`pdftotext` + Claude Code 直抽**(不需 Python/Batch API/API key)。**抽取由 Claude Code 做,讀音校讀由使用者本人執行**。規格詳見 `docs/PIPELINE.md`。
 
-- [ ] **T5.1 管線腳手架**
-  做什麼:`pipeline/` uv 專案(pymupdf、anthropic、typer);CLI:`extract --lesson 13` / `--all` / `--batch`;文字層偵測邏輯。
-  驗收:對任一 PDF 能正確判定文字 / 影像模式並輸出統計。
+- [x] **T5.1 抽取前置**
+  做什麼:安裝 poppler(`pdftotext`);確認 PDF 含文字層;訂出抽取慣例(ruby 對齊、pos、濾頁尾、跳過練習)。
+  驗收:`pdftotext -layout 13.pdf` 能抽出完整 ことば/文型/例文/会話。
 
 - [ ] **T5.2 單課跑通(L13)**
-  做什麼:組 prompt(`prompts/extract.md`)→ 呼叫 API → 寬鬆檢查 → 寫 `public/data/lessons/L13.json`。
-  驗收:`pnpm validate:content` 通過;與 PDF 人工對照後 prompt 定稿(取代 T1.2 的 fixture)。
+  做什麼:抽 L13 → `public/data/lessons/L13.json`(取代 T1.2 fixture);解決 grammar explanation 來源缺口(見 PIPELINE §2)。
+  驗收:`pnpm validate:content` 通過;與 PDF 人工對照(讀音零容忍)後抽取慣例定稿。
 
-- [ ] **T5.3 全量批次**
-  做什麼:Message Batches API 跑 50 課;失敗者落 `pipeline/review/` 附原因摘要。
-  驗收:批次完成,review 清單清空(人工修正迴圈跑完)。
+- [ ] **T5.3 全量抽取(分批)**
+  做什麼:其餘 49 課分批抽取;讀音/格式人工校讀。
+  驗收:每課 `pnpm validate:content` 通過;抽查讀音正確。
 
 - [ ] **T5.4 索引與收尾**
   做什麼:產生正式 `index.json`;移除佔位資料。
-  驗收:`pnpm validate:content` 50/50 通過;抽查 5 課符合 PIPELINE.md §2 標準。
+  驗收:`pnpm validate:content` 50/50 通過;抽查 5 課符合 PIPELINE.md §3 標準。
 
 ## Phase 6 — PWA 化(N1–N3)
 

@@ -1,47 +1,49 @@
 # PIPELINE — PDF → JSON 抽取管線(Phase 5 專用)
 
-目標:把 `pipeline/input/` 內 50 份《大家的日本語》PDF 轉為通過 Zod 驗證的 `public/data/lessons/L01–L50.json` 與 `index.json`。一次性流程,**由使用者本人觸發執行**(Claude Code 負責寫程式,跑批與 API key 由人控制)。
+目標:把《大家的日本語》50 課 PDF 轉為通過 Zod 驗證的 `public/data/lessons/L01–L50.json` 與 `index.json`。一次性流程。
+
+> **ADR 變更(2026-06)**:原規劃 Python(PyMuPDF)+ Claude Batch API。實測使用者的 PDF **皆含乾淨文字層**(非掃描),故改為更簡單的做法:**`pdftotext`(poppler)抽文字層 → Claude Code 直接結構化為 JSON → `pnpm validate:content`(Zod)把關**。優點:不需 API key、不需建 Python 管線、讀音直接取自教材文字層(非 OCR/視覺,符合「讀音零容忍」)。原 Batch API 方案僅在日後遇到掃描檔時才需要。
 
 ## 0. 前置
 
-- Python 3.12 + uv 管理;依賴:`pymupdf`、`anthropic`、`typer`
-- 環境變數 `ANTHROPIC_API_KEY`(放 `.env`,不入庫)
-- PDF 命名規約:`L01.pdf` … `L50.pdf`,放 `pipeline/input/`(gitignored)
+- poppler:`brew install poppler`(提供 `pdftotext` / `pdfinfo`)
+- 原始 PDF 放 repo 外的本機資料夾(例:`/Users/sychen/projects/japanese/minna-pdf/`),依課號命名(`13.pdf` = 第 13 課)。**PDF 永不入庫**(版權)。
+- Claude Code 只「讀取」PDF 抽出的文字;只有產出的 JSON 進 private repo。
 
-## 1. 流程
+## 1. 流程(逐課)
 
 ```
-偵測文字層 → 組 prompt → Claude API → 寬鬆檢查 → 寫 JSON → pnpm validate:content(嚴格)
-                                          └→ 失敗 → pipeline/review/ + 原因 → 人工修正
+pdftotext -layout N.pdf  →  Claude Code 結構化 + ruby 對齊  →  寫 Lxx.json
+                                                                  ↓
+                              人工對照 PDF 校讀  ←  pnpm validate:content(Zod 嚴格)
 ```
 
-1. **文字層偵測**(PyMuPDF):`page.get_text()` 有效字元率 > 60% → 文字模式;否則 → 影像模式(整頁渲染 300 dpi PNG)。
-2. **呼叫 Claude**:
-   - 使用 **Message Batches API**(50 課一批,成本約一半,24 小時內回);單課試跑(`--lesson 13`)走一般 Messages API 方便迭代。
-   - 文字模式傳抽出文字;影像模式傳頁面圖片(vision)。
-   - 模型與 API 細節以官方文件為準(D8)。
-3. **Prompt 要求**(`pipeline/prompts/extract.md`,版本控管,L13 試跑迭代定稿後才跑全量):
-   - 僅輸出 JSON(無 markdown fence、無前後說明),結構對齊 `docs/DATA_MODEL.md` §1.2
-   - ruby 分段:漢字段附平假名讀音;送り仮名與純假名段不附 `r`
-   - `pos` 必須落在 PosEnum;無法分類用「其他」並寫入 `note`
-   - 單字依教材原順序編號(id 穩定性是硬需求,見 DATA_MODEL §4)
-   - **不得**增刪、翻譯潤飾或「補完」教材內容;不確定的選填欄位留空,不准猜
-4. **驗證分工**:Python 端只做「JSON 可解析 + 頂層欄位存在」的寬鬆檢查;嚴格驗證一律走 `pnpm validate:content`(Zod,單一真相)。
-5. **失敗處理**:未過驗證的課寫到 `pipeline/review/Lxx.json` 並附錯誤摘要,人工修正後重新驗證;禁止為了過驗證而放寬 schema。
-6. **索引**:50 課全數通過後,由腳本產生 `public/data/index.json`(id、title、vocabCount、grammarCount)。
+1. **抽文字**:`pdftotext -layout <PDF> -`。教材每課結構固定:
+   - `ことば`(單字:假名讀音｜漢字｜中文;部分含 `[てがみを〜]` 接續提示)
+   - `文型`(句型,3 條)、`例文`(例句問答)
+   - `会話`(對話,含說話者)
+   - `練習 A/B/C`、`問題`(**不收**,資料模型無對應)
+2. **結構化(Claude Code)**:
+   - 對齊 ruby 分段:漢字段附平假名讀音;送り仮名與純假名段不附 `r`(例:`遊びます`+`あそびます` → `[{b:"遊",r:"あそ"},{b:"びます"}]`)。
+   - 例文/会話的 furigana 在版面上以小字浮在漢字上方,`pdftotext` 會排到上一行,需依位置重建。**此處最易出錯,校讀重點。**
+   - `pos` 落在 PosEnum;慣用表達(おなかが すきました 等)用「慣用」。
+   - 外來語的 `kana` 沿用教材片假名原樣(プール、スキー),`ruby` 該段不附 `r`。
+   - 濾掉頁尾雜訊(`課:13 (頁:1/9)` 之類)。
+   - 單字依教材原順序編號(id 穩定性是硬需求,見 DATA_MODEL §4)。
+   - **不得**增刪、翻譯潤飾或「補完」教材內容;不確定的選填欄位留空,不准猜。
+3. **驗證**:`pnpm validate:content`(Zod,單一真相)。失敗即修。
+4. **索引**:50 課全數通過後,由腳本產生 `public/data/index.json`。
 
-## 2. 驗收標準
+## 2. 已知來源缺口(待決議)
+
+- 這批 PDF 為教材「本冊」頁面,**不含文法解說 prose**(解說在另一本《翻譯・文法解說》)。`GrammarPoint.explanation` 目前為必填,但來源沒有對應文字。處置方式於 T5.2 試跑時決定(放寬為選填 / 另尋來源 / v1 不收 grammar),並回頭更新 `docs/DATA_MODEL.md`。
+
+## 3. 驗收標準
 
 - `pnpm validate:content` 對 50 課 + index **全數通過**
-- 隨機抽 5 課與 PDF 人工對照:單字遺漏率 < 2%;**讀音錯誤零容忍**(發現即修正並記錄 prompt 改進)
-
-## 3. 成本與時間(粗估,以實際為準)
-
-- 50 課 × 約 20–40 頁;Batch API 折扣後預估在個位數至十餘美元區間
-- 跑批 + 人工抽查約 1–2 個晚上
+- 隨機抽 5 課與 PDF 人工對照:單字遺漏率 < 2%;**讀音錯誤零容忍**(發現即修正並記錄改進)
 
 ## 4. 安全與版權
 
-- 原始 PDF 與中間產物(`input/`、`work/`)永不 commit(.gitignore 已涵蓋)
-- 抽出的 JSON 屬版權內容:只進 private repo,部署必過 Cloudflare Access
-- `.env` 不入庫;API key 不出現在任何 log 或 commit
+- 原始 PDF 永不 commit(在 repo 外)。
+- 抽出的 JSON 屬版權內容:只進 private repo,部署必過 Cloudflare Access。
