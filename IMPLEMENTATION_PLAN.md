@@ -104,7 +104,7 @@
   做什麼:安裝 poppler(`pdftotext`);確認 PDF 含文字層;訂出抽取慣例(ruby 對齊、pos、濾頁尾、跳過練習)。
   驗收:`pdftotext -layout 13.pdf` 能抽出完整 ことば/文型/例文/会話。
 
-- [ ] **T5.2 單課跑通(L13)**
+- [x] **T5.2 單課跑通(L13)**
   做什麼:抽 L13 → `public/data/lessons/L13.json`(取代 T1.2 fixture);解決 grammar explanation 來源缺口(見 PIPELINE §2)。
   驗收:`pnpm validate:content` 通過;與 PDF 人工對照(讀音零容忍)後抽取慣例定稿。
 
