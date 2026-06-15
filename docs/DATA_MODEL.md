@@ -51,7 +51,7 @@ export const SentenceSchema = z.object({
 export const GrammarPointSchema = z.object({
   id: z.string().regex(/^L\d{2}-G\d{2}$/),
   pattern: z.string().min(1),        // 例:「(名詞)が ほしいです」
-  explanation: z.string().min(1).optional(), // 教材本冊無解說 prose,選填
+  explanation: z.string().min(1).optional(), // 少數課(L7/27/35)無文法段,故選填
   examples: z.array(SentenceSchema).min(1),
 });
 
