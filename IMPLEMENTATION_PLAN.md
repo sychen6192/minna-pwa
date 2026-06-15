@@ -108,11 +108,11 @@
   做什麼:抽 L13 → `public/data/lessons/L13.json`(取代 T1.2 fixture);解決 grammar explanation 來源缺口(見 PIPELINE §2)。
   驗收:`pnpm validate:content` 通過;與 PDF 人工對照(讀音零容忍)後抽取慣例定稿。
 
-- [ ] **T5.3 全量抽取(分批)**
+- [x] **T5.3 全量抽取(分批)**
   做什麼:其餘 49 課分批抽取;讀音/格式人工校讀。
   驗收:每課 `pnpm validate:content` 通過;抽查讀音正確。
 
-- [ ] **T5.4 索引與收尾**
+- [x] **T5.4 索引與收尾**
   做什麼:產生正式 `index.json`;移除佔位資料。
   驗收:`pnpm validate:content` 50/50 通過;抽查 5 課符合 PIPELINE.md §3 標準。
 
