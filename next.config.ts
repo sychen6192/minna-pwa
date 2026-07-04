@@ -8,8 +8,11 @@ import { buildRouteEntries, collectPublicEntries } from "./scripts/precache-entr
 
 // 匯出的 HTML/.txt 在 webpack 階段尚未產生、無從 hash,改以「每次 build 必變」的
 // revision 標記(HTML 引用 hashed asset,本就須隨版重抓);public/ 檔案則用內容 hash。
+// SW_BUILD_REVISION 供 e2e 在不 commit 的情況下產生「新版」build(更新流程驗證)。
 const buildRevision =
-  spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" }).stdout?.trim() || randomUUID();
+  process.env.SW_BUILD_REVISION ||
+  spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" }).stdout?.trim() ||
+  randomUUID();
 
 const lessonIndex = JSON.parse(
   readFileSync(join(process.cwd(), "public/data/index.json"), "utf-8"),

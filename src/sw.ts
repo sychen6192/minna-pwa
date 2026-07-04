@@ -19,7 +19,9 @@ const serwist = new Serwist({
     // App Router 客端導覽抓 RSC payload 時帶 ?_rsc=<hash>,不忽略會 precache miss
     ignoreURLParametersMatching: [/^_rsc$/],
   },
-  skipWaiting: true,
+  // 新版 SW 停在 waiting,由 UpdatePrompt 徵得同意後送 SKIP_WAITING 接管
+  // (serwist 核心於 skipWaiting: false 時自動監聽該訊息)
+  skipWaiting: false,
   clientsClaim: true,
   // 全站(頁面 + 資料)皆已預快取;navigation preload 只會平行發出用不到的網路請求
   navigationPreload: false,

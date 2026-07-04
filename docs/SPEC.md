@@ -59,7 +59,7 @@
 ## 4. 非功能需求
 
 - **N1 離線**:首次載入後,所有頁面與 50 課內容離線可用(Service Worker 預快取)
-- **N2 PWA**:可安裝、standalone 顯示、自有 icon;Lighthouse PWA 檢查通過
+- **N2 PWA**:可安裝、standalone 顯示、自有 icon;Lighthouse PWA 檢查通過(Lighthouse 12 起移除 PWA 類別,以 lighthouse@11 PWA 類別為準;報告見 `docs/reports/`)
 - **N3 iOS Safari**:啟動時呼叫 `navigator.storage.persist()`;未安裝時提示加入主畫面
 - **N4 效能**:首頁 JS bundle(gzip)< 200 KB;課程頁間切換無感
 - **N5 純靜態**:無任何 runtime 後端,可部署於任何靜態主機

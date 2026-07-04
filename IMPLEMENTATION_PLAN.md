@@ -130,7 +130,7 @@
   做什麼:啟動時呼叫 `navigator.storage.persist()`;未安裝時顯示加入主畫面提示(含 iOS 引導文案)。
   驗收:persist 呼叫有測試;提示僅在未安裝時出現。
 
-- [ ] **T6.4 PWA 驗收**
+- [x] **T6.4 PWA 驗收**
   做什麼:Lighthouse PWA 項目全過;SW 更新策略(偵測新版 → 提示重新整理)。
   驗收:Lighthouse 報告留存於 PR;更新提示流程手動驗證。
 

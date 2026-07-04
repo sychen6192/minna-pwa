@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { BottomNav } from "@/components/BottomNav";
 import { PwaSetup } from "@/components/PwaSetup";
+import { UpdatePrompt } from "@/components/UpdatePrompt";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -34,6 +35,8 @@ export default function RootLayout({
           <main className="flex-1 pb-16">{children}</main>
           <BottomNav />
           <PwaSetup />
+          {/* 置於 PwaSetup 之後:同位置重疊時更新提示優先顯示 */}
+          <UpdatePrompt />
         </div>
       </body>
     </html>
