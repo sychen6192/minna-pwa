@@ -27,3 +27,13 @@ jobs:
 
       - name: Build (static export)
         run: pnpm build
+
+      # CD:main push 且 secrets 已設定才部署(缺 secrets 時跳過,CI 保持綠燈)。
+      # secrets context 只在 step 層 if 可用(job 層不行),故放同一 job。
+      - name: Deploy to Cloudflare Pages
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.CLOUDFLARE_API_TOKEN != '' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy out --project-name=minna-pwa --branch=main
