@@ -122,7 +122,7 @@
   做什麼:接入 Serwist(設定以官方文件為準,D8),precache app shell 與 `/data/**`。
   驗收:build 後產出 service worker;DevTools 離線模式可開首頁與任一課。
 
-- [ ] **T6.2 Manifest 與 icons**
+- [x] **T6.2 Manifest 與 icons**
   做什麼:`manifest.json`(standalone、theme color)、512 / 192 icon、iOS meta 標籤。
   驗收:Chrome 顯示可安裝;iOS 加入主畫面後 standalone 開啟。
 

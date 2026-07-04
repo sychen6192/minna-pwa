@@ -1,10 +1,23 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { BottomNav } from "@/components/BottomNav";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "みんなの日本語 學習",
   description: "《大家的日本語》初級 I・II 個人學習 PWA",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "みんなの日本語",
+    statusBarStyle: "default",
+  },
+  icons: {
+    apple: "/icons/apple-touch-icon.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0284c7",
 };
 
 export default function RootLayout({
