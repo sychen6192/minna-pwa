@@ -43,6 +43,7 @@ export interface Settings {
   maxReviewsPerDay: number;
   ttsEnabled: boolean;
   furigana: "show" | "hide";
+  installPromptDismissed: boolean; // 安裝提示已被使用者關閉(T6.3)
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   maxReviewsPerDay: 200,
   ttsEnabled: true,
   furigana: "show",
+  installPromptDismissed: false,
 };
 
 export type SettingsKey = keyof Settings;

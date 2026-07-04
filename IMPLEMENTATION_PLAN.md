@@ -126,7 +126,7 @@
   做什麼:`manifest.json`(standalone、theme color)、512 / 192 icon、iOS meta 標籤。
   驗收:Chrome 顯示可安裝;iOS 加入主畫面後 standalone 開啟。
 
-- [ ] **T6.3 儲存持久化**
+- [x] **T6.3 儲存持久化**
   做什麼:啟動時呼叫 `navigator.storage.persist()`;未安裝時顯示加入主畫面提示(含 iOS 引導文案)。
   驗收:persist 呼叫有測試;提示僅在未安裝時出現。
 

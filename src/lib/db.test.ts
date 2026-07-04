@@ -97,9 +97,9 @@ describe("MinnaDB schema", () => {
 });
 
 describe("settings", () => {
-  it("ensureDefaultSettings:寫入 4 個預設值", async () => {
+  it("ensureDefaultSettings:寫入全部預設值", async () => {
     await ensureDefaultSettings();
-    expect(await db.settings.count()).toBe(4);
+    expect(await db.settings.count()).toBe(Object.keys(DEFAULT_SETTINGS).length);
     expect(await getAllSettings()).toEqual(DEFAULT_SETTINGS);
   });
 
@@ -107,13 +107,14 @@ describe("settings", () => {
     await setSetting("newPerDay", 25);
     await ensureDefaultSettings();
     await ensureDefaultSettings();
-    expect(await db.settings.count()).toBe(4);
+    expect(await db.settings.count()).toBe(Object.keys(DEFAULT_SETTINGS).length);
     expect(await getSetting("newPerDay")).toBe(25); // 既有值保留
   });
 
   it("getSetting:未設定時回退預設", async () => {
     expect(await getSetting("furigana")).toBe("show");
     expect(await getSetting("maxReviewsPerDay")).toBe(200);
+    expect(await getSetting("installPromptDismissed")).toBe(false); // T6.3 安裝提示旗標
   });
 
   it("setSetting / getSetting:寫入後讀回", async () => {

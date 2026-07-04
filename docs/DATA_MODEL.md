@@ -178,6 +178,7 @@ settings 預設值(首次啟動寫入):
 | `maxReviewsPerDay` | 200 |
 | `ttsEnabled` | true |
 | `furigana` | `"show"`(`show` \| `hide`) |
+| `installPromptDismissed` | false(加入主畫面提示已被關閉) |
 
 ## 3. 匯出 / 匯入格式
 

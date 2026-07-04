@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { BottomNav } from "@/components/BottomNav";
+import { PwaSetup } from "@/components/PwaSetup";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default function RootLayout({
           {/* pb-16 預留底部導覽高度 */}
           <main className="flex-1 pb-16">{children}</main>
           <BottomNav />
+          <PwaSetup />
         </div>
       </body>
     </html>
