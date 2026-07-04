@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, vi } from "vitest";
 import { BACKUP_VERSION } from "@/lib/backup";
@@ -129,7 +129,9 @@ describe("SettingsPage 匯出(F6.2)", () => {
 
     await user.click(await screen.findByRole("button", { name: "匯出備份" }));
 
-    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    // handleExport 內含 IndexedDB 非同步讀取,click 不會等它完成
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
     expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob);
+    expect(await screen.findByText(/已產生備份檔/)).toBeInTheDocument();
   });
 });
