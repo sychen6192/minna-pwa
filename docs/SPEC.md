@@ -48,7 +48,7 @@
 - **F5.1** 複習熱力圖(過去 12 週)
 - **F5.2** 到期預測(未來 7 / 30 天)
 - **F5.3** 留存率(由 logs 計算)與各課學習進度
-- 全部以 Recharts 呈現;資料來源僅 IndexedDB,聚合邏輯集中於 `src/lib/stats.ts`
+- 圖表以 Recharts 呈現(熱力圖除外——Recharts 無 heatmap 元件,以自製 CSS grid 實作);資料來源僅 IndexedDB,聚合邏輯集中於 `src/lib/stats.ts`
 
 ### F6 設定與資料
 

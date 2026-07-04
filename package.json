@@ -23,6 +23,7 @@
     "next": "15.5.19",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "recharts": "^3.9.1",
     "serwist": "^9.5.11",
     "tailwind-merge": "^3.6.0",
     "ts-fsrs": "^5.4.1",
