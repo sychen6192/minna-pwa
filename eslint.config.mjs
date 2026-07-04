@@ -20,6 +20,9 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
+      // serwist build 產物(gitignored,minified)
+      "public/sw*",
+      "public/swe-worker*",
     ],
   },
 ];

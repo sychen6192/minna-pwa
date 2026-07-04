@@ -118,7 +118,7 @@
 
 ## Phase 6 — PWA 化(N1–N3)
 
-- [ ] **T6.1 Serwist 整合**
+- [x] **T6.1 Serwist 整合**
   做什麼:接入 Serwist(設定以官方文件為準,D8),precache app shell 與 `/data/**`。
   驗收:build 後產出 service worker;DevTools 離線模式可開首頁與任一課。
 

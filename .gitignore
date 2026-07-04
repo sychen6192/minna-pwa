@@ -5,6 +5,10 @@ out/
 coverage/
 *.tsbuildinfo
 
+# serwist 產物(build 時生成於 public/,不入庫)
+public/sw*
+public/swe-worker*
+
 # env(API key 不入庫)
 .env
 .env.*
