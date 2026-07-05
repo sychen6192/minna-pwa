@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 手動觸發(Actions 頁面 Run workflow;deploy step 只認 push,手動跑僅驗證)
+  workflow_dispatch:
 
 jobs:
   verify:
