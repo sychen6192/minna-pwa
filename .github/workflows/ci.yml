@@ -41,3 +41,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy out --project-name=minna-pwa --branch=main
+          # action 預設依 lockfile 選 pnpm 自我安裝 wrangler,會被 pnpm 10 的
+          # build-scripts 封鎖(approve-builds)擋下;改用 npm 安裝
+          packageManager: npm
