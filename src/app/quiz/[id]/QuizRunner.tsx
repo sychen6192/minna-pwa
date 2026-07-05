@@ -114,7 +114,7 @@ export function QuizRunner({ id }: { id: number }) {
     <div className="flex min-h-[80vh] flex-col">
       {/* 進度 */}
       <div className="px-4 py-2">
-        <div className="text-center text-xs text-foreground/50">
+        <div className="text-center text-xs text-foreground/60">
           第 {index + 1} / {questions.length} 題
         </div>
         <div className="mt-1 h-1 w-full rounded bg-foreground/10">
@@ -165,7 +165,7 @@ export function QuizRunner({ id }: { id: number }) {
             <p
               className={
                 lastCorrect
-                  ? "font-medium text-green-600"
+                  ? "font-medium text-green-700"
                   : "font-medium text-red-600"
               }
             >

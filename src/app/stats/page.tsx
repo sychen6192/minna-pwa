@@ -137,7 +137,7 @@ export default function StatsPage() {
         </p>
         <Link
           href="/lessons"
-          className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+          className="rounded bg-sky-700 px-4 py-2 text-sm font-medium text-white hover:bg-sky-800"
         >
           前往課程
         </Link>
@@ -173,7 +173,7 @@ export default function StatsPage() {
               onClick={() => setForecastDays(days)}
               className={`rounded px-3 py-1 text-xs font-medium ${
                 forecastDays === days
-                  ? "bg-sky-600 text-white"
+                  ? "bg-sky-700 text-white"
                   : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
               }`}
             >
@@ -266,7 +266,7 @@ export default function StatsPage() {
                     style={{ width: `${Math.min(100, (lesson.added / lesson.total) * 100)}%` }}
                   />
                   <div
-                    className="absolute inset-y-0 left-0 rounded bg-sky-600"
+                    className="absolute inset-y-0 left-0 rounded bg-sky-700"
                     style={{ width: `${Math.min(100, (lesson.learned / lesson.total) * 100)}%` }}
                   />
                 </div>

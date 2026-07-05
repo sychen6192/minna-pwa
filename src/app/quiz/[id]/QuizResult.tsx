@@ -40,7 +40,7 @@ export function QuizResult({
       </p>
 
       {wrong.length === 0 ? (
-        <p className="mt-6 text-center text-sm text-green-600">全部答對 🎉</p>
+        <p className="mt-6 text-center text-sm text-green-700">全部答對 🎉</p>
       ) : (
         <>
           <div className="mt-6">
@@ -77,7 +77,7 @@ export function QuizResult({
       <div className="mt-8 text-center">
         <Link
           href={`/lessons/${lessonId}`}
-          className="text-sm text-sky-600 underline"
+          className="text-sm text-sky-700 underline"
         >
           回課程
         </Link>

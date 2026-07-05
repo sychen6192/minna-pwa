@@ -162,10 +162,10 @@ export default function ReviewPage() {
     return (
       <Centered>
         <p className="text-lg font-medium">今日複習完成 🎉</p>
-        <p className="mt-2 text-sm text-foreground/50">
+        <p className="mt-2 text-sm text-foreground/60">
           明日到期:{tomorrowDue} 張
         </p>
-        <Link href="/lessons" className="mt-4 text-sm text-sky-600 underline">
+        <Link href="/lessons" className="mt-4 text-sm text-sky-700 underline">
           回課程列表
         </Link>
       </Centered>
@@ -178,7 +178,7 @@ export default function ReviewPage() {
       <div className="px-4 py-8">
         <h1 className="text-center text-lg font-bold">本次複習結算</h1>
         <p className="mt-4 text-center text-3xl font-bold">{total}</p>
-        <p className="text-center text-sm text-foreground/50">張卡片</p>
+        <p className="text-center text-sm text-foreground/60">張卡片</p>
         <dl className="mx-auto mt-6 max-w-xs space-y-1 text-sm">
           <Row label="重來" value={stats.again} />
           <Row label="困難" value={stats.hard} />
@@ -187,7 +187,7 @@ export default function ReviewPage() {
           <Row label="明日到期" value={tomorrowDue} />
         </dl>
         <div className="mt-8 text-center">
-          <Link href="/lessons" className="text-sm text-sky-600 underline">
+          <Link href="/lessons" className="text-sm text-sky-700 underline">
             回課程列表
           </Link>
         </div>
@@ -199,7 +199,7 @@ export default function ReviewPage() {
   const item = items[index];
   return (
     <div className="flex min-h-[80vh] flex-col">
-      <div className="px-4 py-2 text-center text-xs text-foreground/50">
+      <div className="px-4 py-2 text-center text-xs text-foreground/60">
         {index + 1} / {items.length}
       </div>
 
@@ -218,7 +218,7 @@ export default function ReviewPage() {
               {item.vocab.kana}
             </div>
             <div className="text-lg">{item.vocab.meaning}</div>
-            <div className="text-xs text-foreground/50">
+            <div className="text-xs text-foreground/60">
               {item.vocab.pos}・{item.lessonTitle}
             </div>
           </div>
@@ -229,7 +229,7 @@ export default function ReviewPage() {
         {flipped ? (
           <RatingButtons previews={previews} onRate={handleRate} />
         ) : (
-          <p className="text-center text-sm text-foreground/40">
+          <p className="text-center text-sm text-foreground/60">
             點擊卡片或按空白鍵顯示答案
           </p>
         )}

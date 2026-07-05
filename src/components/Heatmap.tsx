@@ -2,6 +2,8 @@ import type { DayCount } from "@/lib/stats";
 
 // 順序色階:單一色相(sky)由淺到深;層級 0 為中性底(無活動)。
 // 淺步對白底對比不足屬熱力圖天性,以每格 title tooltip 補救(dataviz 規範)。
+// 注意:此為「圖形」色階(非文字),維持 validator 驗過的等距 ramp,
+// 不隨文字對比度修正調整(文字級 sky-600→700 的批次替換不適用於此)
 const LEVEL_CLASSES = [
   "bg-neutral-100",
   "bg-sky-200",

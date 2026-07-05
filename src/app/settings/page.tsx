@@ -169,7 +169,7 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={() => void handleExport()}
-              className="shrink-0 rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
+              className="shrink-0 rounded bg-sky-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-800"
             >
               匯出備份
             </button>
@@ -204,7 +204,7 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => void handleConfirmImport()}
-                    className="rounded bg-amber-600 px-3 py-1 text-sm font-medium text-white hover:bg-amber-700"
+                    className="rounded bg-amber-700 px-3 py-1 text-sm font-medium text-white hover:bg-amber-800"
                   >
                     確認覆蓋
                   </button>

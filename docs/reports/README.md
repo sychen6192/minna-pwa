@@ -28,3 +28,7 @@
 | SEO | 100 |
 
 基線分數供 T7.4 收尾(bundle 預算、a11y 快掃)比對。
+
+## 更新(2026-07-05,T7.4)
+
+對比度修正後重測 Accessibility:**95 → 100**(無失敗 audit)。首頁 bundle 量測見 `bundle.md`。

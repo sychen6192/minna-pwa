@@ -69,14 +69,14 @@ export function UpdatePrompt({
           <button
             type="button"
             onClick={() => setUpdateReady(false)}
-            className="rounded px-3 py-1 text-sm text-neutral-500 hover:bg-neutral-100"
+            className="rounded px-3 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
           >
             稍後
           </button>
           <button
             type="button"
             onClick={applyUpdate}
-            className="rounded bg-sky-600 px-3 py-1 text-sm font-medium text-white hover:bg-sky-700"
+            className="rounded bg-sky-700 px-3 py-1 text-sm font-medium text-white hover:bg-sky-800"
           >
             立即更新
           </button>

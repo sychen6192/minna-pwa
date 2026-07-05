@@ -78,7 +78,7 @@ export function LessonDetail({ id }: { id: number }) {
 
   if (!lesson) {
     return (
-      <p className="px-4 py-8 text-center text-sm text-foreground/50">
+      <p className="px-4 py-8 text-center text-sm text-foreground/60">
         載入中…
       </p>
     );
@@ -88,7 +88,7 @@ export function LessonDetail({ id }: { id: number }) {
     <div>
       <header className="flex items-start justify-between px-4 py-3">
         <div className="min-w-0">
-          <div className="text-xs text-foreground/50">第 {lesson.id} 課</div>
+          <div className="text-xs text-foreground/60">第 {lesson.id} 課</div>
           <h1 className="text-lg font-bold">{lesson.title}</h1>
         </div>
         <button
@@ -113,7 +113,7 @@ export function LessonDetail({ id }: { id: number }) {
               "flex-1 py-2 text-sm transition-colors",
               tab === key
                 ? "border-b-2 border-foreground font-medium"
-                : "text-foreground/50",
+                : "text-foreground/60",
             )}
           >
             {label}
@@ -176,17 +176,17 @@ function VocabList({
                     type="button"
                     aria-label={`播放 ${v.kana} 的發音`}
                     onClick={() => speak(v.kana)}
-                    className="shrink-0 text-foreground/40 transition-colors active:text-foreground"
+                    className="shrink-0 text-foreground/60 transition-colors active:text-foreground"
                   >
                     <Volume2 className="size-4" aria-hidden />
                   </button>
                 </span>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="text-xs text-foreground/50">{v.pos}</span>
+                  <span className="text-xs text-foreground/60">{v.pos}</span>
                   {isAdded ? (
                     <span
                       aria-label={`${v.kana} 已加入複習`}
-                      className="text-green-600"
+                      className="text-green-700"
                     >
                       <Check className="size-4" aria-hidden />
                     </span>
@@ -195,7 +195,7 @@ function VocabList({
                       type="button"
                       aria-label={`加入複習:${v.kana}`}
                       onClick={() => onAddOne(v.id)}
-                      className="text-foreground/40 transition-colors active:text-foreground"
+                      className="text-foreground/60 transition-colors active:text-foreground"
                     >
                       <Plus className="size-4" aria-hidden />
                     </button>
@@ -204,7 +204,7 @@ function VocabList({
               </div>
               <div className="text-sm text-foreground/70">{v.meaning}</div>
               {v.note && (
-                <div className="text-xs text-foreground/40">{v.note}</div>
+                <div className="text-xs text-foreground/60">{v.note}</div>
               )}
             </li>
           );
@@ -240,7 +240,7 @@ function GrammarList({
                 <div>
                   <RubyText segments={s.ruby} furigana={furigana} />
                 </div>
-                <div className="text-xs text-foreground/50">
+                <div className="text-xs text-foreground/60">
                   {s.translation}
                 </div>
               </li>
@@ -267,12 +267,12 @@ function DialogueList({
       {lesson.dialogues.map((d) => (
         <li key={d.id} className="py-2">
           {d.speaker && (
-            <div className="text-xs text-foreground/50">{d.speaker}</div>
+            <div className="text-xs text-foreground/60">{d.speaker}</div>
           )}
           <div>
             <RubyText segments={d.ruby} furigana={furigana} />
           </div>
-          <div className="text-xs text-foreground/50">{d.translation}</div>
+          <div className="text-xs text-foreground/60">{d.translation}</div>
         </li>
       ))}
     </ul>
@@ -281,7 +281,7 @@ function DialogueList({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-4 py-8 text-center text-sm text-foreground/40">
+    <p className="px-4 py-8 text-center text-sm text-foreground/60">
       {children}
     </p>
   );

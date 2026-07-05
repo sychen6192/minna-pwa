@@ -47,7 +47,7 @@ export function BottomNav() {
             aria-current={active ? "page" : undefined}
             className={cn(
               "flex flex-1 flex-col items-center gap-1 py-2 text-xs transition-colors",
-              active ? "text-foreground" : "text-foreground/50",
+              active ? "text-foreground" : "text-foreground/60",
             )}
           >
             <Icon className="size-5" aria-hidden />

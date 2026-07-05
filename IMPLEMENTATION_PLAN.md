@@ -148,6 +148,6 @@
   做什麼:新增 `docs/DEPLOY.md`——Cloudflare Pages 設定、**Cloudflare Access 規則(必須,版權)**、自訂網域;Actions 自動部署。
   驗收:照文件可從零完成一次部署,未授權訪問被 Access 擋下。
 
-- [ ] **T7.4 收尾**
-  做什麼:bundle 預算檢查(N4:首頁 gzip < 200 KB)、鍵盤 / 對比度快掃、README 更新為實際狀態。
+- [x] **T7.4 收尾**
+  做什麼:bundle 預算檢查(N4:首頁 gzip < 200 KB)、鍵盤 / 對比度快掃、README 更新為實際狀態。補 `/quiz` 選課入口頁(BottomNav 既有連結原為 404)。
   驗收:`pnpm build` 輸出體積記錄於 PR;README 與現況一致。

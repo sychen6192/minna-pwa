@@ -10,9 +10,9 @@ interface RatingDef {
 
 const RATINGS: RatingDef[] = [
   { rating: 1, key: "again", label: "重來", className: "text-red-600" },
-  { rating: 2, key: "hard", label: "困難", className: "text-orange-600" },
-  { rating: 3, key: "good", label: "良好", className: "text-green-600" },
-  { rating: 4, key: "easy", label: "輕鬆", className: "text-sky-600" },
+  { rating: 2, key: "hard", label: "困難", className: "text-orange-700" },
+  { rating: 3, key: "good", label: "良好", className: "text-green-700" },
+  { rating: 4, key: "easy", label: "輕鬆", className: "text-sky-700" },
 ];
 
 function formatDays(days: number): string {
@@ -46,10 +46,10 @@ export function RatingButtons({
           )}
         >
           <span className="text-sm font-medium">{label}</span>
-          <span className="text-[10px] text-foreground/50">
+          <span className="text-[10px] text-foreground/60">
             {previews ? formatDays(previews[key].days) : "—"}
           </span>
-          <span className="text-[10px] text-foreground/30">{rating}</span>
+          <span className="text-[10px] text-foreground/60">{rating}</span>
         </button>
       ))}
     </div>

@@ -55,7 +55,7 @@ export function PwaSetup() {
           <button
             type="button"
             onClick={dismiss}
-            className="rounded px-3 py-1 text-sm font-medium text-sky-600 hover:bg-sky-50"
+            className="rounded px-3 py-1 text-sm font-medium text-sky-700 hover:bg-sky-50"
           >
             知道了
           </button>
