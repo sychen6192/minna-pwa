@@ -20,6 +20,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#0284c7",
+  // 延伸至 iOS 瀏海/Home indicator 區,配合 safe-area-inset-* 定位
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -31,8 +33,8 @@ export default function RootLayout({
     <html lang="zh-Hant">
       <body className="antialiased">
         <div className="mx-auto flex min-h-screen max-w-screen-sm flex-col">
-          {/* pb-16 預留底部導覽高度 */}
-          <main className="flex-1 pb-16">{children}</main>
+          {/* 預留底部導覽高度(4rem + iOS safe-area) */}
+          <main className="flex-1 pb-[calc(4rem_+_env(safe-area-inset-bottom))]">{children}</main>
           <BottomNav />
           <PwaSetup />
           {/* 置於 PwaSetup 之後:同位置重疊時更新提示優先顯示 */}

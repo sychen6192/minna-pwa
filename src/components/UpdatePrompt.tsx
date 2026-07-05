@@ -61,7 +61,7 @@ export function UpdatePrompt({
   return (
     <section
       aria-label="更新提示"
-      className="fixed inset-x-0 bottom-16 z-50 mx-auto max-w-screen-sm px-4 pb-2"
+      className="fixed inset-x-0 bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-50 mx-auto max-w-screen-sm px-4 pb-2"
     >
       <div className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
         <p className="text-sm text-neutral-800">新版本已就緒。</p>

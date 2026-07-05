@@ -36,7 +36,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label="主導覽"
-      className="fixed inset-x-0 bottom-0 z-10 mx-auto flex max-w-screen-sm border-t border-foreground/10 bg-background"
+      className="fixed inset-x-0 bottom-0 z-10 mx-auto flex max-w-screen-sm border-t border-foreground/10 bg-background pb-[env(safe-area-inset-bottom)]"
     >
       {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
         const active = isActive(pathname, href);
