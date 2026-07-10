@@ -2,7 +2,7 @@
 
 以《大家的日本語》初級 I・II(共 50 課)為內容的**單一使用者**日語學習 PWA。內容於建置期由 PDF 抽成結構化 JSON,執行期為完全離線的純靜態應用。
 
-> ⚠️ **版權**:教材內容受著作權保護,僅供個人學習使用。本 repo 必須維持 **private**,部署必須置於 Cloudflare Access 之後(見 `docs/DEPLOY.md`),原始 PDF 永不入庫。
+> ⚠️ **版權**:教材內容受著作權保護,僅供個人學習使用。本 repo 必須維持 **private**,原始 PDF 永不入庫。部署為公開網址(2026-07-10 決定,使用者自承版權風險;見 `docs/DEPLOY.md`),已設 noindex,**請勿散佈網址**。
 
 ## 功能(v1 現況)
 
@@ -28,7 +28,7 @@ PDF 具文字層,採 `pdftotext -layout` 抽文字 → Claude Code 依 `docs/PIP
 
 ## 部署
 
-GitHub Actions:push `main` → verify + build → `wrangler pages deploy` 至 Cloudflare Pages。完整設定(API token、secrets、**Cloudflare Access 必須步驟**、PWA×Access 注意事項)見 `docs/DEPLOY.md`。
+GitHub Actions:push `main` → verify + build → `wrangler pages deploy` 至 Cloudflare Pages(公開網址 + noindex)。完整設定(API token、secrets、noindex 驗證)見 `docs/DEPLOY.md`。
 
 ## 品質基線(2026-07,詳見 `docs/reports/`)
 
@@ -51,7 +51,7 @@ GitHub Actions:push `main` → verify + build → `wrangler pages deploy` 至 Cl
 | `docs/ARCHITECTURE.md` | 架構、技術選型、目錄結構、ADR |
 | `docs/DATA_MODEL.md` | Zod / Dexie 資料契約 |
 | `docs/PIPELINE.md` | PDF 抽取管線規格與收錄慣例 |
-| `docs/DEPLOY.md` | Cloudflare Pages + Access 部署指南 |
+| `docs/DEPLOY.md` | Cloudflare Pages 部署指南(公開 + noindex) |
 | `docs/reports/` | Lighthouse 與 bundle 量測報告 |
 | `IMPLEMENTATION_PLAN.md` | 任務清單與驗收(30 項) |
 

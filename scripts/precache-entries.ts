@@ -10,7 +10,9 @@ export interface PrecacheEntry {
 // @serwist/next 一旦收到 additionalPrecacheEntries 就會「取代」內建的 public/ 掃描
 // (見其 src/index.ts 的 resolvedManifestEntries 分支),因此這裡鏡射其排除規則:
 // SW 產物自身不可進 precache manifest。
-const SW_ARTIFACTS = [/^sw\.js$/, /^sw\.js\.map$/, /^swe-worker-.*\.js$/];
+// _headers / _redirects 是 Cloudflare Pages 平台設定檔:會部署但不對外供應,
+// 進了 manifest 會使 SW precache 404、安裝失敗。
+const EXCLUDED = [/^sw\.js$/, /^sw\.js\.map$/, /^swe-worker-.*\.js$/, /^_headers$/, /^_redirects$/];
 
 /** 遞迴收集 public/ 下所有檔案,以內容 hash 為 revision(內容未變即不重新下載)。 */
 export function collectPublicEntries(publicDir: string): PrecacheEntry[] {
@@ -23,7 +25,7 @@ export function collectPublicEntries(publicDir: string): PrecacheEntry[] {
       const rel = relPrefix ? `${relPrefix}/${dirent.name}` : dirent.name;
       if (dirent.isDirectory()) {
         walk(join(dir, dirent.name), rel);
-      } else if (dirent.isFile() && !SW_ARTIFACTS.some((re) => re.test(rel))) {
+      } else if (dirent.isFile() && !EXCLUDED.some((re) => re.test(rel))) {
         const content = readFileSync(join(dir, dirent.name));
         entries.push({
           url: `/${rel}`,

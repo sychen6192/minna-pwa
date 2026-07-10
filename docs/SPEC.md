@@ -63,7 +63,7 @@
 - **N3 iOS Safari**:啟動時呼叫 `navigator.storage.persist()`;未安裝時提示加入主畫面
 - **N4 效能**:首頁 JS bundle(gzip)< 200 KB;課程頁間切換無感
 - **N5 純靜態**:無任何 runtime 後端,可部署於任何靜態主機
-- **N6 版權**:內容僅個人使用;部署必須置於存取控制之後(Cloudflare Access)
+- **N6 版權**:內容僅個人使用;repo 維持 private、原始 PDF 永不入庫。部署為公開網址(2026-07-10 修訂:捨棄原 Cloudflare Access 方案,改為免登入公開使用,風險由使用者自行承擔),以 noindex(meta robots + `X-Robots-Tag`)降低曝光,不主動散佈網址
 
 ## 5. v1 範圍外(明確不做)
 

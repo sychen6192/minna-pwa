@@ -58,6 +58,18 @@ describe("collectPublicEntries", () => {
 
     expect(urls).toEqual(["/data/keep.json"]);
   });
+
+  it("排除 Cloudflare Pages 平台檔(_headers、_redirects;僅根層,平台不供應)", () => {
+    const dir = makePublicDir();
+    mkdirSync(join(dir, "data"), { recursive: true });
+    writeFileSync(join(dir, "_headers"), "/*\n  X-Robots-Tag: noindex\n");
+    writeFileSync(join(dir, "_redirects"), "");
+    writeFileSync(join(dir, "data/keep.json"), "{}");
+
+    const urls = collectPublicEntries(dir).map((e) => e.url);
+
+    expect(urls).toEqual(["/data/keep.json"]);
+  });
 });
 
 describe("buildRouteEntries", () => {

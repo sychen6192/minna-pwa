@@ -7,7 +7,7 @@ flowchart TD
   A["50 份 PDF<br/>pipeline/input(不入庫)"] --> B["抽取與結構化<br/>PyMuPDF + Claude Batch API"]
   B --> C["lessons JSON ×50 + index.json<br/>Zod 驗證(pnpm validate:content)"]
   C --> D["Git repo(private)"]
-  D --> E["GitHub Actions → Cloudflare Pages<br/>+ Cloudflare Access"]
+  D --> E["GitHub Actions → Cloudflare Pages<br/>(公開網址,noindex)"]
   E --> F["PWA:Next.js App Shell<br/>+ Serwist Service Worker"]
   F --> G[("IndexedDB / Dexie<br/>卡片狀態・複習紀錄・設定")]
   F --> H["ts-fsrs 排程引擎"]
@@ -47,7 +47,7 @@ flowchart TD
 
 ### 部署
 
-GitHub Actions(CI:verify + build;CD:Cloudflare Pages)+ Cloudflare Access(存取控制,版權要求)。
+GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,以 noindex 降低曝光(見 D7)。
 
 ## 3. 目錄結構(目標狀態)
 
@@ -107,5 +107,5 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)+ Cloudflare Access(存取�
 | D4 | furigana 於抽取期定稿為 ruby 分段;runtime 不用 kuroshiro 斷詞 | 教材讀音是 ground truth,斷詞器對教材詞彙會猜錯 |
 | D5 | FSRS(ts-fsrs)取代 SM-2;複習 logs 全留 | 排程效率;之後可用個人紀錄跑 FSRS optimizer 調參 |
 | D6 | 使用者資料僅存 IndexedDB;備援 = JSON 匯出/匯入 | 無後端前提下最簡可靠;同步留待 v2(Workers + D1) |
-| D7 | repo 私有 + Cloudflare Access | 教材版權,內容不可公開存取 |
+| D7 | repo 私有;部署公開 + noindex(2026-07-10 修訂,原方案為 Cloudflare Access) | 使用者要求免登入直接使用並自承版權風險;以 noindex 與不散佈網址降低曝光 |
 | D8 | 套件 API 不確定時一律查官方文件(Serwist / ts-fsrs / Dexie / Next 15) | 這幾個套件 API 迭代快,憑記憶實作風險高 |

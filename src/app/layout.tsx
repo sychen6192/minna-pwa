@@ -7,6 +7,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "みんなの日本語 學習",
   description: "《大家的日本語》初級 I・II 個人學習 PWA",
+  // N6 版權緩解:公開部署但不讓搜尋引擎收錄(另有 public/_headers 的 X-Robots-Tag)
+  robots: { index: false, follow: false },
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

@@ -144,9 +144,9 @@
   做什麼:依 DATA_MODEL §3;匯入與重置皆雙重確認。`/settings` 頁一併涵蓋 F6.1 設定控制(每日新卡/複習上限、TTS、furigana)。
   驗收:匯出 → 重置 → 匯入後,卡片狀態與統計完全還原(測試覆蓋)。
 
-- [ ] **T7.3 部署文件化**
-  做什麼:新增 `docs/DEPLOY.md`——Cloudflare Pages 設定、**Cloudflare Access 規則(必須,版權)**、自訂網域;Actions 自動部署。
-  驗收:照文件可從零完成一次部署,未授權訪問被 Access 擋下。
+- [x] **T7.3 部署文件化**
+  做什麼:新增 `docs/DEPLOY.md`——Cloudflare Pages 設定、自訂網域;Actions 自動部署。部署採公開網址(2026-07-10 修訂,原 Cloudflare Access 方案撤回,見 SPEC N6 / ADR D7),站台加 noindex(meta robots + `X-Robots-Tag`)。
+  驗收:照文件可從零完成一次部署;站點公開可用且 noindex 生效(HTML meta 與資料檔 header 皆驗證)。
 
 - [x] **T7.4 收尾**
   做什麼:bundle 預算檢查(N4:首頁 gzip < 200 KB)、鍵盤 / 對比度快掃、README 更新為實際狀態。補 `/quiz` 選課入口頁(BottomNav 既有連結原為 404)。
