@@ -176,6 +176,7 @@ settings 預設值(首次啟動寫入):
 |---|---|
 | `newPerDay` | 10 |
 | `maxReviewsPerDay` | 200 |
+| `dailyGoal` | 20(每日複習目標張數,首頁進度環) |
 | `ttsEnabled` | true |
 | `furigana` | `"show"`(`show` \| `hide`) |
 | `installPromptDismissed` | false(加入主畫面提示已被關閉) |

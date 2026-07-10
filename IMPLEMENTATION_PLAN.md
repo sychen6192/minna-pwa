@@ -168,8 +168,9 @@
   做什麼:依 `lapses` 門檻(4,對標 Anki leech)偵測頑固卡;首頁琥珀色警示顯示數量並連到 `/practice`。新增 `/practice` 頑固卡練習頁——翻卡練習(依 lapses 由多到少、含例句與發音),純曝光不改 FSRS 排程。srs.ts 新增 `isLeech`/`countLeeches`/`getLeeches`;抽出共用 `SpeakButton` 元件(複習頁共用)。
   驗收:srs leech 單元測試;練習頁(空/翻卡/逐張完成)與首頁警示測試;`/practice` 入 SW precache。
 
-- [ ] **T8.3 Streak + 每日目標**
-  做什麼:由 logs 算連續學習天數 + 今日目標進度,顯示於儀表板(溫和單人版)。
+- [x] **T8.3 Streak + 每日目標**
+  做什麼:由 logs 算連續學習天數(含今日未複習的寬限)+ 今日目標進度環,顯示於儀表板(溫和單人版,無社交)。stats.ts 新增 `computeStreak`/`reviewsToday`;新增 `dailyGoal` 設定(預設 20)與設定頁控制;DATA_MODEL 同步。
+  驗收:`computeStreak`/`reviewsToday` 單元測試(連續/中斷/寬限/空);首頁 streak 卡測試;`pnpm verify` 全綠。
 
 - [ ] **T8.4 課程列表真實進度**
   做什麼:課程列表右側「未開始」佔位接上實際狀態(未開始/進行中/已完成),源自各課 added·learned。

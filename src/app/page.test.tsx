@@ -31,7 +31,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
 }
 
 beforeEach(async () => {
-  await db.cards.clear();
+  await Promise.all([db.cards.clear(), db.logs.clear()]);
 });
 
 describe("Home(今日儀表板)", () => {
@@ -59,6 +59,24 @@ describe("Home(今日儀表板)", () => {
     // 已開始 2 課、累計 3 張
     expect(screen.getByText(/已開始課程/).parentElement).toHaveTextContent("2 / 2 課");
     expect(screen.getByText(/累計卡片/).parentElement).toHaveTextContent("3 張");
+  });
+
+  it("有複習紀錄:顯示連續天數與今日目標進度", async () => {
+    await db.cards.bulkAdd([card({ cardId: "L01-V001", lessonId: 1 })]);
+    const nowMs = Date.now();
+    await db.logs.bulkAdd([
+      { cardId: "L01-V001", rating: 3, state: 2, due: nowMs, elapsedDays: 0, reviewedAt: nowMs },
+      { cardId: "L01-V001", rating: 3, state: 2, due: nowMs, elapsedDays: 0, reviewedAt: nowMs },
+    ]);
+
+    render(<Home />);
+
+    const card_ = (await screen.findByText("連續學習天數")).closest("section");
+    expect(card_).toBeInTheDocument();
+    // 今日 2 筆 / 目標 20;連續 1 天
+    expect(card_).toHaveTextContent("🔥 1");
+    expect(card_).toHaveTextContent("2 / 20");
+    expect(card_).toHaveTextContent("今日目標");
   });
 
   it("有頑固卡:顯示警示並連到 /practice", async () => {

@@ -41,7 +41,10 @@ export default function SettingsPage() {
     void getAllSettings().then(setSettings);
   }, []);
 
-  function updateNumber(key: "newPerDay" | "maxReviewsPerDay", rawValue: string) {
+  function updateNumber(
+    key: "newPerDay" | "maxReviewsPerDay" | "dailyGoal",
+    rawValue: string,
+  ) {
     const value = Number(rawValue);
     if (rawValue === "" || !Number.isInteger(value) || value < 0) return;
     void setSetting(key, value);
@@ -136,6 +139,16 @@ export default function SettingsPage() {
               aria-label="每日複習上限"
               defaultValue={settings.maxReviewsPerDay}
               onChange={(e) => updateNumber("maxReviewsPerDay", e.target.value)}
+              className="w-20 rounded border border-neutral-300 px-2 py-1 text-right"
+            />
+          </FieldRow>
+          <FieldRow label="每日目標張數">
+            <input
+              type="number"
+              min={0}
+              aria-label="每日目標張數"
+              defaultValue={settings.dailyGoal}
+              onChange={(e) => updateNumber("dailyGoal", e.target.value)}
               className="w-20 rounded border border-neutral-300 px-2 py-1 text-right"
             />
           </FieldRow>

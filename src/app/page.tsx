@@ -8,22 +8,79 @@ type Phase = "loading" | "ready" | "error";
 
 // 資料層(Dexie / ts-fsrs / content)於首屏後才需要;動態載入使其不計入
 // 首頁 first-load bundle(N4:首頁 JS gzip < 200 KB)。type 匯入已於編譯期抹除。
-async function loadDashboard(
-  now: number,
-): Promise<{ due: number; leeches: number; summary: StudySummary }> {
-  const [{ db }, { getLessonIndex }, srs, { studySummary }] = await Promise.all([
+interface Dashboard {
+  due: number;
+  leeches: number;
+  summary: StudySummary;
+  streak: number;
+  todayCount: number;
+  dailyGoal: number;
+}
+
+async function loadDashboard(now: number): Promise<Dashboard> {
+  const [{ db, getSetting }, { getLessonIndex }, srs, stats] = await Promise.all([
     import("@/lib/db"),
     import("@/lib/content"),
     import("@/lib/srs"),
     import("@/lib/stats"),
   ]);
-  const [cards, index, due, leeches] = await Promise.all([
+  const nowDate = new Date(now);
+  const [cards, logs, index, due, leeches, dailyGoal] = await Promise.all([
     db.cards.toArray(),
+    db.logs.toArray(),
     getLessonIndex(),
     srs.countDue(now),
     srs.countLeeches(),
+    getSetting("dailyGoal"),
   ]);
-  return { due, leeches, summary: studySummary(cards, index) };
+  return {
+    due,
+    leeches,
+    summary: stats.studySummary(cards, index),
+    streak: stats.computeStreak(logs, nowDate),
+    todayCount: stats.reviewsToday(logs, nowDate),
+    dailyGoal,
+  };
+}
+
+/** 連續天數 + 今日目標進度。 */
+function StreakGoalCard({
+  streak,
+  todayCount,
+  dailyGoal,
+}: {
+  streak: number;
+  todayCount: number;
+  dailyGoal: number;
+}) {
+  const pct = dailyGoal > 0 ? Math.min(100, Math.round((todayCount / dailyGoal) * 100)) : 100;
+  const met = todayCount >= dailyGoal;
+  return (
+    <section className="rounded-xl border border-foreground/10 p-4">
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="text-2xl font-bold tabular-nums">🔥 {streak}</div>
+          <div className="text-xs text-foreground/60">連續學習天數</div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm tabular-nums">
+            <span className="font-bold">{todayCount}</span>
+            <span className="text-foreground/60"> / {dailyGoal}</span>
+          </div>
+          <div className="text-xs text-foreground/60">今日目標</div>
+        </div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-foreground/10">
+        <div
+          className={met ? "h-full rounded-full bg-green-600" : "h-full rounded-full bg-sky-600"}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {met && (
+        <p className="mt-2 text-xs text-green-700 dark:text-green-400">今日目標已達成 🎉</p>
+      )}
+    </section>
+  );
 }
 
 /** 今日複習 Hero:依「空 DB / 有到期 / 無到期」三態切換主行動。 */
@@ -84,9 +141,7 @@ function QuickLink({ href, label }: { href: string; label: string }) {
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [due, setDue] = useState(0);
-  const [leeches, setLeeches] = useState(0);
-  const [summary, setSummary] = useState<StudySummary | null>(null);
+  const [data, setData] = useState<Dashboard | null>(null);
   // 進頁面時定格,避免 due 隨 render 時間飄移
   const [now] = useState(() => Date.now());
 
@@ -94,11 +149,9 @@ export default function Home() {
     let active = true;
     (async () => {
       try {
-        const { due: dueCount, leeches: leechCount, summary: s } = await loadDashboard(now);
+        const d = await loadDashboard(now);
         if (!active) return;
-        setDue(dueCount);
-        setLeeches(leechCount);
-        setSummary(s);
+        setData(d);
         setPhase("ready");
       } catch (err) {
         if (active) {
@@ -127,18 +180,26 @@ export default function Home() {
         <p className="py-8 text-center text-sm text-foreground/60">載入中…</p>
       )}
 
-      {phase === "ready" && summary && (
+      {phase === "ready" && data && (
         <div className="space-y-6">
-          <HeroCard due={due} hasCards={summary.totalCards > 0} />
+          <HeroCard due={data.due} hasCards={data.summary.totalCards > 0} />
 
-          {leeches > 0 && (
+          {data.summary.totalCards > 0 && (
+            <StreakGoalCard
+              streak={data.streak}
+              todayCount={data.todayCount}
+              dailyGoal={data.dailyGoal}
+            />
+          )}
+
+          {data.leeches > 0 && (
             <Link
               href="/practice"
               className="flex items-center justify-between rounded-xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 transition-colors active:bg-amber-500/[0.15]"
             >
               <div>
                 <div className="text-sm font-medium text-amber-700 dark:text-amber-400">
-                  {leeches} 張頑固卡需要加強
+                  {data.leeches} 張頑固卡需要加強
                 </div>
                 <div className="text-xs text-foreground/60">一再答錯的字,點此集中練習</div>
               </div>
@@ -152,12 +213,12 @@ export default function Home() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-foreground/60">已開始課程</span>
               <span className="font-medium tabular-nums">
-                {summary.startedLessons} / {summary.totalLessons} 課
+                {data.summary.startedLessons} / {data.summary.totalLessons} 課
               </span>
             </div>
             <div className="mt-2 flex items-center justify-between text-sm">
               <span className="text-foreground/60">累計卡片</span>
-              <span className="font-medium tabular-nums">{summary.totalCards} 張</span>
+              <span className="font-medium tabular-nums">{data.summary.totalCards} 張</span>
             </div>
           </section>
 

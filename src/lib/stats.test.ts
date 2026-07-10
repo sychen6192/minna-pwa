@@ -1,10 +1,12 @@
 import type { LessonIndex } from "@/schemas/lesson";
 import type { CardRow, LogRow } from "./db";
 import {
+  computeStreak,
   dailyReviewCounts,
   dueForecast,
   lessonProgress,
   retentionRate,
+  reviewsToday,
   studySummary,
   weeklyRetention,
 } from "./stats";
@@ -230,5 +232,64 @@ describe("studySummary", () => {
       totalLessons: 3,
       totalCards: 3,
     });
+  });
+});
+
+describe("reviewsToday", () => {
+  it("只計今日(本地時區)的複習筆數", () => {
+    const logs = [
+      log({ reviewedAt: now.getTime() }),
+      log({ reviewedAt: now.getTime() - 3 * 3600_000 }), // 今日稍早
+      log({ reviewedAt: now.getTime() - DAY }), // 昨日
+    ];
+    expect(reviewsToday(logs, now)).toBe(2);
+    expect(reviewsToday([], now)).toBe(0);
+  });
+});
+
+describe("computeStreak", () => {
+  it("無紀錄為 0", () => {
+    expect(computeStreak([], now)).toBe(0);
+  });
+
+  it("今日 + 連續前幾日 → 累計天數", () => {
+    const logs = [
+      log({ reviewedAt: now.getTime() }),
+      log({ reviewedAt: now.getTime() - DAY }),
+      log({ reviewedAt: now.getTime() - 2 * DAY }),
+    ];
+    expect(computeStreak(logs, now)).toBe(3);
+  });
+
+  it("中斷即停止(缺前天則只算今日與昨日)", () => {
+    const logs = [
+      log({ reviewedAt: now.getTime() }),
+      log({ reviewedAt: now.getTime() - DAY }),
+      // 缺 -2 天
+      log({ reviewedAt: now.getTime() - 3 * DAY }),
+    ];
+    expect(computeStreak(logs, now)).toBe(2);
+  });
+
+  it("今日尚未複習但昨日有 → 寬限,仍計昨日往前", () => {
+    const logs = [
+      log({ reviewedAt: now.getTime() - DAY }),
+      log({ reviewedAt: now.getTime() - 2 * DAY }),
+    ];
+    expect(computeStreak(logs, now)).toBe(2);
+  });
+
+  it("最近一次在兩天前(今日與昨日皆無)→ 0", () => {
+    const logs = [log({ reviewedAt: now.getTime() - 2 * DAY })];
+    expect(computeStreak(logs, now)).toBe(0);
+  });
+
+  it("同一天多筆只算一天", () => {
+    const logs = [
+      log({ reviewedAt: now.getTime() }),
+      log({ reviewedAt: now.getTime() - 3600_000 }),
+      log({ reviewedAt: now.getTime() - DAY }),
+    ];
+    expect(computeStreak(logs, now)).toBe(2);
   });
 });

@@ -41,6 +41,7 @@ export interface SettingsRow {
 export interface Settings {
   newPerDay: number;
   maxReviewsPerDay: number;
+  dailyGoal: number; // 每日複習目標張數(首頁進度環,T8.3)
   ttsEnabled: boolean;
   furigana: "show" | "hide";
   installPromptDismissed: boolean; // 安裝提示已被使用者關閉(T6.3)
@@ -49,6 +50,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   newPerDay: 10,
   maxReviewsPerDay: 200,
+  dailyGoal: 20,
   ttsEnabled: true,
   furigana: "show",
   installPromptDismissed: false,

@@ -147,3 +147,30 @@ export function studySummary(cards: CardRow[], index: LessonIndex): StudySummary
     totalCards: cards.length,
   };
 }
+
+/** 今日(本地時區)已複習張數。 */
+export function reviewsToday(logs: LogRow[], now: Date): number {
+  const key = localDateKey(now);
+  return logs.filter((l) => localDateKey(new Date(l.reviewedAt)) === key).length;
+}
+
+/**
+ * 連續學習天數:從今天(若今日已複習)或昨天(今日尚未複習的寬限)往回,
+ * 連續每天都有 ≥1 筆複習紀錄的天數。今日與昨日皆無紀錄則為 0。
+ */
+export function computeStreak(logs: LogRow[], now: Date): number {
+  const days = new Set(logs.map((l) => localDateKey(new Date(l.reviewedAt))));
+  if (days.size === 0) return 0;
+
+  let anchor = shiftDays(now, 0); // 今日 00:00(本地)
+  if (!days.has(localDateKey(anchor))) {
+    anchor = shiftDays(now, -1); // 今日未複習 → 從昨日起算(寬限)
+    if (!days.has(localDateKey(anchor))) return 0;
+  }
+
+  let streak = 0;
+  for (let d = anchor; days.has(localDateKey(d)); d = shiftDays(d, -1)) {
+    streak++;
+  }
+  return streak;
+}
