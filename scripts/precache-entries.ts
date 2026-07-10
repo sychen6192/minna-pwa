@@ -45,6 +45,7 @@ export function buildRouteEntries(lessonIds: number[], revision: string): Precac
   const routes = [
     "/",
     "/lessons",
+    "/grammar",
     "/review",
     "/practice",
     "/stats",

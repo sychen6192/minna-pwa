@@ -76,7 +76,7 @@ describe("buildRouteEntries", () => {
   it("涵蓋固定頁面與每課的 lessons / quiz 路由", () => {
     const urls = buildRouteEntries([1, 2], "rev1").map((e) => e.url);
 
-    for (const expected of ["/", "/lessons", "/review", "/practice", "/stats", "/settings", "/quiz", "/lessons/1", "/lessons/2", "/quiz/1", "/quiz/2"]) {
+    for (const expected of ["/", "/lessons", "/grammar", "/review", "/practice", "/stats", "/settings", "/quiz", "/lessons/1", "/lessons/2", "/quiz/1", "/quiz/2"]) {
       expect(urls).toContain(expected);
     }
   });
@@ -89,10 +89,10 @@ describe("buildRouteEntries", () => {
     }
   });
 
-  it("條目數 =(固定 7 頁 + 每課 2 頁)× 2,且全部使用指定 revision", () => {
+  it("條目數 =(固定 8 頁 + 每課 2 頁)× 2,且全部使用指定 revision", () => {
     const entries = buildRouteEntries([1, 2, 3], "build-abc");
 
-    expect(entries).toHaveLength((7 + 3 * 2) * 2);
+    expect(entries).toHaveLength((8 + 3 * 2) * 2);
     for (const entry of entries) {
       expect(entry.revision).toBe("build-abc");
     }

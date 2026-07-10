@@ -52,6 +52,18 @@ export function LessonDetail({ id }: { id: number }) {
     };
   }, [lesson]);
 
+  // 文法錨點深連結(F4.1):#Lxx-Gxx → 切至文型分頁並捲動到該文法點
+  useEffect(() => {
+    if (!lesson) return;
+    const hash = decodeURIComponent(window.location.hash.slice(1));
+    if (!/-G\d+$/.test(hash)) return;
+    setTab("grammar");
+    // 等文型分頁渲染完成後捲動
+    requestAnimationFrame(() => {
+      document.getElementById(hash)?.scrollIntoView({ block: "start" });
+    });
+  }, [lesson]);
+
   const addOne = useCallback(
     async (cardId: string) => {
       if (!lesson) return;

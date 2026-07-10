@@ -222,8 +222,9 @@ export default function Home() {
             </div>
           </section>
 
-          <nav className="grid grid-cols-3 gap-3" aria-label="快捷入口">
+          <nav className="grid grid-cols-4 gap-3" aria-label="快捷入口">
             <QuickLink href="/lessons" label="課程" />
+            <QuickLink href="/grammar" label="文法" />
             <QuickLink href="/quiz" label="測驗" />
             <QuickLink href="/stats" label="統計" />
           </nav>

@@ -175,3 +175,13 @@
 - [x] **T8.4 課程列表真實進度**
   做什麼:課程列表右側「未開始」佔位接上實際狀態(未開始/進行中/已完成),源自各課 added·learned。stats.ts 新增 `lessonStatus`;列表頁讀 `db.cards` 計算並以色彩徽章顯示。
   驗收:`lessonStatus` 單元測試(四態);列表頁狀態渲染測試。
+
+## Phase 9 — 對標強化 Tier 2(2026-07-10 追加)
+
+- [x] **T9.1 文法速查 + 全文檢索**(SPEC F4)
+  做什麼:新增 `/grammar` 文法速查頁——跨課文法列表(課號排序)+ MiniSearch 客戶端全文檢索(涵蓋文型、解說、例句、單字;CJK bigram tokenizer)。搜尋結果跳課程內頁錨點(LessonDetail 讀 hash 自動切文型分頁並捲動)。入口:首頁快捷(4 格),BottomNav 維持 6 分頁。索引於首次使用時以全 50 課建構(已 precache,離線可用),模組層快取。
+  驗收:search.ts 單元測試(四類文件命中、CJK 子字串、空查詢);文法頁與 hash 切分頁測試;`/grammar` 入 precache;`pnpm verify` 全綠。
+
+- [ ] **T9.2 回想方向雙向卡**(義→日,設定可開關)
+- [ ] **T9.3 可 suspend / 跳過已會 + 自訂課序**
+- [ ] **T9.4 統計加 SRS 階段分布 + 可設 Desired Retention**

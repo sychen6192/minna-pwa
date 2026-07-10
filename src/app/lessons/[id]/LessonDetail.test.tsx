@@ -97,6 +97,23 @@ describe("LessonDetail", () => {
     expect(container.querySelectorAll("rt")).toHaveLength(0);
   });
 
+  it("hash 文法錨點深連結(#L13-G01):自動切至文型分頁並捲動", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    // jsdom 未實作 scrollIntoView,stub 之
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    window.location.hash = "#L13-G01";
+
+    render(<LessonDetail id={13} />);
+
+    expect(await screen.findByText("(名詞)が ほしいです")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "文型" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    window.location.hash = "";
+  });
+
   it("切換到文型分頁:顯示文型、隱藏単語", async () => {
     getLesson.mockResolvedValue(sampleLesson);
     const user = userEvent.setup();
