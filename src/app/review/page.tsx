@@ -15,6 +15,7 @@ import {
   countDue,
   previewIntervals,
   rate,
+  setSuspended,
   type IntervalPreviews,
   type ReviewRating,
 } from "@/lib/srs";
@@ -124,25 +125,37 @@ export default function ReviewPage() {
     };
   }, [phase, index, items]);
 
+  const advance = useCallback(async () => {
+    const next = index + 1;
+    if (next >= items.length) {
+      const due = await countDue(Date.now() + DAY);
+      setTomorrowDue(due);
+      setPhase("summary");
+    } else {
+      setIndex(next);
+      setFlipped(false);
+      setPreviews(null);
+    }
+  }, [index, items.length]);
+
   const handleRate = useCallback(
     async (rating: ReviewRating) => {
       const item = items[index];
       if (!item) return;
       await rate(item.card.cardId, rating, Date.now());
       setStats((s) => ({ ...s, [STAT_KEY[rating]]: s[STAT_KEY[rating]] + 1 }));
-      const next = index + 1;
-      if (next >= items.length) {
-        const due = await countDue(Date.now() + DAY);
-        setTomorrowDue(due);
-        setPhase("summary");
-      } else {
-        setIndex(next);
-        setFlipped(false);
-        setPreviews(null);
-      }
+      await advance();
     },
-    [items, index],
+    [items, index, advance],
   );
+
+  // 「已會」:暫停此卡(不再進入複習)並跳下一張
+  const handleSuspend = useCallback(async () => {
+    const item = items[index];
+    if (!item) return;
+    await setSuspended(item.card.cardId, true);
+    await advance();
+  }, [items, index, advance]);
 
   // 鍵盤:空白翻面、1–4 評分
   useEffect(() => {
@@ -219,9 +232,18 @@ export default function ReviewPage() {
         <span className="rounded bg-foreground/5 px-1.5 py-0.5">
           {isRev ? "中 → 日" : "日 → 中"}
         </span>
-        <span>
-          {index + 1} / {items.length}
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void handleSuspend()}
+            className="text-foreground/50 underline transition-colors active:text-foreground"
+          >
+            已會·略過
+          </button>
+          <span>
+            {index + 1} / {items.length}
+          </span>
+        </div>
       </div>
 
       <button

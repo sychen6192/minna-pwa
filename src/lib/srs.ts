@@ -164,15 +164,33 @@ export async function buildQueue(now: number = Date.now()): Promise<CardRow[]> {
   const { newPerDay, maxReviewsPerDay } = await getAllSettings();
 
   const dueCards = (await db.cards.where("due").belowOrEqual(now).toArray())
-    .filter((c) => c.state !== State.New)
+    .filter((c) => c.state !== State.New && !c.suspended)
     .sort((a, b) => a.due - b.due)
     .slice(0, maxReviewsPerDay);
 
   const newCards = (await db.cards.where("state").equals(State.New).toArray())
+    .filter((c) => !c.suspended)
     .sort((a, b) => a.cardId.localeCompare(b.cardId))
     .slice(0, newPerDay);
 
   return [...dueCards, ...newCards];
+}
+
+/** 標記卡片「已會/暫停」或恢復;暫停的卡不再進入複習佇列。 */
+export async function setSuspended(cardId: string, suspended: boolean): Promise<void> {
+  await db.cards.update(cardId, { suspended });
+}
+
+/** 「已會/暫停」卡數量。 */
+export function countSuspended(): Promise<number> {
+  return db.cards.filter((c) => c.suspended === true).count();
+}
+
+/** 回傳 `cardIds` 中處於暫停狀態的子集(課程頁標示用)。 */
+export async function suspendedCardIds(cardIds: string[]): Promise<string[]> {
+  if (cardIds.length === 0) return [];
+  const rows = await db.cards.where("cardId").anyOf(cardIds).toArray();
+  return rows.filter((c) => c.suspended === true).map((c) => c.cardId);
 }
 
 /**
@@ -192,7 +210,7 @@ export async function countDue(at: number): Promise<number> {
   return db.cards
     .where("due")
     .belowOrEqual(at)
-    .filter((c) => c.state !== State.New)
+    .filter((c) => c.state !== State.New && !c.suspended)
     .count();
 }
 
@@ -207,14 +225,14 @@ export function isLeech(card: CardRow): boolean {
   return card.lapses >= LEECH_THRESHOLD;
 }
 
-/** 頑固卡數量(`lapses` 未建索引,以 filter 全掃;個人資料量無虞)。 */
+/** 頑固卡數量(`lapses` 未建索引,以 filter 全掃;個人資料量無虞;排除已暫停)。 */
 export function countLeeches(): Promise<number> {
-  return db.cards.filter(isLeech).count();
+  return db.cards.filter((c) => isLeech(c) && !c.suspended).count();
 }
 
-/** 取得所有頑固卡,依 lapses 由多到少(最卡的排前面)。 */
+/** 取得所有頑固卡(排除已暫停),依 lapses 由多到少(最卡的排前面)。 */
 export async function getLeeches(): Promise<CardRow[]> {
-  const rows = await db.cards.filter(isLeech).toArray();
+  const rows = await db.cards.filter((c) => isLeech(c) && !c.suspended).toArray();
   return rows.sort((a, b) => b.lapses - a.lapses);
 }
 

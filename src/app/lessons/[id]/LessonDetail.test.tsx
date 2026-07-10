@@ -15,9 +15,13 @@ vi.mock("@/lib/tts", () => ({
 
 const addCards = vi.fn();
 const existingCardIds = vi.fn();
+const setSuspended = vi.fn();
+const suspendedCardIds = vi.fn();
 vi.mock("@/lib/srs", () => ({
   addCards: (...a: unknown[]) => addCards(...a),
   existingCardIds: (...a: unknown[]) => existingCardIds(...a),
+  setSuspended: (...a: unknown[]) => setSuspended(...a),
+  suspendedCardIds: (...a: unknown[]) => suspendedCardIds(...a),
 }));
 
 import { LessonDetail } from "./LessonDetail";
@@ -67,6 +71,8 @@ const sampleLesson: Lesson = {
 
 beforeEach(() => {
   existingCardIds.mockResolvedValue([]);
+  suspendedCardIds.mockResolvedValue([]);
+  setSuspended.mockResolvedValue(undefined);
   addCards.mockResolvedValue(undefined);
 });
 
@@ -205,6 +211,31 @@ describe("LessonDetail", () => {
     expect(
       screen.queryByRole("button", { name: "加入複習:あそびます" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("已加入的單字可標記已會(暫停),暫停者顯示恢復", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    existingCardIds.mockResolvedValue(["L13-V001"]);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByLabelText("あそびます 已加入複習");
+
+    // 標記已會 → setSuspended(true) → 轉為恢復鈕
+    await user.click(screen.getByRole("button", { name: "標記已會:あそびます" }));
+    expect(setSuspended).toHaveBeenCalledWith("L13-V001", true);
+    await user.click(await screen.findByRole("button", { name: "恢復複習:あそびます" }));
+    expect(setSuspended).toHaveBeenCalledWith("L13-V001", false);
+  });
+
+  it("已暫停的單字初始顯示恢復鈕", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    existingCardIds.mockResolvedValue(["L13-V001"]);
+    suspendedCardIds.mockResolvedValue(["L13-V001"]);
+    render(<LessonDetail id={13} />);
+
+    expect(
+      await screen.findByRole("button", { name: "恢復複習:あそびます" }),
+    ).toBeInTheDocument();
   });
 
   it("載入失敗顯示錯誤", async () => {

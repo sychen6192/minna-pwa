@@ -183,5 +183,5 @@
   驗收:search.ts 單元測試(四類文件命中、CJK 子字串、空查詢);文法頁與 hash 切分頁測試;`/grammar` 入 precache;`pnpm verify` 全綠。
 
 - [x] **T9.2 回想方向雙向卡**(義→日,設定可開關)
-- [ ] **T9.3 可 suspend / 跳過已會 + 自訂課序**
+- [x] **T9.3 可 suspend / 跳過已會**(自訂課序暫緩:教材順序即自然序)
 - [ ] **T9.4 統計加 SRS 階段分布 + 可設 Desired Retention**

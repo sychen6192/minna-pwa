@@ -18,6 +18,7 @@ const buildQueue = vi.fn();
 const rate = vi.fn();
 const previewIntervals = vi.fn();
 const countDue = vi.fn();
+const setSuspended = vi.fn();
 vi.mock("@/lib/srs", () => ({
   buildQueue: (...a: unknown[]) => buildQueue(...a),
   rate: (...a: unknown[]) => rate(...a),
@@ -25,6 +26,7 @@ vi.mock("@/lib/srs", () => ({
   countDue: (...a: unknown[]) => countDue(...a),
   baseVocabId: (id: string) => (id.endsWith("@r") ? id.slice(0, -2) : id),
   cardDirection: (c: { direction?: "fwd" | "rev" }) => c.direction ?? "fwd",
+  setSuspended: (...a: unknown[]) => setSuspended(...a),
 }));
 
 const getLesson = vi.fn();
@@ -181,6 +183,32 @@ describe("ReviewPage", () => {
 
     await user.click(screen.getByRole("button", { name: "顯示答案" }));
     expect(screen.getByText("あそびます")).toBeInTheDocument();
+  });
+
+  it("已會·略過:暫停當前卡並前進(不評分)", async () => {
+    buildQueue.mockResolvedValue([
+      cardRow,
+      { ...cardRow, cardId: "L13-V002" },
+    ]);
+    getSetting.mockResolvedValue("show");
+    getLesson.mockResolvedValue({
+      ...lesson,
+      vocab: [
+        lesson.vocab[0],
+        { ...lesson.vocab[0], id: "L13-V002", meaning: "第二個字" },
+      ],
+    });
+    previewIntervals.mockResolvedValue(previews);
+    countDue.mockResolvedValue(0);
+    const user = userEvent.setup();
+    render(<ReviewPage />);
+
+    await screen.findByText("1 / 2");
+    await user.click(screen.getByRole("button", { name: "已會·略過" }));
+    expect(setSuspended).toHaveBeenCalledWith("L13-V001", true);
+    // 前進到第二張,未呼叫 rate
+    expect(await screen.findByText("2 / 2")).toBeInTheDocument();
+    expect(rate).not.toHaveBeenCalled();
   });
 
   it("鍵盤:空白翻面、數字鍵評分", async () => {

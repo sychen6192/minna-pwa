@@ -8,6 +8,9 @@ import {
   buildQueue,
   countDue,
   countLeeches,
+  countSuspended,
+  setSuspended,
+  suspendedCardIds,
   existingCardIds,
   getLeeches,
   isLeech,
@@ -269,5 +272,48 @@ describe("雙向卡(T9.2)", () => {
     expect(baseVocabId(rev!.cardId)).toBe("L13-V001");
     const queue = await buildQueue(NOW);
     expect(queue.map((c) => c.cardId).sort()).toEqual(["L13-V001", "L13-V001@r"]);
+  });
+})
+
+describe("suspend 已會/暫停(T9.3)", () => {
+  it("setSuspended:暫停的卡不進複習佇列、不計到期", async () => {
+    await addCards(["a", "b"], 13, NOW);
+    await rate("a", 3, NOW); // a 進入複習態
+    const dueA = (await db.cards.get("a"))!.due;
+
+    await setSuspended("a", true);
+    const queue = await buildQueue(dueA);
+    expect(queue.map((c) => c.cardId)).not.toContain("a");
+    expect(await countDue(dueA)).toBe(0); // a 暫停、b 仍 New,皆不計
+
+    // 恢復後又出現
+    await setSuspended("a", false);
+    expect((await buildQueue(dueA)).map((c) => c.cardId)).toContain("a");
+  });
+
+  it("暫停的新卡也不入列", async () => {
+    await addCards(["a", "b"], 13, NOW);
+    await setSuspended("a", true);
+    const queue = await buildQueue(NOW);
+    expect(queue.map((c) => c.cardId)).toEqual(["b"]);
+  });
+
+  it("countSuspended / suspendedCardIds", async () => {
+    await addCards(["a", "b", "c"], 13, NOW);
+    await setSuspended("a", true);
+    await setSuspended("c", true);
+    expect(await countSuspended()).toBe(2);
+    expect((await suspendedCardIds(["a", "b", "c"])).sort()).toEqual(["a", "c"]);
+    expect(await suspendedCardIds([])).toEqual([]);
+  });
+
+  it("暫停的頑固卡不列入 leech", async () => {
+    await db.cards.bulkAdd([
+      { cardId: "x", lessonId: 1, type: "vocab", due: NOW, stability: 1, difficulty: 5, reps: 5, lapses: LEECH_THRESHOLD + 1, state: 2 },
+    ]);
+    expect(await countLeeches()).toBe(1);
+    await setSuspended("x", true);
+    expect(await countLeeches()).toBe(0);
+    expect(await getLeeches()).toEqual([]);
   });
 })

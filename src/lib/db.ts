@@ -14,6 +14,7 @@ export interface CardRow {
   lapses: number;
   state: 0 | 1 | 2 | 3; // ts-fsrs State:New / Learning / Review / Relearning
   lastReview?: number; // epoch ms
+  suspended?: boolean; // 已會/暫停:排除於複習佇列與到期/頑固卡計數(T9.3)
 }
 
 export interface LogRow {

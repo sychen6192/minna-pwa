@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, Plus, Volume2 } from "lucide-react";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
-import { addCards, existingCardIds } from "@/lib/srs";
+import { addCards, existingCardIds, setSuspended, suspendedCardIds } from "@/lib/srs";
 import { speak } from "@/lib/tts";
 import { cn } from "@/lib/utils";
 import type { Lesson } from "@/schemas/lesson";
@@ -23,6 +23,7 @@ export function LessonDetail({ id }: { id: number }) {
   const [tab, setTab] = useState<Tab>("vocab");
   const [furigana, setFurigana] = useState<FuriganaMode>("show");
   const [added, setAdded] = useState<Set<string>>(new Set());
+  const [suspended, setSuspendedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let active = true;
@@ -38,19 +39,32 @@ export function LessonDetail({ id }: { id: number }) {
     };
   }, [id]);
 
-  // 初始化「已加入複習」狀態
+  // 初始化「已加入複習」與「已會/暫停」狀態
   useEffect(() => {
     if (!lesson) return;
     let active = true;
-    existingCardIds(lesson.vocab.map((v) => v.id))
-      .then((ids) => {
-        if (active) setAdded(new Set(ids));
+    const ids = lesson.vocab.map((v) => v.id);
+    Promise.all([existingCardIds(ids), suspendedCardIds(ids)])
+      .then(([addedIds, suspIds]) => {
+        if (!active) return;
+        setAdded(new Set(addedIds));
+        setSuspendedIds(new Set(suspIds));
       })
       .catch(() => {});
     return () => {
       active = false;
     };
   }, [lesson]);
+
+  const toggleSuspend = useCallback(async (cardId: string, next: boolean) => {
+    await setSuspended(cardId, next);
+    setSuspendedIds((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(cardId);
+      else s.delete(cardId);
+      return s;
+    });
+  }, []);
 
   // 文法錨點深連結(F4.1):#Lxx-Gxx → 切至文型分頁並捲動到該文法點
   useEffect(() => {
@@ -138,8 +152,10 @@ export function LessonDetail({ id }: { id: number }) {
           lesson={lesson}
           furigana={furigana}
           added={added}
+          suspended={suspended}
           onAddOne={addOne}
           onAddAll={addAll}
+          onToggleSuspend={toggleSuspend}
         />
       )}
       {tab === "grammar" && <GrammarList lesson={lesson} furigana={furigana} />}
@@ -154,14 +170,18 @@ function VocabList({
   lesson,
   furigana,
   added,
+  suspended,
   onAddOne,
   onAddAll,
+  onToggleSuspend,
 }: {
   lesson: Lesson;
   furigana: FuriganaMode;
   added: Set<string>;
+  suspended: Set<string>;
   onAddOne: (cardId: string) => void;
   onAddAll: () => void;
+  onToggleSuspend: (cardId: string, next: boolean) => void;
 }) {
   const allAdded = lesson.vocab.every((v) => added.has(v.id));
   return (
@@ -195,14 +215,7 @@ function VocabList({
                 </span>
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="text-xs text-foreground/60">{v.pos}</span>
-                  {isAdded ? (
-                    <span
-                      aria-label={`${v.kana} 已加入複習`}
-                      className="text-green-700"
-                    >
-                      <Check className="size-4" aria-hidden />
-                    </span>
-                  ) : (
+                  {!isAdded ? (
                     <button
                       type="button"
                       aria-label={`加入複習:${v.kana}`}
@@ -211,6 +224,29 @@ function VocabList({
                     >
                       <Plus className="size-4" aria-hidden />
                     </button>
+                  ) : suspended.has(v.id) ? (
+                    <button
+                      type="button"
+                      aria-label={`恢復複習:${v.kana}`}
+                      onClick={() => onToggleSuspend(v.id, false)}
+                      className="text-xs text-amber-700 underline dark:text-amber-500"
+                    >
+                      已會·恢復
+                    </button>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <span aria-label={`${v.kana} 已加入複習`} className="text-green-700">
+                        <Check className="size-4" aria-hidden />
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`標記已會:${v.kana}`}
+                        onClick={() => onToggleSuspend(v.id, true)}
+                        className="text-xs text-foreground/50 underline transition-colors active:text-foreground"
+                      >
+                        已會
+                      </button>
+                    </span>
                   )}
                 </div>
               </div>
