@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Volume2 } from "lucide-react";
 import { RatingButtons } from "@/components/RatingButtons";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
+import { SpeakButton } from "@/components/SpeakButton";
 import { getLesson } from "@/lib/content";
 import { findExampleSentence } from "@/lib/examples";
-import { speak } from "@/lib/tts";
 import { getSetting, type CardRow } from "@/lib/db";
 import {
   buildQueue,
@@ -256,7 +255,7 @@ export default function ReviewPage() {
                 </div>
                 <SpeakButton
                   text={plainText(item.example.ruby)}
-                  aria-label="播放例句發音"
+                  ariaLabel="播放例句發音"
                 />
               </div>
             </div>
@@ -277,27 +276,6 @@ export default function ReviewPage() {
   );
 }
 
-function SpeakButton({
-  text,
-  label,
-  ...rest
-}: {
-  text: string;
-  label?: string;
-  "aria-label"?: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={rest["aria-label"] ?? `播放 ${text} 的發音`}
-      onClick={() => speak(text)}
-      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-foreground/10 px-2.5 py-1 text-xs text-foreground/70 transition-colors active:bg-foreground/5"
-    >
-      <Volume2 className="size-4" aria-hidden />
-      {label}
-    </button>
-  );
-}
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (

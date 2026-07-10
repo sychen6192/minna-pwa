@@ -61,6 +61,18 @@ describe("Home(今日儀表板)", () => {
     expect(screen.getByText(/累計卡片/).parentElement).toHaveTextContent("3 張");
   });
 
+  it("有頑固卡:顯示警示並連到 /practice", async () => {
+    await db.cards.bulkAdd([
+      // lapses ≥ 門檻(4)→ 頑固卡;due 在未來,與到期無關
+      card({ cardId: "L01-V001", lessonId: 1, due: Date.now() + DAY, state: 2, lapses: 5 }),
+    ]);
+
+    render(<Home />);
+
+    expect(await screen.findByText(/1 張頑固卡需要加強/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /頑固卡/ })).toHaveAttribute("href", "/practice");
+  });
+
   it("有卡但無到期:顯示完成訊息,不顯示開始複習", async () => {
     await db.cards.bulkAdd([
       // due 在未來 → 不到期

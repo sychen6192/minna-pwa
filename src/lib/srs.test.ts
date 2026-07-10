@@ -4,10 +4,15 @@ import {
   addCards,
   buildQueue,
   countDue,
+  countLeeches,
   existingCardIds,
+  getLeeches,
+  isLeech,
+  LEECH_THRESHOLD,
   previewIntervals,
   rate,
 } from "./srs";
+import type { CardRow } from "./db";
 
 const NOW = Date.UTC(2026, 0, 1, 9, 0, 0); // 固定時間,確定性測試
 const DAY = 86_400_000;
@@ -167,3 +172,46 @@ describe("previewIntervals", () => {
     expect(await getSetting("newPerDay")).toBe(10);
   });
 });
+
+describe("leech 頑固卡", () => {
+  function card(id: string, lapses: number): CardRow {
+    return {
+      cardId: id,
+      lessonId: 13,
+      type: "vocab",
+      due: NOW,
+      stability: 1,
+      difficulty: 5,
+      reps: lapses,
+      lapses,
+      state: 2,
+    };
+  }
+
+  it("isLeech:達門檻為 true,未達為 false", () => {
+    expect(isLeech(card("a", LEECH_THRESHOLD - 1))).toBe(false);
+    expect(isLeech(card("b", LEECH_THRESHOLD))).toBe(true);
+    expect(isLeech(card("c", LEECH_THRESHOLD + 3))).toBe(true);
+  });
+
+  it("countLeeches:只算達門檻的卡", async () => {
+    await db.cards.bulkAdd([
+      card("a", 0),
+      card("b", LEECH_THRESHOLD - 1),
+      card("c", LEECH_THRESHOLD),
+      card("d", LEECH_THRESHOLD + 2),
+    ]);
+    expect(await countLeeches()).toBe(2);
+  });
+
+  it("getLeeches:依 lapses 由多到少", async () => {
+    await db.cards.bulkAdd([
+      card("mid", LEECH_THRESHOLD + 1),
+      card("low", LEECH_THRESHOLD - 1), // 非 leech,不應出現
+      card("high", LEECH_THRESHOLD + 5),
+      card("min", LEECH_THRESHOLD),
+    ]);
+    const leeches = await getLeeches();
+    expect(leeches.map((c) => c.cardId)).toEqual(["high", "mid", "min"]);
+  });
+})

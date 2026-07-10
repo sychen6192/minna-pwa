@@ -164,8 +164,9 @@
   做什麼:複習卡揭曉後,顯示同課語境例句(含翻譯、furigana)與例句/單字 TTS 發音鈕。純函式 `findExampleSentence`(examples.ts):掃該課文法例句與会話,取含單字表面形的最短句;無則不顯示(誠實版,約 1/4 卡片受惠、零誤配)。876 句例句的完整舞台留待文法功能。
   驗收:`findExampleSentence` 單元測試(命中/取最短/null/略過單字元);複習頁例句與發音鈕測試。
 
-- [ ] **T8.2 Leech 頑固卡偵測 + 錯題本**
-  做什麼:依 `lapses` 門檻標記頑固卡,首頁/複習提示;新增「錯題與頑固卡」專屬複習佇列。
+- [x] **T8.2 Leech 頑固卡偵測 + 練習**
+  做什麼:依 `lapses` 門檻(4,對標 Anki leech)偵測頑固卡;首頁琥珀色警示顯示數量並連到 `/practice`。新增 `/practice` 頑固卡練習頁——翻卡練習(依 lapses 由多到少、含例句與發音),純曝光不改 FSRS 排程。srs.ts 新增 `isLeech`/`countLeeches`/`getLeeches`;抽出共用 `SpeakButton` 元件(複習頁共用)。
+  驗收:srs leech 單元測試;練習頁(空/翻卡/逐張完成)與首頁警示測試;`/practice` 入 SW precache。
 
 - [ ] **T8.3 Streak + 每日目標**
   做什麼:由 logs 算連續學習天數 + 今日目標進度,顯示於儀表板(溫和單人版)。

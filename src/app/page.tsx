@@ -8,19 +8,22 @@ type Phase = "loading" | "ready" | "error";
 
 // 資料層(Dexie / ts-fsrs / content)於首屏後才需要;動態載入使其不計入
 // 首頁 first-load bundle(N4:首頁 JS gzip < 200 KB)。type 匯入已於編譯期抹除。
-async function loadDashboard(now: number): Promise<{ due: number; summary: StudySummary }> {
-  const [{ db }, { getLessonIndex }, { countDue }, { studySummary }] = await Promise.all([
+async function loadDashboard(
+  now: number,
+): Promise<{ due: number; leeches: number; summary: StudySummary }> {
+  const [{ db }, { getLessonIndex }, srs, { studySummary }] = await Promise.all([
     import("@/lib/db"),
     import("@/lib/content"),
     import("@/lib/srs"),
     import("@/lib/stats"),
   ]);
-  const [cards, index, due] = await Promise.all([
+  const [cards, index, due, leeches] = await Promise.all([
     db.cards.toArray(),
     getLessonIndex(),
-    countDue(now),
+    srs.countDue(now),
+    srs.countLeeches(),
   ]);
-  return { due, summary: studySummary(cards, index) };
+  return { due, leeches, summary: studySummary(cards, index) };
 }
 
 /** 今日複習 Hero:依「空 DB / 有到期 / 無到期」三態切換主行動。 */
@@ -82,6 +85,7 @@ export default function Home() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
   const [due, setDue] = useState(0);
+  const [leeches, setLeeches] = useState(0);
   const [summary, setSummary] = useState<StudySummary | null>(null);
   // 進頁面時定格,避免 due 隨 render 時間飄移
   const [now] = useState(() => Date.now());
@@ -90,9 +94,10 @@ export default function Home() {
     let active = true;
     (async () => {
       try {
-        const { due: dueCount, summary: s } = await loadDashboard(now);
+        const { due: dueCount, leeches: leechCount, summary: s } = await loadDashboard(now);
         if (!active) return;
         setDue(dueCount);
+        setLeeches(leechCount);
         setSummary(s);
         setPhase("ready");
       } catch (err) {
@@ -125,6 +130,23 @@ export default function Home() {
       {phase === "ready" && summary && (
         <div className="space-y-6">
           <HeroCard due={due} hasCards={summary.totalCards > 0} />
+
+          {leeches > 0 && (
+            <Link
+              href="/practice"
+              className="flex items-center justify-between rounded-xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 transition-colors active:bg-amber-500/[0.15]"
+            >
+              <div>
+                <div className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                  {leeches} 張頑固卡需要加強
+                </div>
+                <div className="text-xs text-foreground/60">一再答錯的字,點此集中練習</div>
+              </div>
+              <span aria-hidden className="text-amber-700 dark:text-amber-400">
+                →
+              </span>
+            </Link>
+          )}
 
           <section className="rounded-xl border border-foreground/10 p-4">
             <div className="flex items-center justify-between text-sm">

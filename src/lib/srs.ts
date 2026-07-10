@@ -145,6 +145,28 @@ export async function countDue(at: number): Promise<number> {
 }
 
 /**
+ * 頑固卡(leech)門檻:`lapses`(Review 階段遺忘次數,按「重來」累計)達此值即視為
+ * 頑固卡。對標 Anki 的 leech 機制(預設 8);個人學習取較敏感的 4 以便及早加強。
+ */
+export const LEECH_THRESHOLD = 4;
+
+/** 是否為頑固卡:複習階段已遺忘達門檻次數。 */
+export function isLeech(card: CardRow): boolean {
+  return card.lapses >= LEECH_THRESHOLD;
+}
+
+/** 頑固卡數量(`lapses` 未建索引,以 filter 全掃;個人資料量無虞)。 */
+export function countLeeches(): Promise<number> {
+  return db.cards.filter(isLeech).count();
+}
+
+/** 取得所有頑固卡,依 lapses 由多到少(最卡的排前面)。 */
+export async function getLeeches(): Promise<CardRow[]> {
+  const rows = await db.cards.filter(isLeech).toArray();
+  return rows.sort((a, b) => b.lapses - a.lapses);
+}
+
+/**
  * 評分:更新卡片 FSRS 狀態並寫入複習紀錄(log)。回傳更新後的卡片。
  */
 export async function rate(
