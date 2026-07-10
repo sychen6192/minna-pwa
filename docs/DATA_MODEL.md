@@ -177,6 +177,7 @@ settings 預設值(首次啟動寫入):
 | `newPerDay` | 10 |
 | `maxReviewsPerDay` | 200 |
 | `dailyGoal` | 20(每日複習目標張數,首頁進度環) |
+| `reverseCards` | false(開啟後新增單字同時建義→日回想卡;cardId 加 `@r` 尾綴) |
 | `ttsEnabled` | true |
 | `furigana` | `"show"`(`show` \| `hide`) |
 | `installPromptDismissed` | false(加入主畫面提示已被關閉) |

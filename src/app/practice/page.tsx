@@ -7,7 +7,7 @@ import { SpeakButton } from "@/components/SpeakButton";
 import { getLesson } from "@/lib/content";
 import { findExampleSentence } from "@/lib/examples";
 import { getSetting } from "@/lib/db";
-import { getLeeches, LEECH_THRESHOLD } from "@/lib/srs";
+import { baseVocabId, cardDirection, getLeeches, LEECH_THRESHOLD } from "@/lib/srs";
 import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
 
 /** ruby 分段的表面文字(TTS 讀例句用) */
@@ -20,6 +20,7 @@ interface DrillItem {
   lessonTitle: string;
   lapses: number;
   example: Sentence | null;
+  direction: "fwd" | "rev";
 }
 
 type Phase = "loading" | "empty" | "drill" | "done" | "error";
@@ -48,13 +49,14 @@ export default function PracticePage() {
       const built = leeches
         .map((card): DrillItem | null => {
           const lesson = lessons.get(card.lessonId);
-          const vocab = lesson?.vocab.find((v) => v.id === card.cardId);
+          const vocab = lesson?.vocab.find((v) => v.id === baseVocabId(card.cardId));
           return lesson && vocab
             ? {
                 vocab,
                 lessonTitle: lesson.title,
                 lapses: card.lapses,
                 example: findExampleSentence(vocab, lesson),
+                direction: cardDirection(card),
               }
             : null;
         })
@@ -126,10 +128,11 @@ export default function PracticePage() {
 
   // phase === "drill"
   const item = items[index];
+  const isRev = item.direction === "rev";
   return (
     <div className="flex min-h-[80vh] flex-col">
       <div className="flex items-center justify-between px-4 py-2 text-xs text-foreground/60">
-        <span>頑固卡練習</span>
+        <span>頑固卡練習 · {isRev ? "中 → 日" : "日 → 中"}</span>
         <span>
           {index + 1} / {items.length}
         </span>
@@ -141,13 +144,28 @@ export default function PracticePage() {
         onClick={() => !flipped && setFlipped(true)}
         className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center"
       >
-        <div className="text-3xl">
-          <RubyText segments={item.vocab.ruby} furigana={furigana} />
-        </div>
+        {isRev ? (
+          <div className="text-2xl font-medium">{item.vocab.meaning}</div>
+        ) : (
+          <div className="text-3xl">
+            <RubyText segments={item.vocab.ruby} furigana={furigana} />
+          </div>
+        )}
         {flipped && (
           <div className="space-y-1">
-            <div className="text-base text-foreground/70">{item.vocab.kana}</div>
-            <div className="text-lg">{item.vocab.meaning}</div>
+            {isRev ? (
+              <>
+                <div className="text-3xl">
+                  <RubyText segments={item.vocab.ruby} furigana={furigana} />
+                </div>
+                <div className="text-base text-foreground/70">{item.vocab.kana}</div>
+              </>
+            ) : (
+              <>
+                <div className="text-base text-foreground/70">{item.vocab.kana}</div>
+                <div className="text-lg">{item.vocab.meaning}</div>
+              </>
+            )}
             <div className="text-xs text-foreground/60">
               {item.vocab.pos}・{item.lessonTitle}・答錯 {item.lapses} 次
             </div>

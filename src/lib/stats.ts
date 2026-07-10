@@ -126,7 +126,9 @@ export function weeklyRetention(logs: LogRow[], now: Date, weeks = 12): WeekRate
 export function lessonProgress(cards: CardRow[], index: LessonIndex): LessonProgress[] {
   const added = new Map<number, number>();
   const learned = new Map<number, number>();
+  // 只計正向卡:進度以「相異單字」為準,義→日回想卡(direction rev)不重複計
   for (const c of cards) {
+    if ((c.direction ?? "fwd") !== "fwd") continue;
     added.set(c.lessonId, (added.get(c.lessonId) ?? 0) + 1);
     if (c.state === 2) learned.set(c.lessonId, (learned.get(c.lessonId) ?? 0) + 1);
   }
@@ -151,12 +153,14 @@ export function lessonStatus(p: LessonProgress): LessonStatus {
 
 /** 首頁儀表板摘要:已開始課數、總課數、累計卡片數。 */
 export function studySummary(cards: CardRow[], index: LessonIndex): StudySummary {
+  // 只計正向卡(相異單字):累計卡片與已開始課數不因雙向卡而膨脹
+  const fwd = cards.filter((c) => (c.direction ?? "fwd") === "fwd");
   const startedIds = new Set<number>();
-  for (const c of cards) startedIds.add(c.lessonId);
+  for (const c of fwd) startedIds.add(c.lessonId);
   return {
     startedLessons: startedIds.size,
     totalLessons: index.lessons.length,
-    totalCards: cards.length,
+    totalCards: fwd.length,
   };
 }
 

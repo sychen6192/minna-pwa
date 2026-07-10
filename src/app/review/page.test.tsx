@@ -23,6 +23,8 @@ vi.mock("@/lib/srs", () => ({
   rate: (...a: unknown[]) => rate(...a),
   previewIntervals: (...a: unknown[]) => previewIntervals(...a),
   countDue: (...a: unknown[]) => countDue(...a),
+  baseVocabId: (id: string) => (id.endsWith("@r") ? id.slice(0, -2) : id),
+  cardDirection: (c: { direction?: "fwd" | "rev" }) => c.direction ?? "fwd",
 }));
 
 const getLesson = vi.fn();
@@ -161,6 +163,24 @@ describe("ReviewPage", () => {
       screen.getByRole("button", { name: "播放 あそびます 的發音" }),
     );
     expect(speak).toHaveBeenCalledWith("あそびます");
+  });
+
+  it("回想方向卡(rev):正面給中文,翻面才顯示日文與讀音", async () => {
+    buildQueue.mockResolvedValue([{ ...cardRow, cardId: "L13-V001@r", direction: "rev" }]);
+    getSetting.mockResolvedValue("show");
+    getLesson.mockResolvedValue(lesson);
+    previewIntervals.mockResolvedValue(previews);
+    countDue.mockResolvedValue(0);
+    const user = userEvent.setup();
+    render(<ReviewPage />);
+
+    // 方向徽章 + 正面中文;翻面前看不到讀音
+    expect(await screen.findByText("中 → 日")).toBeInTheDocument();
+    expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
+    expect(screen.queryByText("あそびます")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    expect(screen.getByText("あそびます")).toBeInTheDocument();
   });
 
   it("鍵盤:空白翻面、數字鍵評分", async () => {

@@ -9,7 +9,9 @@ import { getLesson } from "@/lib/content";
 import { findExampleSentence } from "@/lib/examples";
 import { getSetting, type CardRow } from "@/lib/db";
 import {
+  baseVocabId,
   buildQueue,
+  cardDirection,
   countDue,
   previewIntervals,
   rate,
@@ -76,7 +78,7 @@ export default function ReviewPage() {
       const built = cards
         .map((card): SessionItem | null => {
           const lesson = lessons.get(card.lessonId);
-          const vocab = lesson?.vocab.find((v) => v.id === card.cardId);
+          const vocab = lesson?.vocab.find((v) => v.id === baseVocabId(card.cardId));
           return lesson && vocab
             ? {
                 card,
@@ -210,10 +212,16 @@ export default function ReviewPage() {
 
   // phase === "review"
   const item = items[index];
+  const isRev = cardDirection(item.card) === "rev";
   return (
     <div className="flex min-h-[80vh] flex-col">
-      <div className="px-4 py-2 text-center text-xs text-foreground/60">
-        {index + 1} / {items.length}
+      <div className="flex items-center justify-between px-4 py-2 text-xs text-foreground/60">
+        <span className="rounded bg-foreground/5 px-1.5 py-0.5">
+          {isRev ? "中 → 日" : "日 → 中"}
+        </span>
+        <span>
+          {index + 1} / {items.length}
+        </span>
       </div>
 
       <button
@@ -222,15 +230,29 @@ export default function ReviewPage() {
         onClick={() => !flipped && setFlipped(true)}
         className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center"
       >
-        <div className="text-3xl">
-          <RubyText segments={item.vocab.ruby} furigana={furigana} />
-        </div>
+        {/* 提示面:回想卡(rev)給中文,辨識卡(fwd)給日文 */}
+        {isRev ? (
+          <div className="text-2xl font-medium">{item.vocab.meaning}</div>
+        ) : (
+          <div className="text-3xl">
+            <RubyText segments={item.vocab.ruby} furigana={furigana} />
+          </div>
+        )}
         {flipped && (
           <div className="space-y-1">
-            <div className="text-base text-foreground/70">
-              {item.vocab.kana}
-            </div>
-            <div className="text-lg">{item.vocab.meaning}</div>
+            {isRev ? (
+              <>
+                <div className="text-3xl">
+                  <RubyText segments={item.vocab.ruby} furigana={furigana} />
+                </div>
+                <div className="text-base text-foreground/70">{item.vocab.kana}</div>
+              </>
+            ) : (
+              <>
+                <div className="text-base text-foreground/70">{item.vocab.kana}</div>
+                <div className="text-lg">{item.vocab.meaning}</div>
+              </>
+            )}
             <div className="text-xs text-foreground/60">
               {item.vocab.pos}・{item.lessonTitle}
             </div>

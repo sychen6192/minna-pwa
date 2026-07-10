@@ -3,6 +3,7 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { exportData, importData, parseBackup, resetAll, type BackupFile } from "@/lib/backup";
 import { getAllSettings, setSetting, type Settings } from "@/lib/db";
+import { ensureReverseCards } from "@/lib/srs";
 
 type Notice = { kind: "success" | "error"; text: string } | null;
 
@@ -48,6 +49,23 @@ export default function SettingsPage() {
     const value = Number(rawValue);
     if (rawValue === "" || !Number.isInteger(value) || value < 0) return;
     void setSetting(key, value);
+  }
+
+  // 開啟回想方向卡:立即為已加入的字補上回想卡(關閉不刪除既有卡)
+  async function handleReverseToggle(checked: boolean) {
+    await setSetting("reverseCards", checked);
+    if (checked) {
+      const added = await ensureReverseCards();
+      setNotice({
+        kind: "success",
+        text:
+          added > 0
+            ? `已為 ${added} 個既有單字補上回想方向卡。`
+            : "已開啟;之後新增的單字會一併建立回想方向卡。",
+      });
+    } else {
+      setNotice({ kind: "success", text: "已關閉;既有的回想卡不會刪除,仍會出現在複習中。" });
+    }
   }
 
   async function handleExport() {
@@ -158,6 +176,15 @@ export default function SettingsPage() {
               aria-label="TTS 發音"
               defaultChecked={settings.ttsEnabled}
               onChange={(e) => void setSetting("ttsEnabled", e.target.checked)}
+              className="h-4 w-4 accent-sky-600"
+            />
+          </FieldRow>
+          <FieldRow label="回想方向卡(中→日)">
+            <input
+              type="checkbox"
+              aria-label="回想方向卡"
+              defaultChecked={settings.reverseCards}
+              onChange={(e) => void handleReverseToggle(e.target.checked)}
               className="h-4 w-4 accent-sky-600"
             />
           </FieldRow>

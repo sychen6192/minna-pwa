@@ -25,12 +25,33 @@ const scheduler: FSRS = fsrs({
 
 // ── CardRow ↔ ts-fsrs Card 轉換 ─────────────────────────────────────
 
-function newCardRow(cardId: string, lessonId: number, now: Date): CardRow {
+/** 回想方向卡的 cardId 尾綴(義→日,T9.2) */
+export const REVERSE_SUFFIX = "@r";
+
+/** 由 cardId 取回原單字 id(去除回想卡尾綴)。 */
+export function baseVocabId(cardId: string): string {
+  return cardId.endsWith(REVERSE_SUFFIX)
+    ? cardId.slice(0, -REVERSE_SUFFIX.length)
+    : cardId;
+}
+
+/** 卡片方向(缺省視為 fwd,相容舊資料)。 */
+export function cardDirection(card: CardRow): "fwd" | "rev" {
+  return card.direction ?? "fwd";
+}
+
+function newCardRow(
+  cardId: string,
+  lessonId: number,
+  now: Date,
+  direction: "fwd" | "rev" = "fwd",
+): CardRow {
   const c = createEmptyCard(now);
   return {
     cardId,
     lessonId,
     type: "vocab",
+    direction,
     due: c.due.getTime(),
     stability: c.stability,
     difficulty: c.difficulty,
@@ -85,6 +106,7 @@ function toLogRow(cardId: string, log: ReviewLog): LogRow {
 
 /**
  * 將單字加入複習(冪等):已存在的 cardId 不重複建立、不重置進度。
+ * `reverseCards` 設定開啟時,同時建立義→日回想方向卡(cardId 加 `@r`)。
  */
 export async function addCards(
   vocabIds: string[],
@@ -92,14 +114,44 @@ export async function addCards(
   now: number = Date.now(),
 ): Promise<void> {
   if (vocabIds.length === 0) return;
+  const { reverseCards } = await getAllSettings();
   await db.transaction("rw", db.cards, async () => {
+    const wanted: { id: string; dir: "fwd" | "rev" }[] = vocabIds.map((id) => ({
+      id,
+      dir: "fwd" as const,
+    }));
+    if (reverseCards) {
+      for (const id of vocabIds) wanted.push({ id: `${id}${REVERSE_SUFFIX}`, dir: "rev" });
+    }
     const existing = new Set(
-      await db.cards.where("cardId").anyOf(vocabIds).primaryKeys(),
+      await db.cards.where("cardId").anyOf(wanted.map((w) => w.id)).primaryKeys(),
     );
-    const toAdd = vocabIds
-      .filter((id) => !existing.has(id))
-      .map((id) => newCardRow(id, lessonId, new Date(now)));
+    const at = new Date(now);
+    const toAdd = wanted
+      .filter((w) => !existing.has(w.id))
+      .map((w) => newCardRow(w.id, lessonId, at, w.dir));
     if (toAdd.length > 0) await db.cards.bulkAdd(toAdd);
+  });
+}
+
+/**
+ * 為所有既有的正向卡補上回想方向卡(冪等)。用於使用者中途開啟 `reverseCards` 時,
+ * 讓設定立即對已加入的字生效。回傳新建立的回想卡數量。
+ */
+export async function ensureReverseCards(now: number = Date.now()): Promise<number> {
+  return db.transaction("rw", db.cards, async () => {
+    const all = await db.cards.toArray();
+    const existingIds = new Set(all.map((c) => c.cardId));
+    const at = new Date(now);
+    const toAdd = all
+      .filter(
+        (c) =>
+          cardDirection(c) === "fwd" &&
+          !existingIds.has(`${c.cardId}${REVERSE_SUFFIX}`),
+      )
+      .map((c) => newCardRow(`${c.cardId}${REVERSE_SUFFIX}`, c.lessonId, at, "rev"));
+    if (toAdd.length > 0) await db.cards.bulkAdd(toAdd);
+    return toAdd.length;
   });
 }
 

@@ -3,9 +3,10 @@ import Dexie, { type Table } from "dexie";
 // ── 使用者資料 row 型別(DATA_MODEL §2)──────────────────────────────
 
 export interface CardRow {
-  cardId: string; // = VocabItem.id
+  cardId: string; // fwd = VocabItem.id;rev = `${VocabItem.id}@r`(T9.2 雙向卡)
   lessonId: number;
   type: "vocab"; // v2 預留 "grammar"
+  direction?: "fwd" | "rev"; // 缺省(舊資料)視為 "fwd";rev = 義→日回想卡
   due: number; // epoch ms
   stability: number;
   difficulty: number;
@@ -42,6 +43,7 @@ export interface Settings {
   newPerDay: number;
   maxReviewsPerDay: number;
   dailyGoal: number; // 每日複習目標張數(首頁進度環,T8.3)
+  reverseCards: boolean; // 產生義→日回想方向卡(T9.2)
   ttsEnabled: boolean;
   furigana: "show" | "hide";
   installPromptDismissed: boolean; // 安裝提示已被使用者關閉(T6.3)
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   newPerDay: 10,
   maxReviewsPerDay: 200,
   dailyGoal: 20,
+  reverseCards: false,
   ttsEnabled: true,
   furigana: "show",
   installPromptDismissed: false,

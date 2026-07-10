@@ -2,6 +2,9 @@ import { beforeEach } from "vitest";
 import { db, getSetting, setSetting } from "./db";
 import {
   addCards,
+  baseVocabId,
+  cardDirection,
+  ensureReverseCards,
   buildQueue,
   countDue,
   countLeeches,
@@ -213,5 +216,58 @@ describe("leech 頑固卡", () => {
     ]);
     const leeches = await getLeeches();
     expect(leeches.map((c) => c.cardId)).toEqual(["high", "mid", "min"]);
+  });
+})
+
+describe("雙向卡(T9.2)", () => {
+  it("baseVocabId:去除回想卡尾綴", () => {
+    expect(baseVocabId("L13-V001")).toBe("L13-V001");
+    expect(baseVocabId("L13-V001@r")).toBe("L13-V001");
+  });
+
+  it("cardDirection:缺省視為 fwd", () => {
+    expect(cardDirection({ direction: "rev" } as never)).toBe("rev");
+    expect(cardDirection({} as never)).toBe("fwd");
+  });
+
+  it("reverseCards 關閉:addCards 只建正向卡", async () => {
+    await addCards(["L13-V001"], 13, NOW);
+    expect(await db.cards.count()).toBe(1);
+    expect((await db.cards.get("L13-V001"))?.direction).toBe("fwd");
+    expect(await db.cards.get("L13-V001@r")).toBeUndefined();
+  });
+
+  it("reverseCards 開啟:addCards 同時建正向+回想卡,且冪等", async () => {
+    await setSetting("reverseCards", true);
+    await addCards(["L13-V001", "L13-V002"], 13, NOW);
+    expect(await db.cards.count()).toBe(4);
+    expect((await db.cards.get("L13-V001@r"))?.direction).toBe("rev");
+    expect((await db.cards.get("L13-V001@r"))?.lessonId).toBe(13);
+
+    await addCards(["L13-V001", "L13-V002"], 13, NOW + DAY);
+    expect(await db.cards.count()).toBe(4); // 冪等
+  });
+
+  it("ensureReverseCards:為既有正向卡回填回想卡(冪等,回傳新增數)", async () => {
+    await addCards(["L13-V001", "L13-V002"], 13, NOW); // reverseCards 關,只有 2 張正向
+    expect(await db.cards.count()).toBe(2);
+
+    const added = await ensureReverseCards(NOW);
+    expect(added).toBe(2);
+    expect(await db.cards.count()).toBe(4);
+    expect((await db.cards.get("L13-V002@r"))?.direction).toBe("rev");
+
+    expect(await ensureReverseCards(NOW)).toBe(0); // 再跑不重複
+    expect(await db.cards.count()).toBe(4);
+  });
+
+  it("回想卡進入到期佇列,並保留 base 單字 id 對應", async () => {
+    await setSetting("reverseCards", true);
+    await addCards(["L13-V001"], 13, NOW);
+    const rev = await db.cards.get("L13-V001@r");
+    expect(rev?.state).toBe(0); // New
+    expect(baseVocabId(rev!.cardId)).toBe("L13-V001");
+    const queue = await buildQueue(NOW);
+    expect(queue.map((c) => c.cardId).sort()).toEqual(["L13-V001", "L13-V001@r"]);
   });
 })
