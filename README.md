@@ -38,8 +38,6 @@ GitHub Actions:push `main` → verify + build → `wrangler pages deploy` 至 Cl
 
 ## 已知限制(v1 未含)
 
-- SPEC F4(文法查閱頁與 MiniSearch 全文檢索)未實作——實作計畫從未包含對應任務,留待 v1.1 決定
-- 課程列表的進度標示仍為佔位文字(「未開始」),未接 IndexedDB 實際狀態
 - 跨裝置同步、聽力、手寫:明確不做(SPEC §5)
 
 ## 文件地圖
