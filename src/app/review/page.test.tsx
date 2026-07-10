@@ -167,6 +167,25 @@ describe("ReviewPage", () => {
     expect(speak).toHaveBeenCalledWith("あそびます");
   });
 
+  it("翻卡後讀音帶重音標記(有 accent 資料時)", async () => {
+    buildQueue.mockResolvedValue([cardRow]);
+    getSetting.mockResolvedValue("show");
+    getLesson.mockResolvedValue({
+      ...lesson,
+      vocab: [{ ...lesson.vocab[0], accent: 4 }],
+    });
+    previewIntervals.mockResolvedValue(previews);
+    countDue.mockResolvedValue(0);
+    const user = userEvent.setup();
+    render(<ReviewPage />);
+
+    await screen.findByText(/點擊卡片/);
+    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    expect(
+      screen.getByLabelText("あそびます、重音 4 型(中高)"),
+    ).toBeInTheDocument();
+  });
+
   it("回想方向卡(rev):正面給中文,翻面才顯示日文與讀音", async () => {
     buildQueue.mockResolvedValue([{ ...cardRow, cardId: "L13-V001@r", direction: "rev" }]);
     getSetting.mockResolvedValue("show");

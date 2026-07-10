@@ -6,7 +6,7 @@
 
 ## 功能(v1 現況)
 
-- **課程瀏覽**:50 課完整単語/文型/会話,furigana 一鍵切換(ruby 讀音為教材原文),Web Speech 日語發音
+- **課程瀏覽**:50 課完整単語/文型/会話,furigana 一鍵切換(ruby 讀音為教材原文),Web Speech 日語發音,東京式重音標記(高低線 + [n] 型號,覆蓋 82.9%)
 - **SRS 複習**:ts-fsrs 排程、翻卡四鍵評分(含預估間隔)、鍵盤操作(空白翻面、1–4 評分)、每日新卡/複習上限
 - **測驗**:每課 10 題(日→中、中→日四選一 + 輸入題,WanaKana 正規化比對)、錯題一鍵加入複習
 - **統計**:12 週複習熱力圖、7/30 天到期預測、留存率(整體/近 30 天/12 週曲線)、各課進度
@@ -25,6 +25,8 @@ pnpm validate:content # public/data/** 全量 Zod 驗證
 ## 內容管線(已完成,一次性)
 
 PDF 具文字層,採 `pdftotext -layout` 抽文字 → Claude Code 依 `docs/PIPELINE.md` 慣例直抽為 JSON → `pnpm validate:content`(Zod 單一真相)把關;讀音由使用者人工校讀。50/50 課已收錄於 `public/data/`。
+
+單字重音(pitch accent)由 `pnpm enrich:accents` 自 [kanjium](https://github.com/mifunetoshiro/kanjium) 重音資料回填(CC BY-SA 4.0),覆蓋 1744/2105(82.9%),配對不確定者寧缺勿錯。致謝:_"The pitch accent notation … were provided by Uros O. through his free database."_
 
 ## 部署
 

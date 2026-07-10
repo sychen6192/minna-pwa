@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Check, Plus, Volume2 } from "lucide-react";
+import { PitchAccent, hasPitch } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
 import { addCards, existingCardIds, setSuspended, suspendedCardIds } from "@/lib/srs";
@@ -202,7 +203,7 @@ function VocabList({
           return (
             <li key={v.id} className="border-b border-foreground/10 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="flex items-center gap-2 text-lg">
+                <span className="flex flex-wrap items-center gap-2 text-lg">
                   <RubyText segments={v.ruby} furigana={furigana} />
                   <button
                     type="button"
@@ -212,6 +213,13 @@ function VocabList({
                   >
                     <Volume2 className="size-4" aria-hidden />
                   </button>
+                  {hasPitch(v.kana, v.accent) && (
+                    <PitchAccent
+                      kana={v.kana}
+                      accent={v.accent}
+                      className="text-sm text-foreground/70"
+                    />
+                  )}
                 </span>
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="text-xs text-foreground/60">{v.pos}</span>

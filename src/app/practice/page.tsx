@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { PitchAccent } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { SpeakButton } from "@/components/SpeakButton";
 import { getLesson } from "@/lib/content";
@@ -158,11 +159,15 @@ export default function PracticePage() {
                 <div className="text-3xl">
                   <RubyText segments={item.vocab.ruby} furigana={furigana} />
                 </div>
-                <div className="text-base text-foreground/70">{item.vocab.kana}</div>
+                <div className="text-base text-foreground/70">
+                  <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
+                </div>
               </>
             ) : (
               <>
-                <div className="text-base text-foreground/70">{item.vocab.kana}</div>
+                <div className="text-base text-foreground/70">
+                  <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
+                </div>
                 <div className="text-lg">{item.vocab.meaning}</div>
               </>
             )}

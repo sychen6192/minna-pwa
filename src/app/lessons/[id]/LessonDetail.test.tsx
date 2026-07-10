@@ -41,6 +41,7 @@ const sampleLesson: Lesson = {
       id: "L13-V002",
       ruby: [{ b: "ほしい" }],
       kana: "ほしい",
+      accent: 2,
       meaning: "想要",
       pos: "い形",
     },
@@ -90,6 +91,18 @@ describe("LessonDetail", () => {
       screen.getByRole("heading", { name: "〜が ほしいです" }),
     ).toBeInTheDocument();
     expect(container.querySelectorAll("rt").length).toBeGreaterThan(0);
+  });
+
+  it("有 accent 的單字顯示重音標記,無 accent 者不顯示", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    // ほしい(accent: 2)→ 重音標記;あそびます(無 accent)→ 無標記
+    expect(
+      screen.getByLabelText("ほしい、重音 2 型(中高)"),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/あそびます、重音/)).not.toBeInTheDocument();
   });
 
   it("頁內 furigana 快切:隱藏後移除所有 <rt>", async () => {

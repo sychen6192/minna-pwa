@@ -34,7 +34,7 @@ export const VocabItemSchema = z.object({
   id: z.string().regex(/^L\d{2}-V\d{3}$/),
   ruby: z.array(RubySegSchema).min(1),
   kana: z.string().min(1),           // 全假名讀音(輸入比對、排序用)
-  accent: z.number().int().min(0).optional(),
+  accent: z.number().int().min(0).optional(), // 東京式重音核:0=平板,n=第n拍後下降(kanjium 回填)
   meaning: z.string().min(1),        // 繁體中文釋義
   pos: PosEnum,
   note: z.string().optional(),       // 補充(接續、慣用情境等)

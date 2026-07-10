@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build:index": "tsx scripts/build-index.ts",
+    "enrich:accents": "tsx scripts/enrich-accents.ts",
     "validate:content": "tsx scripts/validate-content.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm test",
     "format": "prettier --write .",

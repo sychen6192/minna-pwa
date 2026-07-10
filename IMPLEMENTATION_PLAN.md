@@ -185,3 +185,7 @@
 - [x] **T9.2 回想方向雙向卡**(義→日,設定可開關)
 - [x] **T9.3 可 suspend / 跳過已會**(自訂課序暫緩:教材順序即自然序)
 - [x] **T9.4 統計加 SRS 階段分布 + 可設 Desired Retention**
+
+- [x] **T9.5 單字重音標記(pitch accent,SPEC F1.5)**(原 Tier 3 首項,2026-07-10 提前)
+  做什麼:`pnpm enrich:accents`(scripts/enrich-accents.ts)以 kanjium 重音辭典(CC BY-SA 4.0)於建置期回填 `vocab.accent`——四層配對:表記+讀音精確、ます形音韻規則(核固定在「ま」= 拍數-1;kanjium 不收ます形)、表記唯一、讀音唯一(同音詞重音一致才採用),寧缺勿錯;覆蓋 82.9%(1744/2105),未命中(多詞慣用句、kanjium 未收之國名/こそあど等)誠實不標。手術式逐行寫回保持既有格式,diff 僅 accent 行。新增 `src/lib/pitch.ts`(拍切分、音高型)與 `PitchAccent` 元件(高拍上線、下降核豎線、平板尾延伸線、[n] 型號徽章),顯示於課程單字列與複習/練習卡背面。
+  驗收:pitch.ts 與 enrich-accents 純函式測試、PitchAccent 元件測試、課程頁/複習頁 wiring 測試;`pnpm validate:content` 51/51;`pnpm verify` 全綠。
