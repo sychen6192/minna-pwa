@@ -35,6 +35,11 @@ vi.mock("@/lib/db", () => ({
   getSetting: (...a: unknown[]) => getSetting(...a),
 }));
 
+const speak = vi.fn();
+vi.mock("@/lib/tts", () => ({
+  speak: (...a: unknown[]) => speak(...a),
+}));
+
 import ReviewPage from "./page";
 
 const cardRow: CardRow = {
@@ -115,6 +120,47 @@ describe("ReviewPage", () => {
     expect(await screen.findByText("本次複習結算")).toBeInTheDocument();
     const goodRow = screen.getByText("良好").closest("div");
     expect(goodRow).toHaveTextContent("1");
+  });
+
+  it("翻卡後顯示同課例句(附翻譯)與例句/單字發音鈕", async () => {
+    const lessonWithExample: Lesson = {
+      ...lesson,
+      grammar: [
+        {
+          id: "L13-G01",
+          pattern: "型",
+          examples: [
+            {
+              id: "L13-S01",
+              ruby: [{ b: "公園で" }, { b: "遊", r: "あそ" }, { b: "びます。" }],
+              translation: "在公園玩。",
+            },
+          ],
+        },
+      ],
+    };
+    buildQueue.mockResolvedValue([cardRow]);
+    getSetting.mockResolvedValue("show");
+    getLesson.mockResolvedValue(lessonWithExample);
+    previewIntervals.mockResolvedValue(previews);
+    countDue.mockResolvedValue(0);
+    const user = userEvent.setup();
+    render(<ReviewPage />);
+
+    await screen.findByText(/點擊卡片/);
+    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+
+    // 例句翻譯與發音鈕
+    expect(screen.getByText("在公園玩。")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "播放例句發音" }),
+    ).toBeInTheDocument();
+
+    // 單字發音鈕 → speak(kana)
+    await user.click(
+      screen.getByRole("button", { name: "播放 あそびます 的發音" }),
+    );
+    expect(speak).toHaveBeenCalledWith("あそびます");
   });
 
   it("鍵盤:空白翻面、數字鍵評分", async () => {

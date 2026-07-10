@@ -155,3 +155,20 @@
 - [x] **T7.5 首頁儀表板與 favicon 收尾**(驗收時發現的腳手架殘留)
   做什麼:首頁 `/`(PWA start_url)原為 T0.1 佔位「建置中」,改為今日儀表板——到期複習張數(→ /review)、已開始課數 / 累計卡片、快捷入口;三態(空 DB / 有到期 / 無到期)。BottomNav 補「首頁」分頁(原無回首頁入口)。`src/app/favicon.ico` 原為 Next.js 預設 logo,改用 app icon(藍底「み」)。新增純函式 `studySummary`(stats.ts)。
   驗收:`pnpm verify` 全綠;首頁三態測試、BottomNav 6 分頁測試、studySummary 單元測試;線上 favicon 為 app icon。
+
+## Phase 8 — 對標頂尖日語 app 的強化(Tier 1,2026-07-10 對標評估後追加)
+
+依市場對標(Anki/WaniKani/jpdb/Bunpro/Renshuu)評估;本階段四項皆「資料現成、相容純靜態離線」,見對標評分卡與路線圖。
+
+- [x] **T8.1 語境例句上卡 + 朗讀**
+  做什麼:複習卡揭曉後,顯示同課語境例句(含翻譯、furigana)與例句/單字 TTS 發音鈕。純函式 `findExampleSentence`(examples.ts):掃該課文法例句與会話,取含單字表面形的最短句;無則不顯示(誠實版,約 1/4 卡片受惠、零誤配)。876 句例句的完整舞台留待文法功能。
+  驗收:`findExampleSentence` 單元測試(命中/取最短/null/略過單字元);複習頁例句與發音鈕測試。
+
+- [ ] **T8.2 Leech 頑固卡偵測 + 錯題本**
+  做什麼:依 `lapses` 門檻標記頑固卡,首頁/複習提示;新增「錯題與頑固卡」專屬複習佇列。
+
+- [ ] **T8.3 Streak + 每日目標**
+  做什麼:由 logs 算連續學習天數 + 今日目標進度,顯示於儀表板(溫和單人版)。
+
+- [ ] **T8.4 課程列表真實進度**
+  做什麼:課程列表右側「未開始」佔位接上實際狀態(未開始/進行中/已完成),源自各課 added·learned。

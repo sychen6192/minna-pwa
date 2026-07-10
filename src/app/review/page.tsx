@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { Volume2 } from "lucide-react";
 import { RatingButtons } from "@/components/RatingButtons";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
+import { findExampleSentence } from "@/lib/examples";
+import { speak } from "@/lib/tts";
 import { getSetting, type CardRow } from "@/lib/db";
 import {
   buildQueue,
@@ -14,14 +17,20 @@ import {
   type IntervalPreviews,
   type ReviewRating,
 } from "@/lib/srs";
-import type { Lesson, VocabItem } from "@/schemas/lesson";
+import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
 
 const DAY = 86_400_000;
+
+/** ruby 分段的表面文字(TTS 讀例句用) */
+function plainText(segs: RubySeg[]): string {
+  return segs.map((s) => s.b).join("");
+}
 
 interface SessionItem {
   card: CardRow;
   vocab: VocabItem;
   lessonTitle: string;
+  example: Sentence | null;
 }
 
 type Phase = "loading" | "empty" | "review" | "summary" | "error";
@@ -70,7 +79,12 @@ export default function ReviewPage() {
           const lesson = lessons.get(card.lessonId);
           const vocab = lesson?.vocab.find((v) => v.id === card.cardId);
           return lesson && vocab
-            ? { card, vocab, lessonTitle: lesson.title }
+            ? {
+                card,
+                vocab,
+                lessonTitle: lesson.title,
+                example: findExampleSentence(vocab, lesson),
+              }
             : null;
         })
         .filter((x): x is SessionItem => x !== null);
@@ -225,6 +239,31 @@ export default function ReviewPage() {
         )}
       </button>
 
+      {/* 揭曉後的發音與例句(置於 flip button 外,避免 button 巢狀) */}
+      {flipped && (
+        <div className="space-y-2 px-4 pb-2">
+          <div className="flex justify-center">
+            <SpeakButton text={item.vocab.kana} label="發音" />
+          </div>
+          {item.example && (
+            <div className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1 text-sm">
+                  <RubyText segments={item.example.ruby} furigana={furigana} />
+                  <p className="mt-1 text-xs text-foreground/60">
+                    {item.example.translation}
+                  </p>
+                </div>
+                <SpeakButton
+                  text={plainText(item.example.ruby)}
+                  aria-label="播放例句發音"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="pb-4">
         {flipped ? (
           <RatingButtons previews={previews} onRate={handleRate} />
@@ -235,6 +274,28 @@ export default function ReviewPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function SpeakButton({
+  text,
+  label,
+  ...rest
+}: {
+  text: string;
+  label?: string;
+  "aria-label"?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={rest["aria-label"] ?? `播放 ${text} 的發音`}
+      onClick={() => speak(text)}
+      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-foreground/10 px-2.5 py-1 text-xs text-foreground/70 transition-colors active:bg-foreground/5"
+    >
+      <Volume2 className="size-4" aria-hidden />
+      {label}
+    </button>
   );
 }
 
