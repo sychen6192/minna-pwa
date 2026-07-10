@@ -30,6 +30,17 @@ export interface StudySummary {
 
 export type LessonStatus = "not-started" | "in-progress" | "done";
 
+export interface StageCounts {
+  new: number; // state New
+  learning: number; // state Learning / Relearning
+  young: number; // Review 但未成熟(stability < MATURE_STABILITY)
+  mature: number; // Review 且已成熟
+  suspended: number; // 已會/暫停(不論 state)
+}
+
+/** 成熟門檻(天):對標 Anki 的 mature 定義(interval ≥ 21 天)。 */
+export const MATURE_STABILITY = 21;
+
 function localDateKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -162,6 +173,22 @@ export function studySummary(cards: CardRow[], index: LessonIndex): StudySummary
     totalLessons: index.lessons.length,
     totalCards: fwd.length,
   };
+}
+
+/**
+ * SRS 階段分布:新卡 / 學習中 / 未成熟 / 已成熟 / 已暫停。
+ * 已暫停者不論 state 一律歸入 suspended。
+ */
+export function stageDistribution(cards: CardRow[]): StageCounts {
+  const counts: StageCounts = { new: 0, learning: 0, young: 0, mature: 0, suspended: 0 };
+  for (const card of cards) {
+    if (card.suspended) counts.suspended++;
+    else if (card.state === 0) counts.new++;
+    else if (card.state === 1 || card.state === 3) counts.learning++;
+    else if (card.stability >= MATURE_STABILITY) counts.mature++;
+    else counts.young++;
+  }
+  return counts;
 }
 
 /** 今日(本地時區)已複習張數。 */

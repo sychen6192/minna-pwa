@@ -184,4 +184,4 @@
 
 - [x] **T9.2 回想方向雙向卡**(義→日,設定可開關)
 - [x] **T9.3 可 suspend / 跳過已會**(自訂課序暫緩:教材順序即自然序)
-- [ ] **T9.4 統計加 SRS 階段分布 + 可設 Desired Retention**
+- [x] **T9.4 統計加 SRS 階段分布 + 可設 Desired Retention**

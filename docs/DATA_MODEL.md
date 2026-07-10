@@ -178,6 +178,7 @@ settings 預設值(首次啟動寫入):
 | `maxReviewsPerDay` | 200 |
 | `dailyGoal` | 20(每日複習目標張數,首頁進度環) |
 | `reverseCards` | false(開啟後新增單字同時建義→日回想卡;cardId 加 `@r` 尾綴) |
+| `desiredRetention` | 0.9(FSRS 目標保留率,0.80–0.97;越高複習越頻繁) |
 | `ttsEnabled` | true |
 | `furigana` | `"show"`(`show` \| `hide`) |
 | `installPromptDismissed` | false(加入主畫面提示已被關閉) |

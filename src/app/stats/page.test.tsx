@@ -54,9 +54,12 @@ describe("StatsPage", () => {
     render(<StatsPage />);
 
     expect(await screen.findByRole("heading", { name: /複習熱力圖/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /卡片階段分布/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /到期預測/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /留存率/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /各課進度/ })).toBeInTheDocument();
+    // 階段分布:1 張 Review 卡歸「未成熟」(stability 1 < 21)
+    expect(screen.getByText("未成熟").closest("li")).toHaveTextContent("1");
     // 數字卡:總卡數 1、整體留存率 100%
     expect(screen.getByText("總卡數").parentElement).toHaveTextContent("1");
     expect(screen.getByText("整體留存率").parentElement).toHaveTextContent("100%");

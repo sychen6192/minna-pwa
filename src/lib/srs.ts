@@ -17,11 +17,26 @@ export type ReviewRating = 1 | 2 | 3 | 4;
  * 關閉 short-term(intra-day learning steps)與 fuzz:
  * - short-term off → 純以「天」排程,CardRow 不需持久化 learning_steps
  * - fuzz off → 排程確定,利於測試與穩定預估
+ * request_retention(目標保留率)由 `desiredRetention` 設定決定(T9.4)。
  */
-const scheduler: FSRS = fsrs({
-  enable_short_term: false,
-  enable_fuzz: false,
-});
+function buildScheduler(requestRetention: number): FSRS {
+  return fsrs({
+    enable_short_term: false,
+    enable_fuzz: false,
+    request_retention: requestRetention,
+  });
+}
+
+// 依保留率快取 scheduler,避免每次評分重建
+let schedulerCache: { retention: number; instance: FSRS } | null = null;
+
+async function getScheduler(): Promise<FSRS> {
+  const { desiredRetention } = await getAllSettings();
+  if (!schedulerCache || schedulerCache.retention !== desiredRetention) {
+    schedulerCache = { retention: desiredRetention, instance: buildScheduler(desiredRetention) };
+  }
+  return schedulerCache.instance;
+}
 
 // ── CardRow ↔ ts-fsrs Card 轉換 ─────────────────────────────────────
 
@@ -244,6 +259,7 @@ export async function rate(
   rating: ReviewRating,
   now: number = Date.now(),
 ): Promise<CardRow> {
+  const scheduler = await getScheduler();
   return db.transaction("rw", db.cards, db.logs, async () => {
     const row = await db.cards.get(cardId);
     if (!row) throw new Error(`找不到卡片:${cardId}`);
@@ -279,6 +295,7 @@ export async function previewIntervals(
 ): Promise<IntervalPreviews> {
   const row = await db.cards.get(cardId);
   if (!row) throw new Error(`找不到卡片:${cardId}`);
+  const scheduler = await getScheduler();
   const preview = scheduler.repeat(toFsrsCard(row), new Date(now));
   const pick = (g: Grade): RatingPreview => ({
     due: preview[g].card.due.getTime(),

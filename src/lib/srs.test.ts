@@ -317,3 +317,18 @@ describe("suspend 已會/暫停(T9.3)", () => {
     expect(await getLeeches()).toEqual([]);
   });
 })
+
+describe("desiredRetention(T9.4)", () => {
+  it("較高目標保留率 → 相同卡的 Good 間隔較短(複習更頻繁)", async () => {
+    await addCards(["a"], 13, NOW);
+    await rate("a", 3, NOW); // 進入 Review 態,間隔對保留率較敏感
+    const cardId = "a";
+
+    await setSetting("desiredRetention", 0.97);
+    const high = await previewIntervals(cardId, NOW);
+    await setSetting("desiredRetention", 0.8);
+    const low = await previewIntervals(cardId, NOW);
+
+    expect(high.good.days).toBeLessThan(low.good.days);
+  });
+})

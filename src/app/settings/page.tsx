@@ -188,6 +188,20 @@ export default function SettingsPage() {
               className="h-4 w-4 accent-sky-600"
             />
           </FieldRow>
+          <FieldRow label="目標保留率(FSRS)">
+            <select
+              aria-label="目標保留率"
+              defaultValue={String(settings.desiredRetention)}
+              onChange={(e) => void setSetting("desiredRetention", Number(e.target.value))}
+              className="rounded border border-neutral-300 px-2 py-1"
+            >
+              <option value="0.8">80%(複習較少)</option>
+              <option value="0.85">85%</option>
+              <option value="0.9">90%(建議)</option>
+              <option value="0.95">95%</option>
+              <option value="0.97">97%(複習最多)</option>
+            </select>
+          </FieldRow>
           <FieldRow label="Furigana 預設">
             <select
               aria-label="Furigana 預設"

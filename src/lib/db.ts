@@ -45,6 +45,7 @@ export interface Settings {
   maxReviewsPerDay: number;
   dailyGoal: number; // 每日複習目標張數(首頁進度環,T8.3)
   reverseCards: boolean; // 產生義→日回想方向卡(T9.2)
+  desiredRetention: number; // FSRS 目標保留率 0.80–0.97(T9.4)
   ttsEnabled: boolean;
   furigana: "show" | "hide";
   installPromptDismissed: boolean; // 安裝提示已被使用者關閉(T6.3)
@@ -55,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   maxReviewsPerDay: 200,
   dailyGoal: 20,
   reverseCards: false,
+  desiredRetention: 0.9,
   ttsEnabled: true,
   furigana: "show",
   installPromptDismissed: false,

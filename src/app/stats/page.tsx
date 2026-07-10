@@ -21,9 +21,58 @@ import {
   dueForecast,
   lessonProgress,
   retentionRate,
+  stageDistribution,
   weeklyRetention,
+  type StageCounts,
 } from "@/lib/stats";
 import type { LessonIndex } from "@/schemas/lesson";
+
+const STAGES: { key: keyof StageCounts; label: string; color: string }[] = [
+  { key: "new", label: "新卡", color: "#7dd3fc" },
+  { key: "learning", label: "學習中", color: "#fbbf24" },
+  { key: "young", label: "未成熟", color: "#0284c7" },
+  { key: "mature", label: "已成熟", color: "#16a34a" },
+  { key: "suspended", label: "已會", color: "#a3a3a3" },
+];
+
+function StageBar({ counts }: { counts: StageCounts }) {
+  const total = STAGES.reduce((sum, s) => sum + counts[s.key], 0);
+  if (total === 0) {
+    return <p className="text-sm text-neutral-500">尚無卡片。</p>;
+  }
+  return (
+    <div>
+      <div className="flex h-3 overflow-hidden rounded-full">
+        {STAGES.map((s) =>
+          counts[s.key] > 0 ? (
+            <div
+              key={s.key}
+              style={{ width: `${(counts[s.key] / total) * 100}%`, background: s.color }}
+              aria-label={`${s.label} ${counts[s.key]}`}
+            />
+          ) : null,
+        )}
+      </div>
+      <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+        {STAGES.map((s) => (
+          <li key={s.key} className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-neutral-600">
+              <span
+                className="inline-block size-2.5 rounded-full"
+                style={{ background: s.color }}
+                aria-hidden
+              />
+              {s.label}
+            </span>
+            <span className="font-medium tabular-nums text-neutral-900">
+              {counts[s.key]}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 type Phase = "loading" | "empty" | "ready" | "error";
 
@@ -114,6 +163,7 @@ export default function StatsPage() {
     () => (index ? lessonProgress(cards, index) : []),
     [cards, index],
   );
+  const stages = useMemo(() => stageDistribution(cards), [cards]);
   const todayCount = daily.length ? daily[daily.length - 1].count : 0;
 
   if (phase === "loading") {
@@ -158,6 +208,10 @@ export default function StatsPage() {
           value={formatPercent(retentionRate(logs, { sinceDays: 30, now }))}
         />
       </div>
+
+      <Section title="卡片階段分布">
+        <StageBar counts={stages} />
+      </Section>
 
       <Section title="複習熱力圖(過去 12 週)">
         <Heatmap data={daily} />

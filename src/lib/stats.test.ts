@@ -8,6 +8,7 @@ import {
   lessonStatus,
   retentionRate,
   reviewsToday,
+  stageDistribution,
   studySummary,
   weeklyRetention,
 } from "./stats";
@@ -319,5 +320,36 @@ describe("lessonStatus", () => {
 
   it("total 為 0 的防禦:不誤判為 done", () => {
     expect(lessonStatus(p(0, 0, 0))).toBe("not-started");
+  });
+});
+
+describe("stageDistribution", () => {
+  it("依 state 與 stability 分桶;suspended 優先", () => {
+    const cards = [
+      card({ state: 0 }), // new
+      card({ state: 1 }), // learning
+      card({ state: 3 }), // relearning → learning
+      card({ state: 2, stability: 5 }), // young
+      card({ state: 2, stability: 21 }), // mature(門檻值)
+      card({ state: 2, stability: 100 }), // mature
+      card({ state: 2, stability: 100, suspended: true }), // suspended 優先
+    ];
+    expect(stageDistribution(cards)).toEqual({
+      new: 1,
+      learning: 2,
+      young: 1,
+      mature: 2,
+      suspended: 1,
+    });
+  });
+
+  it("空集合全為 0", () => {
+    expect(stageDistribution([])).toEqual({
+      new: 0,
+      learning: 0,
+      young: 0,
+      mature: 0,
+      suspended: 0,
+    });
   });
 });
