@@ -42,8 +42,8 @@ export function PitchAccent({
             data-drop={m.dropAfter ? "" : undefined}
             className={cn(
               "border-t-2 border-t-transparent",
-              m.high && "border-t-sky-600",
-              m.dropAfter && "border-r-2 border-r-sky-600",
+              m.high && "border-t-red-600",
+              m.dropAfter && "border-r-2 border-r-red-600",
             )}
           >
             {m.text}
@@ -51,7 +51,7 @@ export function PitchAccent({
         ))}
         {/* 平板型:尾端延伸線表示「後接助詞仍為高」,與尾高型視覺區隔 */}
         {accent === 0 && (
-          <span data-tail className="w-1.5 self-stretch border-t-2 border-t-sky-600" />
+          <span data-tail className="w-1.5 self-stretch border-t-2 border-t-red-600" />
         )}
       </span>
       <span
