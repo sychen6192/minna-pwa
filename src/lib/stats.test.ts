@@ -5,6 +5,7 @@ import {
   dueForecast,
   lessonProgress,
   retentionRate,
+  studySummary,
   weeklyRetention,
 } from "./stats";
 
@@ -197,5 +198,37 @@ describe("lessonProgress", () => {
       { lessonId: 1, title: "第一課", total: 10, added: 3, learned: 2 },
       { lessonId: 2, title: "第二課", total: 5, added: 0, learned: 0 },
     ]);
+  });
+});
+
+describe("studySummary", () => {
+  const index: LessonIndex = {
+    lessons: [
+      { id: 1, title: "第一課", vocabCount: 10, grammarCount: 3 },
+      { id: 2, title: "第二課", vocabCount: 5, grammarCount: 2 },
+      { id: 3, title: "第三課", vocabCount: 8, grammarCount: 1 },
+    ],
+  };
+
+  it("空卡:started 0、totalCards 0、totalLessons 為 index 課數", () => {
+    expect(studySummary([], index)).toEqual({
+      startedLessons: 0,
+      totalLessons: 3,
+      totalCards: 0,
+    });
+  });
+
+  it("startedLessons = 至少 1 張卡的相異課數;totalCards = 卡片總數", () => {
+    const cards = [
+      card({ cardId: "L01-V001", lessonId: 1 }),
+      card({ cardId: "L01-V002", lessonId: 1 }),
+      card({ cardId: "L02-V001", lessonId: 2 }),
+    ];
+
+    expect(studySummary(cards, index)).toEqual({
+      startedLessons: 2,
+      totalLessons: 3,
+      totalCards: 3,
+    });
   });
 });

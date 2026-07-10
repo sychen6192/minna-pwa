@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   BookOpen,
+  Home,
   PencilLine,
   RotateCcw,
   Settings,
@@ -19,6 +20,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { href: "/", label: "首頁", icon: Home },
   { href: "/lessons", label: "課程", icon: BookOpen },
   { href: "/review", label: "複習", icon: RotateCcw },
   { href: "/quiz", label: "測驗", icon: PencilLine },

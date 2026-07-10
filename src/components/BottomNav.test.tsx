@@ -25,21 +25,25 @@ vi.mock("next/link", () => ({
 import { BottomNav } from "./BottomNav";
 
 describe("BottomNav", () => {
-  it("渲染 5 個分頁連結", () => {
+  it("渲染 6 個分頁連結", () => {
     render(<BottomNav />);
-    expect(screen.getAllByRole("link")).toHaveLength(5);
-    for (const label of ["課程", "複習", "測驗", "統計", "設定"]) {
+    expect(screen.getAllByRole("link")).toHaveLength(6);
+    for (const label of ["首頁", "課程", "複習", "測驗", "統計", "設定"]) {
       expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
     }
   });
 
-  it("依 pathname 標示 active(/lessons/13 → 課程)", () => {
+  it("依 pathname 標示 active(/lessons/13 → 課程;首頁不因前綴誤判 active)", () => {
     render(<BottomNav />);
     expect(screen.getByRole("link", { name: "課程" })).toHaveAttribute(
       "aria-current",
       "page",
     );
     expect(screen.getByRole("link", { name: "複習" })).not.toHaveAttribute(
+      "aria-current",
+    );
+    // href="/" 只在精確為 "/" 時 active,不可被任意路徑的前綴匹配誤判
+    expect(screen.getByRole("link", { name: "首頁" })).not.toHaveAttribute(
       "aria-current",
     );
   });

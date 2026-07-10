@@ -151,3 +151,7 @@
 - [x] **T7.4 收尾**
   做什麼:bundle 預算檢查(N4:首頁 gzip < 200 KB)、鍵盤 / 對比度快掃、README 更新為實際狀態。補 `/quiz` 選課入口頁(BottomNav 既有連結原為 404)。
   驗收:`pnpm build` 輸出體積記錄於 PR;README 與現況一致。
+
+- [x] **T7.5 首頁儀表板與 favicon 收尾**(驗收時發現的腳手架殘留)
+  做什麼:首頁 `/`(PWA start_url)原為 T0.1 佔位「建置中」,改為今日儀表板——到期複習張數(→ /review)、已開始課數 / 累計卡片、快捷入口;三態(空 DB / 有到期 / 無到期)。BottomNav 補「首頁」分頁(原無回首頁入口)。`src/app/favicon.ico` 原為 Next.js 預設 logo,改用 app icon(藍底「み」)。新增純函式 `studySummary`(stats.ts)。
+  驗收:`pnpm verify` 全綠;首頁三態測試、BottomNav 6 分頁測試、studySummary 單元測試;線上 favicon 為 app icon。

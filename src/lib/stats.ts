@@ -22,6 +22,12 @@ export interface LessonProgress {
   learned: number; // 已進入 Review 狀態(state === 2)的卡數
 }
 
+export interface StudySummary {
+  startedLessons: number; // 至少加入 1 張卡的相異課數
+  totalLessons: number; // index 總課數
+  totalCards: number; // 已加入的卡片總數
+}
+
 function localDateKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -129,4 +135,15 @@ export function lessonProgress(cards: CardRow[], index: LessonIndex): LessonProg
     added: added.get(lesson.id) ?? 0,
     learned: learned.get(lesson.id) ?? 0,
   }));
+}
+
+/** 首頁儀表板摘要:已開始課數、總課數、累計卡片數。 */
+export function studySummary(cards: CardRow[], index: LessonIndex): StudySummary {
+  const startedIds = new Set<number>();
+  for (const c of cards) startedIds.add(c.lessonId);
+  return {
+    startedLessons: startedIds.size,
+    totalLessons: index.lessons.length,
+    totalCards: cards.length,
+  };
 }
