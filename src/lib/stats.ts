@@ -28,6 +28,8 @@ export interface StudySummary {
   totalCards: number; // 已加入的卡片總數
 }
 
+export type LessonStatus = "not-started" | "in-progress" | "done";
+
 function localDateKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -135,6 +137,16 @@ export function lessonProgress(cards: CardRow[], index: LessonIndex): LessonProg
     added: added.get(lesson.id) ?? 0,
     learned: learned.get(lesson.id) ?? 0,
   }));
+}
+
+/**
+ * 課程學習狀態:未開始(未加入任何卡)/ 已完成(全部單字皆已學會,state=Review)/
+ * 進行中(其餘)。
+ */
+export function lessonStatus(p: LessonProgress): LessonStatus {
+  if (p.added === 0) return "not-started";
+  if (p.total > 0 && p.learned >= p.total) return "done";
+  return "in-progress";
 }
 
 /** 首頁儀表板摘要:已開始課數、總課數、累計卡片數。 */

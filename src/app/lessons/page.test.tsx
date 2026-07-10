@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
+import { db, type CardRow } from "@/lib/db";
 import type { LessonIndex } from "@/schemas/lesson";
 
 vi.mock("next/link", () => ({
@@ -33,6 +34,25 @@ const sampleIndex: LessonIndex = {
   })),
 };
 
+function card(overrides: Partial<CardRow>): CardRow {
+  return {
+    cardId: "L13-V001",
+    lessonId: 13,
+    type: "vocab",
+    due: Date.now(),
+    stability: 1,
+    difficulty: 5,
+    reps: 0,
+    lapses: 0,
+    state: 0,
+    ...overrides,
+  };
+}
+
+beforeEach(async () => {
+  await db.cards.clear();
+});
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -50,6 +70,22 @@ describe("LessonsPage", () => {
 
     const l13 = screen.getByRole("link", { name: /〜が ほしいです/ });
     expect(l13).toHaveAttribute("href", "/lessons/13");
+  });
+
+  it("依 DB 卡片顯示各課狀態:有卡未學完 → 進行中,無卡 → 未開始", async () => {
+    getLessonIndex.mockResolvedValue(sampleIndex);
+    await db.cards.bulkAdd([
+      card({ cardId: "L13-V001", state: 2 }), // 已學會
+      card({ cardId: "L13-V002", state: 0 }), // 新卡;共 2/12,未學完
+    ]);
+
+    render(<LessonsPage />);
+
+    const l13 = await screen.findByRole("link", { name: /〜が ほしいです/ });
+    expect(l13).toHaveTextContent("進行中");
+    // 無卡的課仍為未開始
+    const l1 = screen.getByRole("link", { name: /第 1 課/ });
+    expect(l1).toHaveTextContent("未開始");
   });
 
   it("載入中:資料未到前顯示載入提示", () => {

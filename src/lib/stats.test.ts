@@ -5,6 +5,7 @@ import {
   dailyReviewCounts,
   dueForecast,
   lessonProgress,
+  lessonStatus,
   retentionRate,
   reviewsToday,
   studySummary,
@@ -291,5 +292,32 @@ describe("computeStreak", () => {
       log({ reviewedAt: now.getTime() - DAY }),
     ];
     expect(computeStreak(logs, now)).toBe(2);
+  });
+});
+
+describe("lessonStatus", () => {
+  const p = (added: number, learned: number, total = 5) => ({
+    lessonId: 1,
+    title: "課",
+    total,
+    added,
+    learned,
+  });
+
+  it("未加入任何卡 → not-started", () => {
+    expect(lessonStatus(p(0, 0))).toBe("not-started");
+  });
+
+  it("已加入但未全部學會 → in-progress", () => {
+    expect(lessonStatus(p(3, 1))).toBe("in-progress");
+    expect(lessonStatus(p(5, 4))).toBe("in-progress"); // 差一張
+  });
+
+  it("全部單字皆已學會(learned = total)→ done", () => {
+    expect(lessonStatus(p(5, 5))).toBe("done");
+  });
+
+  it("total 為 0 的防禦:不誤判為 done", () => {
+    expect(lessonStatus(p(0, 0, 0))).toBe("not-started");
   });
 });
