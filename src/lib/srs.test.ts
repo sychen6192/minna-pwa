@@ -1,4 +1,4 @@
-import { beforeEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
 import { useTimeZone } from "@/test/timeZone";
 import { db, getSetting, setSetting } from "./db";
 import {
@@ -11,6 +11,9 @@ import {
   countDueByTomorrow,
   countLeeches,
   countSuspended,
+  hasAnyCards,
+  queueCounts,
+  setFuzzForTesting,
   setSuspended,
   suspendedCardIds,
   existingCardIds,
@@ -29,6 +32,34 @@ const DAY = 86_400_000;
 beforeEach(async () => {
   await Promise.all([db.cards.clear(), db.logs.clear(), db.settings.clear()]);
 });
+
+// 在任何測試改動前記下模組預設值(正式環境應開啟 fuzz,見「fuzz(T10.2)」)
+const FUZZ_DEFAULT = setFuzzForTesting(true);
+
+afterEach(() => {
+  setFuzzForTesting(true); // 預設與正式環境相同(fuzz 開啟)
+});
+
+/** 佇列的 cardId(保留順序) */
+const queueIds = (cards: CardRow[]) => cards.map((c) => c.cardId);
+
+/** 已進入 Review 的卡(直接寫 DB,不經 rate;due/lastReview 由呼叫端指定)。 */
+function reviewCard(cardId: string, due: number, overrides: Partial<CardRow> = {}): CardRow {
+  return {
+    cardId,
+    lessonId: 13,
+    type: "vocab",
+    direction: cardId.endsWith("@r") ? "rev" : "fwd",
+    due,
+    stability: 10,
+    difficulty: 5,
+    reps: 3,
+    lapses: 0,
+    state: 2,
+    lastReview: due - 10 * DAY,
+    ...overrides,
+  };
+}
 
 describe("addCards", () => {
   it("建立新卡(state=New),buildQueue 取得", async () => {
@@ -69,7 +100,7 @@ describe("buildQueue", () => {
     await addCards(["a", "b", "c"], 13, NOW);
     const due = (await rate("a", 3, NOW)).due;
     await rate("b", 3, NOW);
-    await rate("c", 3, NOW); // 三張同 due(fuzz 關閉)
+    await rate("c", 3, NOW); // 三張同 due(新卡首評 Good 固定 3 天,fuzz 不作用)
     await setSetting("newPerDay", 0);
     await setSetting("maxReviewsPerDay", 2);
     const queue = await buildQueue(due);
@@ -297,14 +328,17 @@ describe("雙向卡(T9.2)", () => {
     expect(await db.cards.count()).toBe(4);
   });
 
-  it("回想卡進入到期佇列,並保留 base 單字 id 對應", async () => {
+  it("回想卡保留 base 單字 id 對應,於正向卡首評的隔日起入列(T10.2 兄弟卡 bury)", async () => {
     await setSetting("reverseCards", true);
     await addCards(["L13-V001"], 13, NOW);
     const rev = await db.cards.get("L13-V001@r");
     expect(rev?.state).toBe(0); // New
     expect(baseVocabId(rev!.cardId)).toBe("L13-V001");
-    const queue = await buildQueue(NOW);
-    expect(queue.map((c) => c.cardId).sort()).toEqual(["L13-V001", "L13-V001@r"]);
+    // 正向卡仍為 New → 回想卡不入列
+    expect(queueIds(await buildQueue(NOW))).toEqual(["L13-V001"]);
+    await rate("L13-V001", 3, NOW);
+    expect(await buildQueue(NOW + 60_000)).toEqual([]); // 首評在今日 → 回想卡 bury
+    expect(queueIds(await buildQueue(addStudyDays(NOW, 1)))).toEqual(["L13-V001@r"]);
   });
 })
 
@@ -353,6 +387,7 @@ describe("suspend 已會/暫停(T9.3)", () => {
 
 describe("desiredRetention(T9.4)", () => {
   it("較高目標保留率 → 相同卡的 Good 間隔較短(複習更頻繁)", async () => {
+    setFuzzForTesting(false); // 比較兩種保留率的確定間隔,不讓 fuzz 干擾
     await addCards(["a"], 13, NOW);
     await rate("a", 3, NOW); // 進入 Review 態,間隔對保留率較敏感
     const cardId = "a";
@@ -472,5 +507,267 @@ describe("學習日與 ts-fsrs 日界(T10.1,America/New_York DST)", () => {
       studyDayKey(addStudyDays(now, preview.good.days)),
     );
     expect(new Date(good.due).getHours()).toBe(3);
+  });
+});
+
+describe("每日上限以學習日計(T10.2)", () => {
+  it("評完 newPerDay 張新卡後,同日重建佇列無新卡;隔日恢復", async () => {
+    await setSetting("newPerDay", 2);
+    await addCards(["a", "b", "c", "d", "e"], 13, NOW);
+    const first = await buildQueue(NOW);
+    expect(queueIds(first)).toEqual(["a", "b"]);
+    for (const c of first) await rate(c.cardId, 3, NOW);
+
+    expect(await buildQueue(NOW + 5 * 60_000)).toEqual([]); // 同日重開:不再發新額度
+    expect(queueIds(await buildQueue(addStudyDays(NOW, 1)))).toEqual(["c", "d"]);
+  });
+
+  it("同日只補足剩餘額度;同一張卡的多筆首評 log 只計一次", async () => {
+    await setSetting("newPerDay", 3);
+    await addCards(["a", "b", "c", "d", "e"], 13, NOW);
+    await rate("a", 3, NOW);
+    expect(queueIds(await buildQueue(NOW + 60_000))).toEqual(["b", "c"]);
+
+    await db.logs.add({ cardId: "a", rating: 3, state: 0, due: NOW, elapsedDays: 0, reviewedAt: NOW + 1 });
+    expect(queueIds(await buildQueue(NOW + 60_000))).toEqual(["b", "c"]);
+  });
+
+  it("每日複習上限:扣今日已複習筆數(首評不佔額度),未排入者隔日補出", async () => {
+    await addCards(["a", "b", "c"], 13, NOW);
+    for (const id of ["a", "b", "c"]) await rate(id, 3, NOW); // 三張同 due
+    const day = (await db.cards.get("a"))!.due;
+    await setSetting("maxReviewsPerDay", 2);
+    await addCards(["n1"], 13, day);
+
+    expect(queueIds(await buildQueue(day))).toEqual(["a", "b", "n1"]);
+    await rate("n1", 3, day); // 新卡首評:不佔複習額度
+    expect(queueIds(await buildQueue(day + 60_000))).toEqual(["a", "b"]);
+
+    await rate("a", 3, day);
+    await rate("b", 3, day);
+    expect(await buildQueue(day + 120_000)).toEqual([]); // 今日複習額度用完
+    expect(await countDue(day)).toBe(1); // c 仍到期
+    expect(queueIds(await buildQueue(addStudyDays(day, 1)))).toEqual(["c"]);
+  });
+});
+
+describe("雙向卡兄弟 bury(T10.2)", () => {
+  it("reverseCards 開啟:同日佇列不同時含 X 與 X@r;回想卡於正向卡首評隔日入列", async () => {
+    await setSetting("reverseCards", true);
+    await addCards(["X", "Y", "Z"], 13, NOW);
+    const today = await buildQueue(NOW);
+    expect(queueIds(today)).toEqual(["X", "Y", "Z"]); // 新卡額度全給正向卡
+    const bases = today.map((c) => baseVocabId(c.cardId));
+    expect(new Set(bases).size).toBe(bases.length);
+
+    for (const c of today) await rate(c.cardId, 3, NOW);
+    expect(await buildQueue(NOW + 60_000)).toEqual([]); // 首評在今日 → @r bury
+    expect(queueIds(await buildQueue(addStudyDays(NOW, 1)))).toEqual(["X@r", "Y@r", "Z@r"]);
+  });
+
+  it("兄弟卡同日到期只出 due 較早者;被 bury 者保持到期、隔日才出", async () => {
+    await setSetting("newPerDay", 0);
+    await db.cards.bulkAdd([
+      reviewCard("X", NOW),
+      reviewCard("X@r", NOW - DAY), // 較早到期
+      reviewCard("W", NOW),
+    ]);
+    expect(queueIds(await buildQueue(NOW))).toEqual(["X@r", "W"]);
+
+    await rate("X@r", 3, NOW);
+    await rate("W", 3, NOW);
+    expect(await buildQueue(NOW + 60_000)).toEqual([]); // X 今日仍 bury
+    expect(await countDue(NOW)).toBe(1); // X 未被改動,仍到期
+    expect(queueIds(await buildQueue(addStudyDays(NOW, 1)))).toEqual(["X"]);
+  });
+
+  it("正向新卡先填滿額度,剩餘才給 @r(正向卡已非 New 且首評不在今日)", async () => {
+    await addCards(["B", "C"], 13, NOW); // reverseCards 關:只有正向新卡
+    await db.cards.bulkAdd([
+      reviewCard("A", addStudyDays(NOW, 5), { lastReview: addStudyDays(NOW, -1) }),
+      { ...(await db.cards.get("B"))!, cardId: "A@r", direction: "rev" }, // New 回想卡
+    ]);
+
+    await setSetting("newPerDay", 2);
+    expect(queueIds(await buildQueue(NOW))).toEqual(["B", "C"]);
+    await setSetting("newPerDay", 3);
+    expect(queueIds(await buildQueue(NOW))).toEqual(["B", "C", "A@r"]);
+  });
+});
+
+describe("queueCounts / hasAnyCards(T10.2)", () => {
+  it("與 buildQueue 同一計算;新卡額度用完且仍有新卡等待 → newCapReached", async () => {
+    await setSetting("newPerDay", 2);
+    await addCards(["a", "b", "c"], 13, NOW);
+    expect(await queueCounts(NOW)).toEqual({
+      due: 0,
+      fresh: 2,
+      newCapReached: false,
+      newCapped: 1,
+      newRemaining: 2,
+      newToday: 0,
+      newPerDay: 2,
+      reviewCapReached: false,
+    });
+
+    await rate("a", 3, NOW);
+    await rate("b", 3, NOW);
+    expect(await queueCounts(NOW + 60_000)).toEqual({
+      due: 0,
+      fresh: 0,
+      newCapReached: true,
+      newCapped: 1,
+      newRemaining: 0,
+      newToday: 2,
+      newPerDay: 2,
+      reviewCapReached: false,
+    });
+    expect(await queueCounts(addStudyDays(NOW, 1))).toMatchObject({
+      fresh: 1,
+      newCapReached: false,
+      newToday: 0,
+    });
+  });
+
+  it("新卡已全部學過(無新卡等待)→ newCapReached 為 false", async () => {
+    await setSetting("newPerDay", 2);
+    await addCards(["a", "b"], 13, NOW);
+    await rate("a", 3, NOW);
+    await rate("b", 3, NOW);
+    expect(await queueCounts(NOW + 60_000)).toMatchObject({
+      fresh: 0,
+      newCapReached: false,
+    });
+  });
+
+  it("reverseCards:額度用完時只剩 bury 的 @r 新卡 → 仍算 newCapReached(明天出),但 newCapped 為 0", async () => {
+    await setSetting("reverseCards", true);
+    await setSetting("newPerDay", 3);
+    await addCards(["X", "Y", "Z"], 13, NOW);
+    for (const id of ["X", "Y", "Z"]) await rate(id, 3, NOW);
+    expect(await queueCounts(NOW + 60_000)).toMatchObject({
+      due: 0,
+      fresh: 0,
+      newCapReached: true,
+      newCapped: 0,
+      newRemaining: 0,
+    });
+  });
+
+  it("額度未用完、只剩 bury 的 @r 新卡 → 不算 newCapReached(今日仍可加入新字)", async () => {
+    await setSetting("reverseCards", true);
+    await addCards(["X"], 13, NOW); // newPerDay 預設 10
+    await rate("X", 3, NOW);
+    expect(await queueCounts(NOW + 60_000)).toMatchObject({
+      fresh: 0,
+      newCapReached: false,
+      newRemaining: 9,
+    });
+  });
+
+  it("newPerDay 為 0 且有新卡 → newCapReached(頁面另給文案)", async () => {
+    await setSetting("newPerDay", 0);
+    await addCards(["a"], 13, NOW);
+    expect(await queueCounts(NOW)).toMatchObject({
+      fresh: 0,
+      newCapReached: true,
+      newCapped: 1,
+      newPerDay: 0,
+    });
+  });
+
+  it("複習額度用完且仍有未 bury 的到期卡 → reviewCapReached", async () => {
+    await setSetting("newPerDay", 0);
+    await db.cards.bulkAdd([reviewCard("X", NOW), reviewCard("W", NOW)]);
+    await setSetting("maxReviewsPerDay", 1);
+    expect(await queueCounts(NOW)).toMatchObject({ due: 1, reviewCapReached: true });
+    await setSetting("maxReviewsPerDay", 2);
+    expect(await queueCounts(NOW)).toMatchObject({ due: 2, reviewCapReached: false });
+
+    // 額度用完,但剩下的到期卡只有 bury 的兄弟卡 → 不算
+    await db.cards.clear();
+    await db.cards.bulkAdd([reviewCard("X", NOW - DAY), reviewCard("X@r", NOW)]);
+    await setSetting("maxReviewsPerDay", 1);
+    expect(await queueCounts(NOW)).toMatchObject({ due: 1, reviewCapReached: false });
+  });
+
+  it("due 數含上限與 bury,與 buildQueue 長度一致", async () => {
+    await setSetting("newPerDay", 0);
+    await db.cards.bulkAdd([
+      reviewCard("X", NOW),
+      reviewCard("X@r", NOW),
+      reviewCard("W", NOW),
+      reviewCard("V", NOW),
+    ]);
+    await setSetting("maxReviewsPerDay", 2);
+    const counts = await queueCounts(NOW);
+    expect(counts.due).toBe((await buildQueue(NOW)).length);
+    expect(counts.due).toBe(2);
+    await setSetting("maxReviewsPerDay", 10);
+    expect((await queueCounts(NOW)).due).toBe(3); // X 與 X@r 只出一張
+  });
+
+  it("hasAnyCards:空 DB 為 false;有卡(含暫停)為 true", async () => {
+    expect(await hasAnyCards()).toBe(false);
+    await addCards(["a"], 13, NOW);
+    await setSuspended("a", true);
+    expect(await hasAnyCards()).toBe(true);
+  });
+});
+
+/** ts-fsrs get_fuzz_range 的區間(FUZZ_RANGES:2.5–7 天 ×0.15、7–20 天 ×0.1、20 天以上 ×0.05)。 */
+function fuzzRange(ivl: number, elapsedDays: number): { min: number; max: number } {
+  const delta =
+    1 +
+    0.15 * Math.max(Math.min(ivl, 7) - 2.5, 0) +
+    0.1 * Math.max(Math.min(ivl, 20) - 7, 0) +
+    0.05 * Math.max(ivl - 20, 0);
+  let min = Math.max(2, Math.round(ivl - delta));
+  const max = Math.round(ivl + delta);
+  if (ivl > elapsedDays) min = Math.max(min, elapsedDays + 1);
+  return { min: Math.min(min, max), max };
+}
+
+describe("fuzz(T10.2)", () => {
+  const words = ["L13-V001", "L13-V002", "L13-V003", "L13-V004", "L13-V005", "L13-V006"];
+  const cardIds = words.flatMap((w) => [w, `${w}@r`]);
+  const RATING_KEY = { 1: "again", 2: "hard", 3: "good", 4: "easy" } as const;
+
+  it("正式環境預設開啟 fuzz", () => {
+    expect(FUZZ_DEFAULT).toBe(true);
+  });
+
+  it("預估即實際:previewIntervals 的 due 等於 rate 套用的 due(思考數秒後評分亦同)", async () => {
+    await db.cards.bulkAdd(cardIds.map((id) => reviewCard(id, NOW)));
+    for (const [i, id] of cardIds.entries()) {
+      const rating = ((i % 4) + 1) as 1 | 2 | 3 | 4;
+      const key = RATING_KEY[rating];
+      const preview = await previewIntervals(id, NOW);
+      const later = await previewIntervals(id, NOW + 4_000);
+      expect(later[key].days).toBe(preview[key].days);
+      const rated = await rate(id, rating, NOW);
+      expect(rated.due).toBe(preview[key].due);
+    }
+  });
+
+  it("同歷史的卡(含雙向兄弟卡)不再同日成團,且落在 fuzz 範圍內", async () => {
+    await db.cards.bulkAdd(cardIds.map((id) => reviewCard(id, NOW)));
+    const goodDays = async () =>
+      Promise.all(cardIds.map(async (id) => (await previewIntervals(id, NOW)).good.days));
+
+    setFuzzForTesting(false);
+    const plain = await goodDays();
+    expect(new Set(plain).size).toBe(1); // 無 fuzz:全部同一天
+    const base = plain[0];
+
+    setFuzzForTesting(true);
+    const fuzzed = await goodDays();
+    expect(new Set(fuzzed).size).toBeGreaterThan(2);
+    expect(words.some((_, i) => fuzzed[2 * i] !== fuzzed[2 * i + 1])).toBe(true); // 兄弟卡錯開
+    const { min, max } = fuzzRange(base, 10); // reviewCard:上次複習於 10 天前
+    for (const d of fuzzed) {
+      expect(d).toBeGreaterThanOrEqual(min);
+      expect(d).toBeLessThanOrEqual(max);
+    }
   });
 });

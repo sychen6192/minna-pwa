@@ -5,6 +5,7 @@ import {
   computeStreak,
   dailyReviewCounts,
   dueForecast,
+  effectiveGoal,
   lessonProgress,
   lessonStatus,
   retentionRate,
@@ -289,6 +290,31 @@ describe("reviewsToday", () => {
       log({ reviewedAt: new Date(2026, 6, 4, 3, 59).getTime() }), // 7/3 學習日
     ];
     expect(reviewsToday(logs, lateNight)).toBe(2);
+  });
+});
+
+describe("effectiveGoal", () => {
+  it("佇列足夠:目標即設定值", () => {
+    expect(effectiveGoal(20, 5, 30)).toEqual({ goal: 20, met: false, cleared: false });
+    expect(effectiveGoal(20, 20, 3)).toEqual({ goal: 20, met: true, cleared: false });
+    expect(effectiveGoal(20, 25, 0)).toEqual({ goal: 20, met: true, cleared: false });
+  });
+
+  it("佇列不足:目標降為今日已複習 + 剩餘", () => {
+    expect(effectiveGoal(20, 0, 10)).toEqual({ goal: 10, met: false, cleared: false });
+    expect(effectiveGoal(20, 5, 3)).toEqual({ goal: 8, met: false, cleared: false });
+  });
+
+  it("佇列清空且今日已複習 → 達標(未達設定目標時標記 cleared)", () => {
+    expect(effectiveGoal(20, 3, 0)).toEqual({ goal: 3, met: true, cleared: true });
+  });
+
+  it("今日無卡可做且未複習:維持設定目標、未達標", () => {
+    expect(effectiveGoal(20, 0, 0)).toEqual({ goal: 20, met: false, cleared: false });
+  });
+
+  it("dailyGoal 為 0:恆達標", () => {
+    expect(effectiveGoal(0, 0, 5)).toEqual({ goal: 0, met: true, cleared: false });
   });
 });
 

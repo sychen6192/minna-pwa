@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PitchAccent } from "@/components/PitchAccent";
 import { RatingButtons } from "@/components/RatingButtons";
@@ -14,12 +14,16 @@ import {
   buildQueue,
   cardDirection,
   countDueByTomorrow,
+  hasAnyCards,
   previewIntervals,
+  queueCounts,
   rate,
   setSuspended,
   type IntervalPreviews,
+  type QueueCounts,
   type ReviewRating,
 } from "@/lib/srs";
+import { studyDayKey } from "@/lib/studyDay";
 import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
 
 /** ruby 分段的表面文字(TTS 讀例句用) */
@@ -35,6 +39,57 @@ interface SessionItem {
 }
 
 type Phase = "loading" | "empty" | "review" | "summary" | "error";
+
+/** 空狀態的區分依據:尚未加入單字 / 今日新卡已達上限 / 今日完成 */
+interface EmptyInfo {
+  hasCards: boolean;
+  counts: QueueCounts;
+}
+
+async function loadEmptyInfo(now: number): Promise<EmptyInfo> {
+  const [hasCards, counts] = await Promise.all([hasAnyCards(), queueCounts(now)]);
+  return { hasCards, counts };
+}
+
+/** 「可在設定調整」:連到設定頁的每日新卡上限 */
+function SettingsHint({ prefix }: { prefix: string }) {
+  return (
+    <p className="mt-2 text-sm text-foreground/60">
+      {prefix}可在
+      <Link href="/settings" className="text-sky-700 underline">
+        設定
+      </Link>
+      調整
+    </p>
+  );
+}
+
+/** 今日新卡已達上限(`newCapReached`)時的說明;`newPerDay` 為 0 時另給文案。 */
+function NewCapMessage({ counts }: { counts: QueueCounts }) {
+  if (counts.newPerDay === 0) {
+    return (
+      <>
+        <p className="text-lg font-medium">每日新卡上限設為 0</p>
+        <SettingsHint prefix="暫不引入新卡;" />
+      </>
+    );
+  }
+  // 設定於今日調低時 newToday 可能大於上限,以上限封頂
+  const introduced = Math.min(counts.newToday, counts.newPerDay);
+  return (
+    <>
+      <p className="text-lg font-medium">
+        今日新卡已達上限({introduced}/{counts.newPerDay})
+      </p>
+      {/* 只有因額度而延後的新卡,調高上限才能今天引入;bury 的回想卡本來就明天才出 */}
+      {counts.newCapped > 0 ? (
+        <SettingsHint prefix="明天繼續;" />
+      ) : (
+        <p className="mt-2 text-sm text-foreground/60">明天繼續</p>
+      )}
+    </>
+  );
+}
 
 type Stats = { again: number; hard: number; good: number; easy: number };
 const ZERO_STATS: Stats = { again: 0, hard: 0, good: 0, easy: 0 };
@@ -55,20 +110,30 @@ export default function ReviewPage() {
   const [previews, setPreviews] = useState<IntervalPreviews | null>(null);
   const [stats, setStats] = useState<Stats>(ZERO_STATS);
   const [tomorrowDue, setTomorrowDue] = useState(0);
+  const [emptyInfo, setEmptyInfo] = useState<EmptyInfo | null>(null);
+  // 遞增即重新載入佇列(頁面重新可見時,見下)
+  const [loadSeq, setLoadSeq] = useState(0);
+  // 最近一次載入的時刻(判斷是否已跨學習日)
+  const loadedAt = useRef(0);
 
   // 載入佇列與卡片內容
   useEffect(() => {
     let active = true;
     (async () => {
       const now = Date.now();
+      loadedAt.current = now;
+      const showEmpty = async () => {
+        const [due, info] = await Promise.all([countDueByTomorrow(now), loadEmptyInfo(now)]);
+        if (active) {
+          setTomorrowDue(due);
+          setEmptyInfo(info);
+          setPhase("empty");
+        }
+      };
       const cards = await buildQueue(now);
       if (!active) return;
       if (cards.length === 0) {
-        const due = await countDueByTomorrow(now);
-        if (active) {
-          setTomorrowDue(due);
-          setPhase("empty");
-        }
+        await showEmpty();
         return;
       }
       const furi = await getSetting("furigana");
@@ -91,11 +156,15 @@ export default function ReviewPage() {
         .filter((x): x is SessionItem => x !== null);
       if (!active) return;
       if (built.length === 0) {
-        setPhase("empty");
+        await showEmpty();
         return;
       }
       setFurigana(furi);
       setItems(built);
+      setIndex(0);
+      setFlipped(false);
+      setPreviews(null);
+      setStats(ZERO_STATS);
       setPhase("review");
     })().catch((e: unknown) => {
       if (active) {
@@ -106,7 +175,30 @@ export default function ReviewPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadSeq]);
+
+  // 頁面重新可見(切回 App、bfcache 還原)時重算「今天」;不打斷進行中的 session:
+  // 空狀態一律重載;結算頁只在跨學習日時重載(同日短暫切走不丟失結算)
+  useEffect(() => {
+    if (phase !== "empty" && phase !== "summary") return;
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      if (phase === "summary" && studyDayKey(Date.now()) === studyDayKey(loadedAt.current)) {
+        return;
+      }
+      setLoadSeq((n) => n + 1);
+    }
+    // 只處理 bfcache 還原;首次載入的 pageshow 不重複載入
+    function onPageShow(e: PageTransitionEvent) {
+      if (e.persisted) onVisible();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [phase]);
 
   // 當前卡片的預估間隔
   useEffect(() => {
@@ -186,14 +278,29 @@ export default function ReviewPage() {
   }
 
   if (phase === "empty") {
+    if (emptyInfo && !emptyInfo.hasCards) {
+      return (
+        <Centered>
+          <p className="text-lg font-medium">還沒有加入任何單字</p>
+          <p className="mt-2 text-sm text-foreground/60">從課程挑一課,把單字加入複習吧。</p>
+          <Link href="/lessons" className="mt-4 text-sm text-sky-700 underline">
+            瀏覽課程
+          </Link>
+        </Centered>
+      );
+    }
     return (
       <Centered>
-        <p className="text-lg font-medium">今日複習完成 🎉</p>
+        {emptyInfo?.counts.newCapReached ? (
+          <NewCapMessage counts={emptyInfo.counts} />
+        ) : (
+          <p className="text-lg font-medium">今日複習完成 🎉</p>
+        )}
         <p className="mt-2 text-sm text-foreground/60">
           明日到期:{tomorrowDue} 張
         </p>
-        <Link href="/lessons" className="mt-4 text-sm text-sky-700 underline">
-          回課程列表
+        <Link href="/" className="mt-4 text-sm text-sky-700 underline">
+          回首頁
         </Link>
       </Centered>
     );

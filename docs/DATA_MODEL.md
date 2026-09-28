@@ -176,8 +176,8 @@ settings 預設值(首次啟動寫入):
 |---|---|
 | `newPerDay` | 10 |
 | `maxReviewsPerDay` | 200 |
-| `dailyGoal` | 20(每日複習目標張數,首頁進度環) |
-| `reverseCards` | false(開啟後新增單字同時建義→日回想卡;cardId 加 `@r` 尾綴;「已會」以字為單位同時作用於兩個方向,`@r` 建立時繼承正向卡的暫停狀態) |
+| `dailyGoal` | 20(每日複習目標張數,首頁進度環;有效目標 = min(dailyGoal, 今日已複習 + 今日佇列剩餘);今日已複習且佇列清空即算達標,今日無卡可做且未複習時維持設定值) |
+| `reverseCards` | false(開啟後新增單字同時建義→日回想卡;cardId 加 `@r` 尾綴;「已會」以字為單位同時作用於兩個方向,`@r` 建立時繼承正向卡的暫停狀態;同一字的兩個方向不在同一學習日出現,`@r` 新卡於正向卡首評的隔日起才引入,見 §4-5) |
 | `desiredRetention` | 0.9(FSRS 目標保留率,0.80–0.97;越高複習越頻繁) |
 | `ttsEnabled` | true |
 | `furigana` | `"show"`(`show` \| `hide`) |
@@ -212,3 +212,6 @@ settings 預設值(首次啟動寫入):
    - 餵入:`toFsrsTime(t)` = 學習日日期的 UTC 00:00 + 距學習日起點的經過時間(上限 1 天 − 1 ms);now、`due`、`lastReview` 各自換算。
    - 換回:以該次呼叫的 now 為基準取整日差 n,結果為 now 的本地牆上時間 n 個日曆日之後(`due` 保持評分當下的牆上時間;遇 DST 跳時缺口而該時間不存在時,截在目標學習日內);不對平移後的時刻再查時差。`previewIntervals` 與 `rate` 用同一套換算,預估即實際。
    - `LogRow.due` 存卡片評分前的 `due`(真實時刻),不沿用 ts-fsrs `ReviewLog.due`(其值為 `last_review ?? due`);`reviewedAt` 為評分真實時刻;`elapsedDays` 以學習日計。
+   - 每日上限(T10.2)由今日學習日的 logs 扣除:新卡額度 = `newPerDay` − 今日首評的相異新卡數(`LogRow.state` 為評分**前**狀態,`state = New` 即首評);複習額度 = `maxReviewsPerDay` − 今日評分前 `state ≠ New` 的筆數(首評不佔複習額度)。同日重開頁面不會再發額度。
+   - 兄弟卡 bury(T10.2):同一字(`baseVocabId`)今日已評過或已入列者,另一方向今日不入列,卡片不改動、仍保持到期,下一學習日才出。New 的 `@r` 卡須正向卡已非 New 且首評不在今日;新卡額度先給正向卡。
+   - fuzz(T10.2):ts-fsrs `enable_fuzz` 開啟,種子 = `cardId + reps`(`GenSeedStrategyWithCardId`,與評分時刻無關),同一張卡的預估與實際套用一致;fuzz 後間隔仍為整數天。ts-fsrs 只對 ≥ 2.5 天的間隔加 fuzz,預設保留率下新卡首評(Good 3 天)不受影響;兄弟卡同日不出由 bury 保證。

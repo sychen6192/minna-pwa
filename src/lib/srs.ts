@@ -1,8 +1,10 @@
 import {
   createEmptyCard,
   fsrs,
+  GenSeedStrategyWithCardId,
   Rating,
   State,
+  StrategyMode,
   type Card,
   type FSRS,
   type Grade,
@@ -13,33 +15,58 @@ import {
   addStudyDays,
   fromFsrsTime,
   nextStudyDayStart,
+  studyDayStart,
   toFsrsTime,
 } from "@/lib/studyDay";
 
 /** 評分:Again / Hard / Good / Easy(對齊 ts-fsrs Rating 1–4) */
 export type ReviewRating = 1 | 2 | 3 | 4;
 
+/** 餵給 ts-fsrs 的 fuzz 種子欄位(toFsrsCard 帶入 = cardId)。 */
+const SEED_FIELD = "card_id";
+
 /**
- * 關閉 short-term(intra-day learning steps)與 fuzz:
  * - short-term off → 純以「天」排程,CardRow 不需持久化 learning_steps
- * - fuzz off → 排程確定,利於測試與穩定預估
+ * - fuzz on → 評分歷史相同的卡(含雙向兄弟卡)不再同日成團到期。ts-fsrs 只對 ≥ 2.5 天的
+ *   間隔加 fuzz:預設保留率 0.9 下新卡首評(Good 為 3 天)不受影響,之後的複習才錯開;
+ *   兄弟卡同日不出由 planQueue 的 bury 保證。
+ *   種子 = card_id + reps(GenSeedStrategyWithCardId,與評分時刻無關),故同一張卡的
+ *   previewIntervals 與 rate 得到相同的 fuzz:預估即實際。fuzz 後間隔仍為整數天。
  * request_retention(目標保留率)由 `desiredRetention` 設定決定(T9.4)。
  */
-function buildScheduler(requestRetention: number): FSRS {
+function buildScheduler(requestRetention: number, fuzz: boolean): FSRS {
   return fsrs({
     enable_short_term: false,
-    enable_fuzz: false,
+    enable_fuzz: fuzz,
     request_retention: requestRetention,
-  });
+  }).useStrategy(StrategyMode.SEED, GenSeedStrategyWithCardId(SEED_FIELD));
 }
 
-// 依保留率快取 scheduler,避免每次評分重建
-let schedulerCache: { retention: number; instance: FSRS } | null = null;
+let fuzzEnabled = true;
+
+// 依保留率(與 fuzz 開關)快取 scheduler,避免每次評分重建
+let schedulerCache: { retention: number; fuzz: boolean; instance: FSRS } | null = null;
+
+/** 測試專用:關閉 fuzz 以取得確定的間隔(正式程式碼不呼叫)。回傳先前的設定。 */
+export function setFuzzForTesting(enabled: boolean): boolean {
+  const prev = fuzzEnabled;
+  fuzzEnabled = enabled;
+  schedulerCache = null;
+  return prev;
+}
 
 async function getScheduler(): Promise<FSRS> {
   const { desiredRetention } = await getAllSettings();
-  if (!schedulerCache || schedulerCache.retention !== desiredRetention) {
-    schedulerCache = { retention: desiredRetention, instance: buildScheduler(desiredRetention) };
+  if (
+    !schedulerCache ||
+    schedulerCache.retention !== desiredRetention ||
+    schedulerCache.fuzz !== fuzzEnabled
+  ) {
+    schedulerCache = {
+      retention: desiredRetention,
+      fuzz: fuzzEnabled,
+      instance: buildScheduler(desiredRetention, fuzzEnabled),
+    };
   }
   return schedulerCache.instance;
 }
@@ -86,8 +113,12 @@ function newCardRow(
   };
 }
 
-function toFsrsCard(row: CardRow): Card {
+/** ts-fsrs Card + fuzz 種子欄位(TypeConvert.card 以 spread 複製,額外欄位會保留)。 */
+type SeededCard = Card & { [SEED_FIELD]: string };
+
+function toFsrsCard(row: CardRow): SeededCard {
   return {
+    [SEED_FIELD]: row.cardId,
     due: new Date(toFsrsTime(row.due)),
     stability: row.stability,
     difficulty: row.difficulty,
@@ -188,27 +219,134 @@ export async function ensureReverseCards(now: number = Date.now()): Promise<numb
   });
 }
 
-/**
- * 今日佇列 = 到期卡(state≠New 且 due 落在今日學習日結束前,含逾期;受 maxReviewsPerDay)
- *           + 新卡(state=New,受 newPerDay)。
- * 到期按「日」判定(`due < nextStudyDayStart(now)`):今日稍晚才到期的卡今天就可複習。
- * 到期卡依 due 由舊到新;新卡依 cardId(= 教材順序)。
- */
-export async function buildQueue(now: number = Date.now()): Promise<CardRow[]> {
-  const { newPerDay, maxReviewsPerDay } = await getAllSettings();
+export interface QueueCounts {
+  /** 今日佇列中的到期(複習)卡數 */
+  due: number;
+  /** 今日佇列中的新卡數 */
+  fresh: number;
+  /**
+   * 今日新卡額度已用完,且仍有新卡等到明天(因額度延後,或因兄弟卡 bury 延後的 `@r`)。
+   * `newPerDay` 為 0 時亦為 true(頁面另給文案)。
+   */
+  newCapReached: boolean;
+  /** 今日可引入、但因額度用完而延到明天的新卡數(調高 newPerDay 今日即可引入;不含 bury 者) */
+  newCapped: number;
+  /** 今日剩餘新卡額度(尚未首評者;佇列中的新卡仍計在內) */
+  newRemaining: number;
+  /** 今日已首評的相異新卡數 */
+  newToday: number;
+  /** 每日新卡上限(設定值) */
+  newPerDay: number;
+  /** 今日複習額度已用完,且仍有到期卡等到明天 */
+  reviewCapReached: boolean;
+}
 
+/** 今日佇列的組成(buildQueue 與 queueCounts 共用 planQueue,數字與實際佇列一致)。 */
+interface QueuePlan extends Omit<QueueCounts, "due" | "fresh"> {
+  due: CardRow[];
+  fresh: CardRow[];
+}
+
+/**
+ * 今日佇列(DATA_MODEL §4-5、SPEC F2.1):
+ * - 到期卡:state≠New、未暫停、`due < nextStudyDayStart(now)`(按日,含逾期),依 due 由舊到新;
+ *   額度 = maxReviewsPerDay − 今日已複習筆數(評分前 state≠New 的 log;首評不佔複習額度)。
+ * - 新卡:state=New、未暫停,依 cardId(= 教材順序);額度 = newPerDay − 今日首評的相異新卡數
+ *   (log.state 為評分前狀態,state=New 即首評)。上限以學習日計,重開頁面不會再發新額度。
+ * - 兄弟卡 bury:同一字(baseVocabId)今日已評過或已入列者,另一方向今日不再入列(仍保持
+ *   到期,下一學習日才出)。New 的 `@r` 卡須正向卡已非 New 且今日未評(首評不在今日);
+ *   正向新卡先填滿額度,剩餘才給 `@r`。
+ */
+async function planQueue(now: number): Promise<QueuePlan> {
+  const { newPerDay, maxReviewsPerDay } = await getAllSettings();
   const dayEnd = nextStudyDayStart(now);
-  const dueCards = (await db.cards.where("due").below(dayEnd).toArray())
+
+  const todayLogs = await db.logs
+    .where("reviewedAt")
+    .between(studyDayStart(now), dayEnd, true, false)
+    .toArray();
+  const newToday = new Set(
+    todayLogs.filter((l) => l.state === State.New).map((l) => l.cardId),
+  ).size;
+  const reviewsToday = todayLogs.filter((l) => l.state !== State.New).length;
+  const newRemaining = Math.max(0, newPerDay - newToday);
+  const reviewRemaining = Math.max(0, maxReviewsPerDay - reviewsToday);
+
+  // 今日已評過或已入列的字(bury 依據)
+  const seen = new Set(todayLogs.map((l) => baseVocabId(l.cardId)));
+
+  const dueCandidates = (await db.cards.where("due").below(dayEnd).toArray())
     .filter((c) => c.state !== State.New && !c.suspended)
-    .sort((a, b) => a.due - b.due)
-    .slice(0, maxReviewsPerDay);
+    .sort((a, b) => a.due - b.due || a.cardId.localeCompare(b.cardId));
+  const due: CardRow[] = [];
+  let reviewCapReached = false;
+  for (const c of dueCandidates) {
+    const base = baseVocabId(c.cardId);
+    if (seen.has(base)) continue;
+    if (due.length >= reviewRemaining) {
+      reviewCapReached = true; // 尚有未 bury 的到期卡因額度等到明天
+      break;
+    }
+    seen.add(base);
+    due.push(c);
+  }
 
   const newCards = (await db.cards.where("state").equals(State.New).toArray())
     .filter((c) => !c.suspended)
-    .sort((a, b) => a.cardId.localeCompare(b.cardId))
-    .slice(0, newPerDay);
+    .sort((a, b) => a.cardId.localeCompare(b.cardId));
+  const fwdNew = newCards.filter((c) => cardDirection(c) === "fwd");
+  const revNew = newCards.filter((c) => cardDirection(c) === "rev");
+  const revSiblings = await db.cards.bulkGet(revNew.map((c) => baseVocabId(c.cardId)));
+  // 正向卡仍為 New 的 @r 卡不可入選(正向卡首評若在今日,已由 seen 擋下)
+  const revEligible = revNew.filter((_, i) => {
+    const fwd = revSiblings[i];
+    return fwd !== undefined && fwd.state !== State.New;
+  });
 
-  return [...dueCards, ...newCards];
+  const fresh: CardRow[] = [];
+  let newCapped = 0;
+  let newBuried = 0;
+  for (const c of [...fwdNew, ...revEligible]) {
+    const base = baseVocabId(c.cardId);
+    if (seen.has(base)) {
+      newBuried++;
+      continue;
+    }
+    if (fresh.length >= newRemaining) {
+      newCapped++;
+      continue;
+    }
+    seen.add(base);
+    fresh.push(c);
+  }
+
+  return {
+    due,
+    fresh,
+    newCapReached: newRemaining === 0 && newCapped + newBuried > 0,
+    newCapped,
+    newRemaining,
+    newToday,
+    newPerDay,
+    reviewCapReached,
+  };
+}
+
+/** 今日佇列:到期卡(依 due)在前、新卡(正向先、`@r` 後)在後。規則見 planQueue。 */
+export async function buildQueue(now: number = Date.now()): Promise<CardRow[]> {
+  const { due, fresh } = await planQueue(now);
+  return [...due, ...fresh];
+}
+
+/** 今日佇列的張數摘要(首頁 Hero、複習頁空狀態);與 buildQueue 同一計算。 */
+export async function queueCounts(now: number = Date.now()): Promise<QueueCounts> {
+  const plan = await planQueue(now);
+  return { ...plan, due: plan.due.length, fresh: plan.fresh.length };
+}
+
+/** 是否已加入任何卡片(含暫停卡)。用於區分「尚未加入單字」與「今日完成」。 */
+export async function hasAnyCards(): Promise<boolean> {
+  return (await db.cards.count()) > 0;
 }
 
 /** 標記卡片「已會/暫停」或恢復;暫停的卡不再進入複習佇列。 */

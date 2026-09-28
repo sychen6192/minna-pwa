@@ -36,6 +36,12 @@ export interface StudySummary {
 
 export type LessonStatus = "not-started" | "in-progress" | "done";
 
+export interface GoalProgress {
+  goal: number; // 有效目標張數
+  met: boolean; // 已達標
+  cleared: boolean; // 未達設定目標,但今日佇列已清空而視為達標
+}
+
 export interface StageCounts {
   new: number; // state New
   learning: number; // state Learning / Relearning
@@ -194,6 +200,22 @@ export function stageDistribution(cards: CardRow[]): StageCounts {
 export function reviewsToday(logs: LogRow[], now: Date): number {
   const key = studyDayKey(now.getTime());
   return logs.filter((l) => studyDayKey(l.reviewedAt) === key).length;
+}
+
+/**
+ * 今日目標:有效目標 = min(dailyGoal, 今日已複習 + 今日佇列剩餘),不要求佇列做不到的張數
+ * (新卡/複習有每日上限)。佇列清空(剩餘 0)且今日已複習 > 0 即達標。
+ * 今日無卡可做且尚未複習時維持設定目標。
+ */
+export function effectiveGoal(
+  dailyGoal: number,
+  todayCount: number,
+  remaining: number,
+): GoalProgress {
+  const available = todayCount + remaining;
+  const goal = available > 0 ? Math.min(dailyGoal, available) : dailyGoal;
+  const met = todayCount >= goal;
+  return { goal, met, cleared: met && todayCount < dailyGoal };
 }
 
 /**

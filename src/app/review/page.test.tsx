@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import type { CardRow } from "@/lib/db";
@@ -19,11 +19,15 @@ const rate = vi.fn();
 const previewIntervals = vi.fn();
 const countDueByTomorrow = vi.fn();
 const setSuspended = vi.fn();
+const queueCounts = vi.fn();
+const hasAnyCards = vi.fn();
 vi.mock("@/lib/srs", () => ({
   buildQueue: (...a: unknown[]) => buildQueue(...a),
   rate: (...a: unknown[]) => rate(...a),
   previewIntervals: (...a: unknown[]) => previewIntervals(...a),
   countDueByTomorrow: (...a: unknown[]) => countDueByTomorrow(...a),
+  queueCounts: (...a: unknown[]) => queueCounts(...a),
+  hasAnyCards: (...a: unknown[]) => hasAnyCards(...a),
   baseVocabId: (id: string) => (id.endsWith("@r") ? id.slice(0, -2) : id),
   cardDirection: (c: { direction?: "fwd" | "rev" }) => c.direction ?? "fwd",
   setSuspended: (...a: unknown[]) => setSuspended(...a),
@@ -90,11 +94,143 @@ function setupOneCard() {
   countDueByTomorrow.mockResolvedValue(0);
 }
 
-afterEach(() => {
-  vi.clearAllMocks();
+/** queueCounts 預設:今日無新卡等待(未達上限) */
+const COUNTS_DONE = {
+  due: 0,
+  fresh: 0,
+  newCapReached: false,
+  newCapped: 0,
+  newRemaining: 10,
+  newToday: 0,
+  newPerDay: 10,
+  reviewCapReached: false,
+};
+
+beforeEach(() => {
+  hasAnyCards.mockResolvedValue(true);
+  queueCounts.mockResolvedValue(COUNTS_DONE);
 });
 
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+/** 模擬 App 切回前景 */
+function becomeVisible() {
+  act(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+}
+
 describe("ReviewPage", () => {
+  it("空 DB:引導去課程加入單字,不顯示今日完成", async () => {
+    buildQueue.mockResolvedValue([]);
+    hasAnyCards.mockResolvedValue(false);
+    countDueByTomorrow.mockResolvedValue(0);
+    render(<ReviewPage />);
+    expect(await screen.findByText("還沒有加入任何單字")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "瀏覽課程" })).toHaveAttribute("href", "/lessons");
+    expect(screen.queryByText(/今日複習完成/)).not.toBeInTheDocument();
+  });
+
+  it("今日新卡已達上限:顯示上限(N/N)、明天繼續與設定連結", async () => {
+    buildQueue.mockResolvedValue([]);
+    queueCounts.mockResolvedValue({
+      ...COUNTS_DONE,
+      newCapReached: true,
+      newCapped: 3,
+      newRemaining: 0,
+      newToday: 10,
+    });
+    countDueByTomorrow.mockResolvedValue(4);
+    render(<ReviewPage />);
+    expect(await screen.findByText("今日新卡已達上限(10/10)")).toBeInTheDocument();
+    expect(screen.getByText(/明天繼續/)).toHaveTextContent("明天繼續;可在設定調整");
+    expect(screen.getByRole("link", { name: "設定" })).toHaveAttribute("href", "/settings");
+    expect(screen.getByText(/明日到期:4 張/)).toBeInTheDocument();
+    expect(screen.queryByText(/今日複習完成/)).not.toBeInTheDocument();
+  });
+
+  it("今日新卡已達上限、只剩 bury 的回想卡:明天繼續,不提示調設定;上限於今日調低時以上限封頂", async () => {
+    buildQueue.mockResolvedValue([]);
+    queueCounts.mockResolvedValue({
+      ...COUNTS_DONE,
+      newCapReached: true,
+      newCapped: 0,
+      newRemaining: 0,
+      newToday: 5,
+      newPerDay: 3,
+    });
+    countDueByTomorrow.mockResolvedValue(0);
+    render(<ReviewPage />);
+    expect(await screen.findByText("今日新卡已達上限(3/3)")).toBeInTheDocument();
+    expect(screen.getByText("明天繼續")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "設定" })).not.toBeInTheDocument();
+  });
+
+  it("每日新卡上限為 0:不說明天繼續,引導到設定", async () => {
+    buildQueue.mockResolvedValue([]);
+    queueCounts.mockResolvedValue({
+      ...COUNTS_DONE,
+      newCapReached: true,
+      newCapped: 2,
+      newRemaining: 0,
+      newPerDay: 0,
+    });
+    countDueByTomorrow.mockResolvedValue(0);
+    render(<ReviewPage />);
+    expect(await screen.findByText("每日新卡上限設為 0")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "設定" })).toHaveAttribute("href", "/settings");
+    expect(screen.queryByText(/明天繼續/)).not.toBeInTheDocument();
+  });
+
+  it("空狀態:頁面重新可見時重新載入佇列", async () => {
+    buildQueue.mockResolvedValueOnce([]);
+    countDueByTomorrow.mockResolvedValue(1);
+    render(<ReviewPage />);
+    expect(await screen.findByText("今日複習完成 🎉")).toBeInTheDocument();
+
+    setupOneCard(); // 之後的 buildQueue 回傳一張卡
+    becomeVisible();
+    expect(await screen.findByText(/點擊卡片/)).toBeInTheDocument();
+    expect(buildQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it("複習進行中:頁面重新可見不重載(不打斷 session)", async () => {
+    setupOneCard();
+    render(<ReviewPage />);
+    await screen.findByText(/點擊卡片/);
+
+    becomeVisible();
+    await act(async () => {});
+    expect(buildQueue).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
+  });
+
+  it("結算頁:同學習日重新可見保留結算,跨學習日才重載", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const evening = new Date(2026, 8, 1, 22, 0).getTime();
+    vi.setSystemTime(evening);
+    setupOneCard();
+    render(<ReviewPage />);
+    await screen.findByText(/點擊卡片/);
+    fireEvent.keyDown(window, { code: "Space" });
+    fireEvent.keyDown(window, { key: "3" });
+    expect(await screen.findByText("本次複習結算")).toBeInTheDocument();
+
+    vi.setSystemTime(evening + 5 * 3_600_000); // 03:00 仍屬同一學習日
+    becomeVisible();
+    await act(async () => {});
+    expect(buildQueue).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("本次複習結算")).toBeInTheDocument();
+
+    vi.setSystemTime(evening + 12 * 3_600_000); // 隔天 10:00
+    becomeVisible();
+    expect(await screen.findByText(/點擊卡片/)).toBeInTheDocument();
+    expect(buildQueue).toHaveBeenCalledTimes(2);
+  });
+
   it("佇列空時顯示今日完成與明日到期", async () => {
     buildQueue.mockResolvedValue([]);
     countDueByTomorrow.mockResolvedValue(5);

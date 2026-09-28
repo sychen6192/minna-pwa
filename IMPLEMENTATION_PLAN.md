@@ -200,7 +200,7 @@
   做什麼:新增純函式 `src/lib/studyDay.ts`(`ROLLOVER_HOUR = 4`、`studyDayStart`、`nextStudyDayStart`、`studyDayKey`、`toFsrsTime`/輸出換回)。ts-fsrs 以 UTC 日期算 `elapsed_days`(台灣等於 08:00 換日),srs.ts 餵入 ts-fsrs 的所有時間(now、`due`、`last_review`)先平移成「UTC 日 = 本地學習日」,輸出以呼叫當下的 now 為基準換回真實時間(不對平移後的時刻再查一次時差,避免 DST 偏一小時);`previewIntervals` 同步。到期判定改為「按日」:`due < nextStudyDayStart(now)`(buildQueue、countDue、明日到期預估)。stats.ts 的分日(reviewsToday、computeStreak、dailyReviewCounts、dueForecast、retention 週界)改用 `studyDayKey`。DATA_MODEL §4 先更新。
   驗收:studyDay.ts 單元測試(Asia/Taipei 與 America/New_York DST 前後);srs 測試——22:00 評 Good(3 天)之卡於第 3 天 07:30 入列、跨 08:00 兩次複習的 `elapsedDays` 相同、03:00 的複習算前一天;stats 既有 00:00 分日測試改 4 點語意;`pnpm verify` 全綠。
 
-- [ ] **T10.2 今日佇列正確性**
+- [x] **T10.2 今日佇列正確性**
   做什麼:(1) `buildQueue` 讀今日(學習日)logs:新卡額度 = `newPerDay − 今日首評的相異新卡數`(log.state===0 即評分前為 New),複習額度同理扣今日已複習筆數——修正「每次載入」重給 10 張的漏洞。(2) 雙向卡 sibling bury:同一 baseVocabId 今日已評過或已在佇列者不再入列;New 的 `@r` 卡須正向兄弟已非 New 且首評不在今日;正向卡先填滿新卡額度。(3) srs 新增共用 `queueCounts(now)`(`{ due, fresh, newCapReached }`)與 `hasAnyCards()`;首頁 Hero 顯示「複習 X + 新卡 Y」並在 >0 時給「開始複習」,全 0 才慶祝;`/review` 空狀態區分「尚未加入單字」「今日完成」「今日新卡已達上限」。(4) 今日目標改為 `min(dailyGoal, 今日已複習 + 佇列剩餘)`,佇列清空即算達標。(5) 首頁與 `/review`(僅空/結算狀態)在 `visibilitychange`/`pageshow` 可見時重新計算「今天」。(6) 開啟 fuzz,以 `GenSeedStrategyWithCardId` 為種子(`toFsrsCard` 帶 `card_id`),預估間隔與實際套用一致、兄弟卡不再同日成團;需確定值的測試改用關閉 fuzz 的內部選項。
   驗收:srs 測試——評完 newPerDay 張後同日 buildQueue 無新卡、隔日恢復;複習上限同理;reverseCards 開啟時同日佇列不同時含 X 與 X@r;preview 與 rate 間隔一致;首頁「只有新卡」顯示開始複習;review 空 DB 顯示引導;`pnpm verify` 全綠。
 

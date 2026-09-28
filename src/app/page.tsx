@@ -2,19 +2,22 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { StudySummary } from "@/lib/stats";
+import type { QueueCounts } from "@/lib/srs";
+import type { GoalProgress, StudySummary } from "@/lib/stats";
 
 type Phase = "loading" | "ready" | "error";
 
 // 資料層(Dexie / ts-fsrs / content)於首屏後才需要;動態載入使其不計入
 // 首頁 first-load bundle(N4:首頁 JS gzip < 200 KB)。type 匯入已於編譯期抹除。
 interface Dashboard {
-  due: number;
+  queue: QueueCounts;
+  hasCards: boolean;
   leeches: number;
   summary: StudySummary;
   streak: number;
   todayCount: number;
   dailyGoal: number;
+  goal: GoalProgress;
 }
 
 async function loadDashboard(now: number): Promise<Dashboard> {
@@ -25,36 +28,41 @@ async function loadDashboard(now: number): Promise<Dashboard> {
     import("@/lib/stats"),
   ]);
   const nowDate = new Date(now);
-  const [cards, logs, index, due, leeches, dailyGoal] = await Promise.all([
+  const [cards, logs, index, queue, hasCards, leeches, dailyGoal] = await Promise.all([
     db.cards.toArray(),
     db.logs.toArray(),
     getLessonIndex(),
-    srs.countDue(now),
+    srs.queueCounts(now),
+    srs.hasAnyCards(),
     srs.countLeeches(),
     getSetting("dailyGoal"),
   ]);
+  const todayCount = stats.reviewsToday(logs, nowDate);
   return {
-    due,
+    queue,
+    hasCards,
     leeches,
     summary: stats.studySummary(cards, index),
     streak: stats.computeStreak(logs, nowDate),
-    todayCount: stats.reviewsToday(logs, nowDate),
+    todayCount,
     dailyGoal,
+    goal: stats.effectiveGoal(dailyGoal, todayCount, queue.due + queue.fresh),
   };
 }
 
-/** 連續天數 + 今日目標進度。 */
+/** 連續天數 + 今日目標進度(目標依今日佇列調整,見 stats.effectiveGoal)。 */
 function StreakGoalCard({
   streak,
   todayCount,
   dailyGoal,
+  goal: { goal, met, cleared },
 }: {
   streak: number;
   todayCount: number;
   dailyGoal: number;
+  goal: GoalProgress;
 }) {
-  const pct = dailyGoal > 0 ? Math.min(100, Math.round((todayCount / dailyGoal) * 100)) : 100;
-  const met = todayCount >= dailyGoal;
+  const pct = goal > 0 ? Math.min(100, Math.round((todayCount / goal) * 100)) : 100;
   return (
     <section className="rounded-xl border border-foreground/10 p-4">
       <div className="flex items-end justify-between">
@@ -65,9 +73,11 @@ function StreakGoalCard({
         <div className="text-right">
           <div className="text-sm tabular-nums">
             <span className="font-bold">{todayCount}</span>
-            <span className="text-foreground/60"> / {dailyGoal}</span>
+            <span className="text-foreground/60"> / {goal}</span>
           </div>
-          <div className="text-xs text-foreground/60">今日目標</div>
+          <div className="text-xs text-foreground/60">
+            今日目標{goal < dailyGoal && `(依今日佇列調整,原設定 ${dailyGoal})`}
+          </div>
         </div>
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-foreground/10">
@@ -77,14 +87,26 @@ function StreakGoalCard({
         />
       </div>
       {met && (
-        <p className="mt-2 text-xs text-green-700 dark:text-green-400">今日目標已達成 🎉</p>
+        <p className="mt-2 text-xs text-green-700 dark:text-green-400">
+          {cleared ? "今日佇列已清空 ✓" : "今日目標已達成 🎉"}
+        </p>
       )}
     </section>
   );
 }
 
-/** 今日複習 Hero:依「空 DB / 有到期 / 無到期」三態切換主行動。 */
-function HeroCard({ due, hasCards }: { due: number; hasCards: boolean }) {
+/**
+ * 今日佇列已空、但仍有卡因每日上限等到明天時的說明;此時不建議「加入新單字」
+ * (新卡額度已用完,今天加了也學不到)。
+ */
+function capNote(queue: QueueCounts): string | null {
+  if (queue.reviewCapReached) return "今日複習已達上限,明天繼續";
+  if (!queue.newCapReached) return null;
+  return queue.newPerDay === 0 ? "每日新卡上限設為 0,暫不引入新卡" : "今日新卡已達上限,明天繼續";
+}
+
+/** 今日複習 Hero:依「空 DB / 今日佇列有卡 / 今日完成」三態切換主行動。 */
+function HeroCard({ queue, hasCards }: { queue: QueueCounts; hasCards: boolean }) {
   if (!hasCards) {
     return (
       <section className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-6 text-center">
@@ -100,23 +122,33 @@ function HeroCard({ due, hasCards }: { due: number; hasCards: boolean }) {
     );
   }
 
-  if (due === 0) {
+  const total = queue.due + queue.fresh;
+  if (total === 0) {
+    const note = capNote(queue);
     return (
       <section className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-6 text-center">
-        <p className="text-lg font-medium">今天沒有到期的卡片 🎉</p>
-        <p className="mt-1 text-sm text-foreground/60">要不要去課程加入新單字?</p>
-        <Link href="/lessons" className="mt-4 inline-block text-sm text-sky-700 underline">
-          瀏覽課程
-        </Link>
+        <p className="text-lg font-medium">今日任務完成 🎉</p>
+        {note ? (
+          <p className="mt-1 text-sm text-foreground/60">{note}</p>
+        ) : (
+          <>
+            <p className="mt-1 text-sm text-foreground/60">要不要去課程加入新單字?</p>
+            <Link href="/lessons" className="mt-4 inline-block text-sm text-sky-700 underline">
+              瀏覽課程
+            </Link>
+          </>
+        )}
       </section>
     );
   }
 
   return (
     <section className="rounded-xl border border-sky-600/20 bg-sky-600/[0.06] p-6 text-center">
-      <p className="text-sm text-foreground/60">今日到期</p>
-      <p className="mt-1 text-5xl font-bold tabular-nums text-sky-700">{due}</p>
-      <p className="mt-1 text-sm text-foreground/60">張卡片</p>
+      <p className="text-sm text-foreground/60">今日待複習</p>
+      <p className="mt-1 text-5xl font-bold tabular-nums text-sky-700">{total}</p>
+      <p className="mt-1 text-sm text-foreground/60">
+        複習 {queue.due} · 新卡 {queue.fresh}
+      </p>
       <Link
         href="/review"
         className="mt-4 inline-flex items-center justify-center rounded-lg bg-sky-600 px-6 py-2.5 font-medium text-white transition-colors active:bg-sky-700"
@@ -142,8 +174,25 @@ export default function Home() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<Dashboard | null>(null);
-  // 進頁面時定格,避免 due 隨 render 時間飄移
-  const [now] = useState(() => Date.now());
+  // 進頁面時定格,避免 due 隨 render 時間飄移;頁面重新可見時更新(見下)
+  const [now, setNow] = useState(() => Date.now());
+
+  // 從背景恢復(切回 App、bfcache 還原)時以當下時刻重算,跨過換日點後「今天」隨之更新
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") setNow(Date.now());
+    }
+    // 只處理 bfcache 還原;首次載入的 pageshow 不重複載入
+    function onPageShow(e: PageTransitionEvent) {
+      if (e.persisted) onVisible();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -182,13 +231,14 @@ export default function Home() {
 
       {phase === "ready" && data && (
         <div className="space-y-6">
-          <HeroCard due={data.due} hasCards={data.summary.totalCards > 0} />
+          <HeroCard queue={data.queue} hasCards={data.hasCards} />
 
-          {data.summary.totalCards > 0 && (
+          {data.hasCards && (
             <StreakGoalCard
               streak={data.streak}
               todayCount={data.todayCount}
               dailyGoal={data.dailyGoal}
+              goal={data.goal}
             />
           )}
 
