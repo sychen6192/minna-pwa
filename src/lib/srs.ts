@@ -236,6 +236,118 @@ export async function ensureReverseCards(now: number = Date.now()): Promise<numb
   });
 }
 
+/** requeueWrong 的結果:每個字只歸入一類(優先序同欄位順序)。 */
+export interface RequeueResult {
+  /** 原本未加入複習、新建卡片的字數(新卡,依每日新卡額度出現) */
+  created: number;
+  /** 今日已評過、受兄弟卡 bury 今日不再出的字數:未到期的卡提前到下一學習日開始(含同時恢復暫停者) */
+  tomorrow: number;
+  /** 由「已會/暫停」恢復的字數 */
+  unsuspended: number;
+  /** 原本就有卡今日到期(已在今日佇列)的字數;另一方向未到期的卡仍照規則提前 */
+  alreadyDue: number;
+  /** 原本未到期、due 提前到現在(今日佇列)的字數 */
+  requeued: number;
+  /** 仍是待學新卡、未變動的字數(依每日新卡額度與教材順序引入,不一定今天出現) */
+  pendingNew: number;
+}
+
+/**
+ * 測驗錯題加入複習(T10.4)。同一 transaction 內以字為單位處理:
+ * - 尚無正向卡 → 照 addCards 建立(`reverseCards` 開啟時含 `@r`);已有正向卡而缺 `@r` 者一併補建。
+ * - 已暫停(已會)→ 正向與 `@r` 一併恢復(同 setWordSuspended);新建的 `@r` 因此也不暫停。
+ * - 已學過(state≠New)且今日未到期(`due ≥ nextStudyDayStart(now)`)的卡 → `due` 提前到 now。
+ *   不寫 log、不動 stability/difficulty/lastReview:下次評分時 ts-fsrs 以距 lastReview 的
+ *   實際天數計算,等同提前複習;提前的卡佔今日複習額度。
+ * - 今日已評過的字受兄弟卡 bury(planQueue)今日不會再出:未到期的卡改提前到下一學習日開始,
+ *   歸入 `tomorrow`,結果頁據此如實顯示。
+ * - 分類看「這個字何時會出現」:原本就有卡今日到期者歸 alreadyDue(即使另一方向被提前);
+ *   只有新卡者歸 pendingNew(受每日新卡額度限制,不宣稱已在今日佇列)。
+ * 冪等:再呼叫一次時,已提前者歸入 alreadyDue(今日已評者仍為 tomorrow)。
+ */
+export async function requeueWrong(
+  vocabIds: string[],
+  lessonId: number,
+  now: number = Date.now(),
+): Promise<RequeueResult> {
+  const result: RequeueResult = {
+    created: 0,
+    tomorrow: 0,
+    unsuspended: 0,
+    alreadyDue: 0,
+    requeued: 0,
+    pendingNew: 0,
+  };
+  const words = [...new Set(vocabIds.map(baseVocabId))];
+  if (words.length === 0) return result;
+  const { reverseCards } = await getAllSettings();
+  const dayEnd = nextStudyDayStart(now);
+
+  await db.transaction("rw", db.cards, db.logs, async () => {
+    const existing = new Map(
+      (
+        await db.cards
+          .where("cardId")
+          .anyOf(words.flatMap((id) => [id, `${id}${REVERSE_SUFFIX}`]))
+          .toArray()
+      ).map((c) => [c.cardId, c]),
+    );
+    const reviewedToday = new Set(
+      (
+        await db.logs
+          .where("reviewedAt")
+          .between(studyDayStart(now), dayEnd, true, false)
+          .toArray()
+      ).map((l) => baseVocabId(l.cardId)),
+    );
+    const at = new Date(now);
+    const toPut: CardRow[] = [];
+
+    for (const id of words) {
+      const revId = `${id}${REVERSE_SUFFIX}`;
+      const buried = reviewedToday.has(id);
+      const target = buried ? dayEnd : now;
+      const own = [existing.get(id), existing.get(revId)].filter(
+        (c): c is CardRow => c !== undefined,
+      );
+      // 已會以字為單位:任一方向暫停即兩個方向一併恢復
+      const wasSuspended = own.some((c) => c.suspended === true);
+      // 寫入前已有學過的卡今日到期:這個字本來就在今日佇列
+      const dueToday = own.some((c) => c.state !== State.New && c.due < dayEnd);
+      let moved = false;
+      const updated = new Map<string, CardRow>();
+      for (const c of own) {
+        const move = c.state !== State.New && c.due >= dayEnd && c.due !== target;
+        if (!wasSuspended && !move) continue;
+        const row: CardRow = { ...c };
+        if (wasSuspended) row.suspended = false;
+        if (move) {
+          row.due = target;
+          moved = true;
+        }
+        updated.set(row.cardId, row);
+      }
+      toPut.push(...updated.values());
+
+      const prevFwd = existing.get(id);
+      const fwd = updated.get(id) ?? prevFwd ?? newCardRow(id, lessonId, at);
+      if (!prevFwd) toPut.push(fwd);
+      if (reverseCards && !existing.has(revId)) {
+        toPut.push(newReverseRow(fwd, id, lessonId, at));
+      }
+
+      if (!prevFwd) result.created++;
+      else if (buried) result.tomorrow++;
+      else if (wasSuspended) result.unsuspended++;
+      else if (dueToday) result.alreadyDue++;
+      else if (moved) result.requeued++;
+      else result.pendingNew++;
+    }
+    if (toPut.length > 0) await db.cards.bulkPut(toPut);
+  });
+  return result;
+}
+
 export interface QueueCounts {
   /** 今日佇列中的到期(複習)卡數 */
   due: number;

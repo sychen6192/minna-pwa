@@ -13,6 +13,14 @@ export const SECTION_MARKER_NOTES: readonly string[] = [
   SUPPLEMENT_NOTE,
 ];
 
+/**
+ * 教材標為「補充單字(自行練習發音)」的字(多為專有名詞):預設不出題、不整課加入複習(T10.4/T10.11),
+ * 仍可當選擇題干擾項、仍可單字加入。
+ */
+export function isSupplementary(v: { note?: string }): boolean {
+  return v.note === SUPPLEMENT_NOTE;
+}
+
 /** 卡片上要顯示的 note:段落標記與空值回傳 null,其餘原樣回傳。 */
 export function displayNote(note: string | undefined): string | null {
   if (note === undefined || note.trim() === "") return null;

@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
 import { getSetting } from "@/lib/db";
+import { displayNote } from "@/lib/notes";
 import {
-  checkInput,
+  answerLabel,
+  checkAnswer,
   generateQuiz,
   type McqQuestion,
   type Question,
@@ -26,6 +28,7 @@ interface Result {
 export function QuizRunner({ id }: { id: number }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [pool, setPool] = useState<QuizCandidate[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [furigana, setFurigana] = useState<FuriganaMode>("show");
 
@@ -46,13 +49,14 @@ export function QuizRunner({ id }: { id: number }) {
       const neighbors = await Promise.all(
         neighborIds.map((n) => getLesson(n).catch(() => null)),
       );
-      const pool: QuizCandidate[] = [target, ...neighbors]
+      const loaded: QuizCandidate[] = [target, ...neighbors]
         .filter((l) => l !== null)
         .flatMap((l) => l.vocab.map((v) => ({ ...v, lessonId: l.id })));
       const furi = await getSetting("furigana");
-      const qs = generateQuiz(id, pool, { count: QUIZ_COUNT });
+      const qs = generateQuiz(id, loaded, { count: QUIZ_COUNT });
       if (!active) return;
       setFurigana(furi);
+      setPool(loaded);
       setQuestions(qs);
       setPhase(qs.length === 0 ? "done" : "quiz");
     })().catch((e: unknown) => {
@@ -74,12 +78,33 @@ export function QuizRunner({ id }: { id: number }) {
       </Centered>
     );
 
+  // 再測一次:同一課重新出題(題目與題型重新抽),作答狀態歸零
+  function restart() {
+    const qs = generateQuiz(id, pool, { count: QUIZ_COUNT });
+    setQuestions(qs);
+    setIndex(0);
+    setSelectedId(null);
+    setInput("");
+    setChecked(false);
+    setLastCorrect(null);
+    setResults([]);
+    setPhase(qs.length === 0 ? "done" : "quiz");
+  }
+
   if (phase === "done") {
-    return <QuizResult results={results} lessonId={id} furigana={furigana} />;
+    return (
+      <QuizResult
+        results={results}
+        lessonId={id}
+        furigana={furigana}
+        onRestart={restart}
+      />
+    );
   }
 
   const q = questions[index];
   const answered = q.type === "input" ? checked : selectedId !== null;
+  const note = displayNote(q.answer.note);
 
   function recordResult(correct: boolean) {
     setLastCorrect(correct);
@@ -95,7 +120,7 @@ export function QuizRunner({ id }: { id: number }) {
   function submitInput() {
     if (checked || input.trim() === "") return;
     setChecked(true);
-    recordResult(checkInput(input, q.answer.kana));
+    recordResult(checkAnswer(input, q.answer));
   }
 
   function next() {
@@ -159,9 +184,9 @@ export function QuizRunner({ id }: { id: number }) {
           />
         )}
 
-        {/* 回饋 */}
+        {/* 回饋(答錯列出可接受的讀音;搭配 note 如〔電車に〜〕一併提示) */}
         {answered && (
-          <div className="text-center">
+          <div className="space-y-1 text-center">
             <p
               className={
                 lastCorrect
@@ -169,8 +194,9 @@ export function QuizRunner({ id }: { id: number }) {
                   : "font-medium text-red-600"
               }
             >
-              {lastCorrect ? "答對 ✓" : `答錯 ✗(${q.answer.kana})`}
+              {lastCorrect ? "答對 ✓" : `答錯 ✗(${answerLabel(q.answer)})`}
             </p>
+            {note && <p className="text-sm text-foreground/70">{note}</p>}
           </div>
         )}
       </div>
@@ -266,6 +292,10 @@ function InputArea({
         onChange={(e) => onChange(e.target.value)}
         className="flex-1 rounded border border-foreground/20 px-3 py-2"
         autoComplete="off"
+        // 羅馬字作答:避免行動鍵盤自動大寫/自動校正把 koohii 改成別的字
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
       />
       <button
         type="submit"

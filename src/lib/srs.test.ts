@@ -22,9 +22,10 @@ import {
   LEECH_THRESHOLD,
   previewIntervals,
   rate,
+  requeueWrong,
   undoRate,
 } from "./srs";
-import { addStudyDays, studyDayKey, studyDayStart } from "./studyDay";
+import { addStudyDays, nextStudyDayStart, studyDayKey, studyDayStart } from "./studyDay";
 import type { CardRow } from "./db";
 
 const NOW = Date.UTC(2026, 0, 1, 9, 0, 0); // 固定時間,確定性測試
@@ -874,5 +875,155 @@ describe("fuzz(T10.2)", () => {
       expect(d).toBeGreaterThanOrEqual(min);
       expect(d).toBeLessThanOrEqual(max);
     }
+  });
+});
+
+describe("requeueWrong 錯題加入複習(T10.4)", () => {
+  // NOW = 台北 17:00;測試內的「同一學習日」「隔日」不受執行環境時區影響
+  useTimeZone("Asia/Taipei");
+  const NONE = {
+    created: 0,
+    tomorrow: 0,
+    unsuspended: 0,
+    alreadyDue: 0,
+    requeued: 0,
+    pendingNew: 0,
+  };
+
+  it("未加入的字照 addCards 建立(新卡入列);空清單不動 DB", async () => {
+    expect(await requeueWrong([], 13, NOW)).toEqual(NONE);
+    expect(await requeueWrong(["a", "b", "a"], 13, NOW)).toEqual({ ...NONE, created: 2 });
+    expect(await db.cards.count()).toBe(2);
+    const a = await db.cards.get("a");
+    expect(a?.state).toBe(0);
+    expect(a?.lessonId).toBe(13);
+    expect(a?.direction).toBe("fwd");
+    expect(queueIds(await buildQueue(NOW))).toEqual(["a", "b"]);
+  });
+
+  it("reverseCards 開啟:同 addCards 建正向+回想卡;已有正向卡而缺 @r 者補建", async () => {
+    await addCards(["a"], 13, NOW); // 關閉時加入:只有正向卡
+    await setSetting("reverseCards", true);
+    expect(await requeueWrong(["a", "b"], 13, NOW)).toEqual({ ...NONE, created: 1, pendingNew: 1 });
+    expect((await db.cards.toCollection().primaryKeys()).sort()).toEqual(["a", "a@r", "b", "b@r"]);
+    expect((await db.cards.get("b@r"))?.direction).toBe("rev");
+  });
+
+  it("reverseCards 開啟:已暫停、只有正向卡的字恢復,補建的 @r 不暫停", async () => {
+    await addCards(["a"], 13, NOW);
+    await rate("a", 3, NOW);
+    await setWordSuspended("a", true);
+    await setSetting("reverseCards", true);
+    const next = addStudyDays(NOW, 1);
+
+    expect(await requeueWrong(["a"], 13, next)).toEqual({ ...NONE, unsuspended: 1 });
+    expect((await db.cards.get("a"))?.suspended).toBe(false);
+    const rev = await db.cards.get("a@r");
+    expect(rev?.direction).toBe("rev");
+    expect(rev?.suspended).not.toBe(true);
+    expect(await suspendedWordIds(["a"])).toEqual([]);
+  });
+
+  it("評 Good 之卡隔日加入:due 提前至現在並入列,logs、S/D/lastReview 不變;再呼叫一次為 alreadyDue", async () => {
+    await addCards(["a"], 13, NOW);
+    await rate("a", 3, NOW);
+    const next = addStudyDays(NOW, 1) + 3_600_000; // 隔日 05:00(學習日)
+    expect(queueIds(await buildQueue(next))).toEqual([]); // 原本 3 天後才到期
+    const before = (await db.cards.get("a"))!;
+    const logsBefore = await db.logs.toArray();
+
+    expect(await requeueWrong(["a"], 13, next)).toEqual({ ...NONE, requeued: 1 });
+    expect(queueIds(await buildQueue(next))).toEqual(["a"]);
+    expect(await db.logs.toArray()).toEqual(logsBefore);
+    expect(await db.cards.get("a")).toEqual({ ...before, due: next });
+
+    // 冪等:已在今日佇列
+    expect(await requeueWrong(["a"], 13, next + 60_000)).toEqual({ ...NONE, alreadyDue: 1 });
+    expect((await db.cards.get("a"))?.due).toBe(next);
+  });
+
+  it("提前的卡下次評分以實際經過天數計算(等同提前複習)", async () => {
+    await addCards(["a"], 13, NOW);
+    await rate("a", 3, NOW);
+    const next = addStudyDays(NOW, 1);
+    await requeueWrong(["a"], 13, next);
+    const { card } = await rate("a", 3, next);
+    const log = (await db.logs.toArray()).at(-1)!;
+    expect(log.elapsedDays).toBe(1);
+    expect(log.due).toBe(next); // 評分前的 due = 提前後的時刻
+    expect(card.due).toBeGreaterThan(next);
+  });
+
+  it("已暫停(已會)的字恢復並入列(正向與 @r 一併恢復)", async () => {
+    await setSetting("reverseCards", true);
+    await addCards(["a"], 13, NOW);
+    await rate("a", 3, NOW);
+    await setWordSuspended("a", true);
+    const next = addStudyDays(NOW, 1);
+
+    expect(await requeueWrong(["a"], 13, next)).toEqual({ ...NONE, unsuspended: 1 });
+    expect((await db.cards.get("a"))?.suspended).toBe(false);
+    expect((await db.cards.get("a@r"))?.suspended).toBe(false);
+    expect(queueIds(await buildQueue(next))).toContain("a");
+    expect(await suspendedWordIds(["a"])).toEqual([]);
+  });
+
+  it("今日已評過的字(兄弟卡 bury 今日不再出):due 提前到下一學習日開始,歸入 tomorrow", async () => {
+    await addCards(["a"], 13, NOW);
+    await rate("a", 3, NOW);
+    const later = NOW + 60 * 60_000; // 台北 18:00,同一學習日
+
+    expect(await requeueWrong(["a"], 13, later)).toEqual({ ...NONE, tomorrow: 1 });
+    expect((await db.cards.get("a"))?.due).toBe(nextStudyDayStart(NOW));
+    expect(queueIds(await buildQueue(later))).toEqual([]);
+    expect(queueIds(await buildQueue(addStudyDays(NOW, 1)))).toEqual(["a"]);
+    expect(await requeueWrong(["a"], 13, later + 60_000)).toEqual({ ...NONE, tomorrow: 1 });
+  });
+
+  it("今日已到期的複習卡歸 alreadyDue、待學新卡歸 pendingNew,皆不變動", async () => {
+    await db.cards.bulkAdd([reviewCard("due", NOW - DAY), reviewCard("later", NOW + 5 * DAY)]);
+    await addCards(["fresh"], 13, NOW);
+    const snapshot = await db.cards.toArray();
+
+    expect(await requeueWrong(["due", "fresh"], 13, NOW)).toEqual({
+      ...NONE,
+      alreadyDue: 1,
+      pendingNew: 1,
+    });
+    expect(await db.cards.toArray()).toEqual(snapshot);
+
+    expect(await requeueWrong(["later"], 13, NOW)).toEqual({ ...NONE, requeued: 1 });
+    expect(queueIds(await buildQueue(NOW))).toEqual(["due", "later", "fresh"]);
+  });
+
+  it("新卡額度已用完時,待學新卡歸 pendingNew(今天不在佇列,不宣稱已入列)", async () => {
+    await setSetting("newPerDay", 1);
+    await addCards(["a", "b"], 13, NOW);
+    expect(queueIds(await buildQueue(NOW))).toEqual(["a"]);
+
+    expect(await requeueWrong(["b"], 13, NOW)).toEqual({ ...NONE, pendingNew: 1 });
+    expect(queueIds(await buildQueue(NOW))).toEqual(["a"]);
+  });
+
+  it("一個方向今日已到期:整個字歸 alreadyDue;另一方向未到期的卡仍提前", async () => {
+    await setSetting("reverseCards", true);
+    await db.cards.bulkAdd([reviewCard("a", NOW - DAY), reviewCard("a@r", NOW + 20 * DAY)]);
+
+    expect(await requeueWrong(["a"], 13, NOW)).toEqual({ ...NONE, alreadyDue: 1 });
+    expect((await db.cards.get("a@r"))?.due).toBe(NOW);
+    expect(queueIds(await buildQueue(NOW))).toEqual(["a"]); // @r 受兄弟卡 bury,下一學習日才出
+  });
+
+  it("今日評過又標已會的字:恢復並提前到下一學習日,歸入 tomorrow", async () => {
+    await addCards(["a"], 13, NOW);
+    await rate("a", 3, NOW);
+    await setWordSuspended("a", true);
+    const later = NOW + 60 * 60_000;
+
+    expect(await requeueWrong(["a"], 13, later)).toEqual({ ...NONE, tomorrow: 1 });
+    const a = await db.cards.get("a");
+    expect(a?.suspended).toBe(false);
+    expect(a?.due).toBe(nextStudyDayStart(NOW));
+    expect(queueIds(await buildQueue(addStudyDays(NOW, 1)))).toEqual(["a"]);
   });
 });

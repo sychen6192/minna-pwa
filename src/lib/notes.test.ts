@@ -1,4 +1,9 @@
-import { displayNote, SECTION_MARKER_NOTES, SUPPLEMENT_NOTE } from "./notes";
+import {
+  displayNote,
+  isSupplementary,
+  SECTION_MARKER_NOTES,
+  SUPPLEMENT_NOTE,
+} from "./notes";
 
 describe("displayNote", () => {
   it("段落標記(読み物/会話/補充單字)不顯示", () => {
@@ -26,5 +31,14 @@ describe("displayNote", () => {
     expect(displayNote(undefined)).toBeNull();
     expect(displayNote("")).toBeNull();
     expect(displayNote("  ")).toBeNull();
+  });
+});
+
+describe("isSupplementary", () => {
+  it("只有 note 恰為「補充單字(自行練習發音)」者為補充單字", () => {
+    expect(isSupplementary({ note: SUPPLEMENT_NOTE })).toBe(true);
+    expect(isSupplementary({ note: "読み物" })).toBe(false);
+    expect(isSupplementary({ note: "〔電車に〜〕" })).toBe(false);
+    expect(isSupplementary({})).toBe(false);
   });
 });

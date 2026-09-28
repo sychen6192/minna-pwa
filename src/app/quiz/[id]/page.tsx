@@ -11,5 +11,6 @@ export default async function QuizPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <QuizRunner id={Number(id)} />;
+  // key:「下一課測驗 →」在同一路由間切換時重新掛載,作答狀態不沿用
+  return <QuizRunner key={id} id={Number(id)} />;
 }
