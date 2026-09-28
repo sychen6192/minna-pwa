@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, vi } from "vitest";
 import { BACKUP_VERSION } from "@/lib/backup";
-import { DEFAULT_SETTINGS, db, getSetting } from "@/lib/db";
+import { db, getSetting, setSetting } from "@/lib/db";
 import SettingsPage from "./page";
 
 const sampleCard = {
@@ -67,20 +67,34 @@ describe("SettingsPage 學習設定(F6.1)", () => {
 });
 
 describe("SettingsPage 重置(F6.3)", () => {
-  it("需雙重確認:第一次點擊不執行,確認後清空並回填預設", async () => {
+  it("需雙重確認:第一次點擊不執行,確認後清空進度、保留設定", async () => {
     await db.cards.put(sampleCard);
+    await db.logs.add({
+      cardId: sampleCard.cardId,
+      rating: 3,
+      state: 2,
+      due: 1,
+      elapsedDays: 1,
+      reviewedAt: 1,
+    });
+    await setSetting("newPerDay", 25);
     const user = userEvent.setup();
     render(<SettingsPage />);
 
     await user.click(await screen.findByRole("button", { name: "重置所有進度" }));
     expect(await db.cards.count()).toBe(1); // 尚未執行
-    expect(screen.getByText(/無法復原/)).toBeInTheDocument();
+    // 確認文案須說明刪除範圍與設定保留
+    expect(screen.getByText(/無法復原/)).toHaveTextContent(
+      "將刪除全部卡片、複習紀錄與進度(設定會保留)",
+    );
 
     await user.click(screen.getByRole("button", { name: "確定重置" }));
 
-    expect(await screen.findByText(/已重置/)).toBeInTheDocument();
+    expect(await screen.findByText(/已重置/)).toHaveTextContent("設定維持不變");
     expect(await db.cards.count()).toBe(0);
-    expect(await db.settings.count()).toBe(Object.keys(DEFAULT_SETTINGS).length);
+    expect(await db.logs.count()).toBe(0);
+    expect(await getSetting("newPerDay")).toBe(25);
+    expect(screen.getByLabelText("每日新卡上限")).toHaveValue(25);
   });
 });
 

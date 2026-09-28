@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
-import { db, type CardRow } from "@/lib/db";
+import { db, type CardRow, type LogRow } from "@/lib/db";
 import type { LessonIndex } from "@/schemas/lesson";
 
 vi.mock("next/link", () => ({
@@ -49,8 +49,26 @@ function card(overrides: Partial<CardRow>): CardRow {
   };
 }
 
+function againLog(cardId: string): LogRow {
+  return {
+    cardId,
+    rating: 1,
+    state: 0,
+    due: 0,
+    elapsedDays: 0,
+    reviewedAt: Date.now(),
+  };
+}
+
+/** L13 只有 2 字的索引(方便構造「全部學會」) */
+const twoWordIndex: LessonIndex = {
+  lessons: sampleIndex.lessons.map((l) =>
+    l.id === 13 ? { ...l, vocabCount: 2 } : l,
+  ),
+};
+
 beforeEach(async () => {
-  await db.cards.clear();
+  await Promise.all([db.cards.clear(), db.logs.clear()]);
 });
 
 afterEach(() => {
@@ -86,6 +104,34 @@ describe("LessonsPage", () => {
     // 無卡的課仍為未開始
     const l1 = screen.getByRole("link", { name: /第 1 課/ });
     expect(l1).toHaveTextContent("未開始");
+  });
+
+  it("已會的字計為已學會:其餘已學會 + 一字已會 → 已完成", async () => {
+    getLessonIndex.mockResolvedValue(twoWordIndex);
+    await db.cards.bulkAdd([
+      card({ cardId: "L13-V001", state: 2 }),
+      card({ cardId: "L13-V002", state: 0, suspended: true }), // 標為已會的新卡
+    ]);
+
+    render(<LessonsPage />);
+
+    const l13 = await screen.findByRole("link", { name: /〜が ほしいです/ });
+    await waitFor(() => expect(l13).toHaveTextContent("已完成"));
+  });
+
+  it("最後一次評「重來」的字不算已學會 → 仍為進行中", async () => {
+    getLessonIndex.mockResolvedValue(twoWordIndex);
+    await db.cards.bulkAdd([
+      card({ cardId: "L13-V001", state: 2 }),
+      card({ cardId: "L13-V002", state: 2 }), // 首評「重來」後仍為 Review
+    ]);
+    await db.logs.add(againLog("L13-V002"));
+
+    render(<LessonsPage />);
+
+    const l13 = await screen.findByRole("link", { name: /〜が ほしいです/ });
+    await waitFor(() => expect(l13).toHaveTextContent("進行中"));
+    expect(l13).not.toHaveTextContent("已完成");
   });
 
   it("載入中:資料未到前顯示載入提示", () => {

@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getLessonIndex } from "@/lib/content";
 import { db } from "@/lib/db";
-import { lessonProgress, lessonStatus, type LessonStatus } from "@/lib/stats";
+import {
+  lastRatingByCard,
+  lessonProgress,
+  lessonStatus,
+  type LessonStatus,
+} from "@/lib/stats";
 import type { LessonIndex } from "@/schemas/lesson";
 
 const STATUS_META: Record<LessonStatus, { label: string; cls: string }> = {
@@ -21,11 +26,19 @@ export default function LessonsPage() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const [idx, cards] = await Promise.all([getLessonIndex(), db.cards.toArray()]);
+      const [idx, cards, logs] = await Promise.all([
+        getLessonIndex(),
+        db.cards.toArray(),
+        db.logs.toArray(),
+      ]);
       if (!active) return;
       setIndex(idx);
+      // 最後一次評「重來」的字不算已學會(stats.lessonProgress)
       const byId = new Map<number, LessonStatus>(
-        lessonProgress(cards, idx).map((p) => [p.lessonId, lessonStatus(p)]),
+        lessonProgress(cards, idx, lastRatingByCard(logs)).map((p) => [
+          p.lessonId,
+          lessonStatus(p),
+        ]),
       );
       setStatusById(byId);
     })().catch((e: unknown) => {

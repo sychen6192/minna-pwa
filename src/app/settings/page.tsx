@@ -27,7 +27,7 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
-  // 匯入 / 重置後 bump,讓表單以新值重掛(欄位為 uncontrolled + defaultValue)
+  // 匯入後 bump,讓表單以新值重掛(欄位為 uncontrolled + defaultValue;重置不動設定)
   const [formEpoch, setFormEpoch] = useState(0);
   const [notice, setNotice] = useState<Notice>(null);
   const [pendingImport, setPendingImport] = useState<BackupFile | null>(null);
@@ -113,8 +113,7 @@ export default function SettingsPage() {
   async function handleConfirmReset() {
     await resetAll();
     setConfirmingReset(false);
-    await reloadSettings();
-    setNotice({ kind: "success", text: "已重置所有進度。" });
+    setNotice({ kind: "success", text: "已重置所有進度;設定維持不變。" });
   }
 
   if (!settings) {
@@ -270,7 +269,9 @@ export default function SettingsPage() {
           <div className="border-t border-neutral-100 pt-3">
             {confirmingReset ? (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                <p>將刪除全部卡片、複習紀錄與進度,此動作無法復原。確定要重置嗎?</p>
+                <p>
+                  將刪除全部卡片、複習紀錄與進度(設定會保留),此動作無法復原。確定要重置嗎?
+                </p>
                 <div className="mt-2 flex justify-end gap-2">
                   <button
                     type="button"
@@ -290,7 +291,10 @@ export default function SettingsPage() {
               </div>
             ) : (
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-neutral-700">清除所有進度,回到初始狀態。</p>
+                <p className="text-sm text-neutral-700">
+                  清除所有卡片與複習紀錄
+                  <span className="block text-xs text-neutral-500">設定會保留</span>
+                </p>
                 <button
                   type="button"
                   onClick={() => setConfirmingReset(true)}

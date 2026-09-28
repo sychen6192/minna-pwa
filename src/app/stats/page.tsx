@@ -17,9 +17,12 @@ import { Heatmap } from "@/components/Heatmap";
 import { getLessonIndex } from "@/lib/content";
 import { db, type CardRow, type LogRow } from "@/lib/db";
 import {
+  cardTotals,
   dailyReviewCounts,
   dueForecast,
+  lastRatingByCard,
   lessonProgress,
+  MATURE_STABILITY,
   retentionRate,
   stageDistribution,
   weeklyRetention,
@@ -48,7 +51,7 @@ function StageBar({ counts }: { counts: StageCounts }) {
             <div
               key={s.key}
               style={{ width: `${(counts[s.key] / total) * 100}%`, background: s.color }}
-              aria-label={`${s.label} ${counts[s.key]}`}
+              aria-label={`${s.label} ${counts[s.key]} 張`}
             />
           ) : null,
         )}
@@ -66,6 +69,8 @@ function StageBar({ counts }: { counts: StageCounts }) {
             </span>
             <span className="font-medium tabular-nums text-neutral-900">
               {counts[s.key]}
+              {/* 以卡片計,與上方「單字」(以字計)區分 */}
+              <span className="ml-0.5 text-xs font-normal text-neutral-500">張</span>
             </span>
           </li>
         ))}
@@ -88,11 +93,24 @@ function formatPercent(rate: number | null): string {
   return rate === null ? "—" : `${Math.round(rate * 100)}%`;
 }
 
-function StatTile({ label, value }: { label: string; value: string }) {
+function StatTile({
+  label,
+  value,
+  notes = [],
+}: {
+  label: string;
+  value: string;
+  notes?: string[];
+}) {
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-3">
       <div className="text-xs text-neutral-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-neutral-900">{value}</div>
+      {notes.map((note) => (
+        <div key={note} className="mt-0.5 text-xs text-neutral-500">
+          {note}
+        </div>
+      ))}
     </div>
   );
 }
@@ -159,11 +177,16 @@ export default function StatsPage() {
       })),
     [logs, now],
   );
+  // 最後一次評分:「重來」者不算已學會、歸入學習中
+  const lastRating = useMemo(() => lastRatingByCard(logs), [logs]);
   const progress = useMemo(
-    () => (index ? lessonProgress(cards, index) : []),
-    [cards, index],
+    () => (index ? lessonProgress(cards, index, lastRating) : []),
+    [cards, index, lastRating],
   );
-  const stages = useMemo(() => stageDistribution(cards), [cards]);
+  const stages = useMemo(() => stageDistribution(cards, lastRating), [cards, lastRating]);
+  // 單字 = 正向卡數(與首頁「累計單字」同口徑);卡片另含義→日回想卡
+  const totals = useMemo(() => cardTotals(cards), [cards]);
+  const hasReverse = totals.cards > totals.words;
   const todayCount = daily.length ? daily[daily.length - 1].count : 0;
 
   if (phase === "loading") {
@@ -200,7 +223,14 @@ export default function StatsPage() {
       <h1 className="text-lg font-semibold">統計</h1>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <StatTile label="總卡數" value={String(cards.length)} />
+        <StatTile
+          label="單字"
+          value={String(totals.words)}
+          notes={[
+            ...(totals.suspendedWords > 0 ? [`其中已會 ${totals.suspendedWords} 字`] : []),
+            ...(hasReverse ? [`卡片 ${totals.cards} 張(含回想卡)`] : []),
+          ]}
+        />
         <StatTile label="今日已複習" value={String(todayCount)} />
         <StatTile label="整體留存率" value={formatPercent(retentionRate(logs))} />
         <StatTile
@@ -210,6 +240,10 @@ export default function StatsPage() {
       </div>
 
       <Section title="卡片階段分布">
+        <p className="mb-2 text-xs text-neutral-500">
+          以卡片計{hasReverse && "(回想卡另計一張)"};學習中=最近一次評「重來」,已成熟=穩定度 ≥{" "}
+          {MATURE_STABILITY} 天。
+        </p>
         <StageBar counts={stages} />
       </Section>
 
@@ -301,7 +335,8 @@ export default function StatsPage() {
 
       <Section title="各課進度">
         <p className="mb-2 text-xs text-neutral-500">
-          淺色=已加入複習,深色=已學會(進入長期複習);右側為 已加入/單字總數。
+          淺色=已加入複習,深色=已學會(已複習且最近一次不是「重來」,或標為已會);右側為
+          已加入/單字總數。
         </p>
         <ul className="flex flex-col gap-2">
           {progress.map((lesson) => (

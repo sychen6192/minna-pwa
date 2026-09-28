@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   db,
-  ensureDefaultSettings,
   type CardRow,
   type LogRow,
   type ProgressRow,
@@ -79,10 +78,12 @@ export async function importData(raw: unknown): Promise<void> {
   });
 }
 
-/** 重置所有進度:清空四表並回填預設 settings */
+/** 重置所有進度會清除的表:設定(settings)保留(DATA_MODEL §3) */
+const PROGRESS_TABLES = [db.cards, db.logs, db.progress];
+
+/** 重置所有進度:清空卡片、複習紀錄與進度;設定保留不動 */
 export async function resetAll(): Promise<void> {
-  await db.transaction("rw", ALL_TABLES, async () => {
-    await Promise.all(ALL_TABLES.map((table) => table.clear()));
+  await db.transaction("rw", PROGRESS_TABLES, async () => {
+    await Promise.all(PROGRESS_TABLES.map((table) => table.clear()));
   });
-  await ensureDefaultSettings();
 }

@@ -267,8 +267,8 @@ export default function Home() {
               </span>
             </div>
             <div className="mt-2 flex items-center justify-between text-sm">
-              <span className="text-foreground/60">累計卡片</span>
-              <span className="font-medium tabular-nums">{data.summary.totalCards} 張</span>
+              <span className="text-foreground/60">累計單字</span>
+              <span className="font-medium tabular-nums">{data.summary.totalWords} 字</span>
             </div>
           </section>
 

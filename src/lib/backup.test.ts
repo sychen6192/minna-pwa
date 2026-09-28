@@ -93,15 +93,28 @@ describe("exportData", () => {
 });
 
 describe("resetAll", () => {
-  it("清空四表並回填預設 settings", async () => {
+  it("清空 cards / logs / progress,settings 原樣保留(自訂值不回到預設)", async () => {
     await seedAll();
+    const settingsBefore = await db.settings.toArray();
 
     await resetAll();
 
     expect(await db.cards.count()).toBe(0);
     expect(await db.logs.count()).toBe(0);
     expect(await db.progress.count()).toBe(0);
-    expect(await db.settings.count()).toBe(Object.keys(DEFAULT_SETTINGS).length);
+    expect(await db.settings.toArray()).toEqual(settingsBefore);
+    expect(await getSetting("newPerDay")).toBe(25);
+    expect(await getSetting("newPerDay")).not.toBe(DEFAULT_SETTINGS.newPerDay);
+    expect(await getSetting("furigana")).toBe("hide");
+  });
+
+  it("未設定過的 settings 不會被回填(維持讀取時才回退預設)", async () => {
+    await db.cards.bulkPut(seedCards);
+
+    await resetAll();
+
+    expect(await db.cards.count()).toBe(0);
+    expect(await db.settings.count()).toBe(0);
     expect(await getSetting("newPerDay")).toBe(DEFAULT_SETTINGS.newPerDay);
   });
 });
@@ -154,7 +167,10 @@ describe("importData", () => {
 
     await resetAll();
     expect(await db.cards.count()).toBe(0);
-    expect(await getSetting("newPerDay")).toBe(DEFAULT_SETTINGS.newPerDay);
+    expect(await getSetting("newPerDay")).toBe(25); // 重置保留設定
+    // 重置後改了設定:匯入須以備份檔的設定覆蓋
+    await setSetting("newPerDay", 3);
+    await setSetting("furigana", "show");
 
     await importData(JSON.parse(fileContent));
 

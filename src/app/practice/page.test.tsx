@@ -88,6 +88,13 @@ describe("PracticePage", () => {
     expect(await screen.findByText(/目前沒有頑固卡/)).toBeInTheDocument();
   });
 
+  it("頑固卡成熟後解除:不列入練習,空狀態說明解除條件", async () => {
+    await db.cards.bulkAdd([{ ...leechCard("L13-V001", 6), stability: 30 }]);
+    render(<PracticePage />);
+    expect(await screen.findByText(/目前沒有頑固卡/)).toBeInTheDocument();
+    expect(screen.getByText(/後自動解除/)).toHaveTextContent("加強;記牢(穩定度達 21 天)後自動解除");
+  });
+
   it("有頑固卡:依 lapses 由多到少,翻卡見釋義與答錯次數,逐張到完成", async () => {
     await db.cards.bulkAdd([leechCard("L13-V001", 5), leechCard("L13-V002", 4)]);
     const user = userEvent.setup();

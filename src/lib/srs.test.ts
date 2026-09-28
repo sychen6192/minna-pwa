@@ -25,6 +25,7 @@ import {
   requeueWrong,
   undoRate,
 } from "./srs";
+import { MATURE_STABILITY } from "./stats";
 import { addStudyDays, nextStudyDayStart, studyDayKey, studyDayStart } from "./studyDay";
 import type { CardRow } from "./db";
 
@@ -266,6 +267,22 @@ describe("leech 頑固卡", () => {
     expect(isLeech(card("c", LEECH_THRESHOLD + 3))).toBe(true);
   });
 
+  it("isLeech:成熟(stability ≥ MATURE_STABILITY)後解除;再遺忘、stability 掉回門檻下即再列入", () => {
+    expect(isLeech({ ...card("m", 4), stability: 30 })).toBe(false);
+    expect(isLeech({ ...card("m", LEECH_THRESHOLD + 5), stability: MATURE_STABILITY })).toBe(false);
+    expect(isLeech({ ...card("m", LEECH_THRESHOLD), stability: MATURE_STABILITY - 0.1 })).toBe(true);
+    expect(isLeech({ ...card("m", LEECH_THRESHOLD + 1), stability: 2 })).toBe(true); // 成熟後又遺忘
+  });
+
+  it("countLeeches / getLeeches:已成熟的頑固卡不再列入(首頁警示與練習清單)", async () => {
+    await db.cards.bulkAdd([
+      card("still", LEECH_THRESHOLD + 2),
+      { ...card("recovered", LEECH_THRESHOLD + 6), stability: 30 },
+    ]);
+    expect(await countLeeches()).toBe(1);
+    expect((await getLeeches()).map((c) => c.cardId)).toEqual(["still"]);
+  });
+
   it("countLeeches:只算達門檻的卡", async () => {
     await db.cards.bulkAdd([
       card("a", 0),
@@ -374,6 +391,14 @@ describe("suspend 已會/暫停(T9.3;T10.3 以字為單位)", () => {
     expect(await countSuspended()).toBe(2);
     expect(await suspendedWordIds(["a", "b", "c"])).toEqual(["a", "c"]);
     expect(await suspendedWordIds([])).toEqual([]);
+  });
+
+  it("countSuspended 以字計:雙向卡同一字只算一次,只暫停 @r 的舊資料也算", async () => {
+    await setSetting("reverseCards", true);
+    await addCards(["a", "b", "c"], 13, NOW);
+    await setWordSuspended("a", true); // a 與 a@r 皆暫停
+    await db.cards.update("b@r", { suspended: true }); // T10.3 前的單向暫停
+    expect(await countSuspended()).toBe(2);
   });
 
   it("setWordSuspended:同時作用於正向與 @r(傳入 @r id 亦同),恢復亦雙向", async () => {

@@ -1,4 +1,5 @@
 import type { LessonIndex } from "@/schemas/lesson";
+import { baseVocabId, cardDirection } from "./cardId";
 import type { CardRow, LogRow } from "./db";
 import {
   addStudyDays,
@@ -24,15 +25,25 @@ export interface LessonProgress {
   lessonId: number;
   title: string;
   total: number; // 該課單字總數(index.json)
-  added: number; // 已加入複習的卡數
-  learned: number; // 已進入 Review 狀態(state === 2)的卡數
+  added: number; // 已加入複習的字數(正向卡數)
+  learned: number; // 已學會的字數(定義見 lessonProgress)
 }
 
 export interface StudySummary {
   startedLessons: number; // 至少加入 1 張卡的相異課數
   totalLessons: number; // index 總課數
-  totalCards: number; // 已加入的卡片總數
+  totalWords: number; // 已加入複習的字數(正向卡數;與統計頁「單字」一致)
 }
+
+/** 卡片/單字總量(首頁與統計頁共用同一口徑) */
+export interface CardTotals {
+  words: number; // 已加入複習的字數(正向卡數)
+  cards: number; // 卡片總數(含義→日回想卡)
+  suspendedWords: number; // 已會的字數(任一方向暫停即算,雙向不重複計)
+}
+
+/** 每張卡最後一次評分(依 reviewedAt 最新);無紀錄的卡不在 map 內 */
+export type LastRatings = ReadonlyMap<string, LogRow["rating"]>;
 
 export type LessonStatus = "not-started" | "in-progress" | "done";
 
@@ -44,9 +55,9 @@ export interface GoalProgress {
 
 export interface StageCounts {
   new: number; // state New
-  learning: number; // state Learning / Relearning
-  young: number; // Review 但未成熟(stability < MATURE_STABILITY)
-  mature: number; // Review 且已成熟
+  learning: number; // Review 但最後一次評分為「重來」(待重測);另含 Learning / Relearning
+  young: number; // Review 但未成熟(stability < MATURE_STABILITY),不含 learning
+  mature: number; // Review 且已成熟,不含 learning
   suspended: number; // 已會/暫停(不論 state)
 }
 
@@ -138,15 +149,57 @@ export function weeklyRetention(logs: LogRow[], now: Date, weeks = 12): WeekRate
   });
 }
 
-/** 各課進度:index 全課列出,join 卡片計數 */
-export function lessonProgress(cards: CardRow[], index: LessonIndex): LessonProgress[] {
+/**
+ * 每張卡最後一次評分(reviewedAt 最新者;同時刻取陣列中較後者,即較晚寫入的 log)。
+ * 供 lessonProgress / stageDistribution 判斷「最近一次答錯」。
+ */
+export function lastRatingByCard(logs: LogRow[]): Map<string, LogRow["rating"]> {
+  const ratings = new Map<string, LogRow["rating"]>();
+  const latestAt = new Map<string, number>();
+  for (const entry of logs) {
+    if (entry.reviewedAt >= (latestAt.get(entry.cardId) ?? -Infinity)) {
+      latestAt.set(entry.cardId, entry.reviewedAt);
+      ratings.set(entry.cardId, entry.rating);
+    }
+  }
+  return ratings;
+}
+
+/** 已會的字(任一方向的卡暫停即算;T10.3 以字為單位)。 */
+function suspendedWordSet(cards: CardRow[]): Set<string> {
+  const words = new Set<string>();
+  for (const c of cards) if (c.suspended === true) words.add(baseVocabId(c.cardId));
+  return words;
+}
+
+/** 首頁「累計單字」與統計頁「單字/卡片」共用的總量。 */
+export function cardTotals(cards: CardRow[]): CardTotals {
+  return {
+    words: cards.filter((c) => cardDirection(c) === "fwd").length,
+    cards: cards.length,
+    suspendedWords: suspendedWordSet(cards).size,
+  };
+}
+
+/**
+ * 各課進度:index 全課列出,join 卡片計數。已學會 = 已會(任一方向暫停),或已進入
+ * Review(state 2)且最後一次評分不是「重來」。`lastRating` 省略時不看評分紀錄。
+ */
+export function lessonProgress(
+  cards: CardRow[],
+  index: LessonIndex,
+  lastRating: LastRatings = new Map(),
+): LessonProgress[] {
   const added = new Map<number, number>();
   const learned = new Map<number, number>();
+  const suspendedWords = suspendedWordSet(cards);
   // 只計正向卡:進度以「相異單字」為準,義→日回想卡(direction rev)不重複計
   for (const c of cards) {
-    if ((c.direction ?? "fwd") !== "fwd") continue;
+    if (cardDirection(c) !== "fwd") continue;
     added.set(c.lessonId, (added.get(c.lessonId) ?? 0) + 1);
-    if (c.state === 2) learned.set(c.lessonId, (learned.get(c.lessonId) ?? 0) + 1);
+    const isLearned =
+      suspendedWords.has(c.cardId) || (c.state === 2 && lastRating.get(c.cardId) !== 1);
+    if (isLearned) learned.set(c.lessonId, (learned.get(c.lessonId) ?? 0) + 1);
   }
   return index.lessons.map((lesson) => ({
     lessonId: lesson.id,
@@ -158,7 +211,7 @@ export function lessonProgress(cards: CardRow[], index: LessonIndex): LessonProg
 }
 
 /**
- * 課程學習狀態:未開始(未加入任何卡)/ 已完成(全部單字皆已學會,state=Review)/
+ * 課程學習狀態:未開始(未加入任何卡)/ 已完成(全部單字皆已學會,含已會;見 lessonProgress)/
  * 進行中(其餘)。
  */
 export function lessonStatus(p: LessonProgress): LessonStatus {
@@ -167,29 +220,32 @@ export function lessonStatus(p: LessonProgress): LessonStatus {
   return "in-progress";
 }
 
-/** 首頁儀表板摘要:已開始課數、總課數、累計卡片數。 */
+/** 首頁儀表板摘要:已開始課數、總課數、累計單字數。 */
 export function studySummary(cards: CardRow[], index: LessonIndex): StudySummary {
-  // 只計正向卡(相異單字):累計卡片與已開始課數不因雙向卡而膨脹
-  const fwd = cards.filter((c) => (c.direction ?? "fwd") === "fwd");
-  const startedIds = new Set<number>();
-  for (const c of fwd) startedIds.add(c.lessonId);
+  // 只計正向卡(相異單字,同 cardTotals.words):累計單字與已開始課數不因雙向卡而膨脹
+  const fwd = cards.filter((c) => cardDirection(c) === "fwd");
   return {
-    startedLessons: startedIds.size,
+    startedLessons: new Set(fwd.map((c) => c.lessonId)).size,
     totalLessons: index.lessons.length,
-    totalCards: fwd.length,
+    totalWords: fwd.length,
   };
 }
 
 /**
- * SRS 階段分布:新卡 / 學習中 / 未成熟 / 已成熟 / 已暫停。
- * 已暫停者不論 state 一律歸入 suspended。
+ * SRS 階段分布(以卡片計,雙向卡各計一張):新卡 / 學習中 / 未成熟 / 已成熟 / 已暫停。
+ * 已暫停者不論 state 一律歸入 suspended。學習中 = Review 但最後一次評分為「重來」
+ * (long-term scheduler 答錯後仍為 Review,只是間隔縮短);state Learning / Relearning
+ * 只可能來自匯入的舊資料,同樣歸入學習中。其餘 Review 卡依 stability 分未成熟/已成熟。
  */
-export function stageDistribution(cards: CardRow[]): StageCounts {
+export function stageDistribution(
+  cards: CardRow[],
+  lastRating: LastRatings = new Map(),
+): StageCounts {
   const counts: StageCounts = { new: 0, learning: 0, young: 0, mature: 0, suspended: 0 };
   for (const card of cards) {
     if (card.suspended) counts.suspended++;
     else if (card.state === 0) counts.new++;
-    else if (card.state === 1 || card.state === 3) counts.learning++;
+    else if (card.state !== 2 || lastRating.get(card.cardId) === 1) counts.learning++;
     else if (card.stability >= MATURE_STABILITY) counts.mature++;
     else counts.young++;
   }

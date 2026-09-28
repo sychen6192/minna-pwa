@@ -87,7 +87,10 @@ export const db = new MinnaDB();
 
 // ── 設定存取 ────────────────────────────────────────────────────────
 
-/** 首次啟動:把尚未存在的預設設定寫入(冪等,不覆蓋既有值)。 */
+/**
+ * 把尚未存在的預設設定寫入(冪等,不覆蓋既有值)。app 目前不呼叫:未設定的 key 讀取時
+ * 即回退 DEFAULT_SETTINGS,重置也不回填(T10.7,DATA_MODEL §2)。
+ */
 export async function ensureDefaultSettings(): Promise<void> {
   await db.transaction("rw", db.settings, async () => {
     for (const key of Object.keys(DEFAULT_SETTINGS) as SettingsKey[]) {

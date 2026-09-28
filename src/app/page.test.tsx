@@ -67,9 +67,9 @@ describe("Home(今日儀表板)", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("複習 3 · 新卡 0")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "開始複習" })).toHaveAttribute("href", "/review");
-    // 已開始 2 課、累計 3 張
+    // 已開始 2 課、累計 3 字(以正向卡計,與統計頁「單字」同口徑)
     expect(screen.getByText(/已開始課程/).parentElement).toHaveTextContent("2 / 2 課");
-    expect(screen.getByText(/累計卡片/).parentElement).toHaveTextContent("3 張");
+    expect(screen.getByText(/累計單字/).parentElement).toHaveTextContent("3 字");
   });
 
   it("有複習紀錄:顯示連續天數與今日目標進度", async () => {

@@ -2,10 +2,12 @@ import type { LessonIndex } from "@/schemas/lesson";
 import { useTimeZone } from "@/test/timeZone";
 import type { CardRow, LogRow } from "./db";
 import {
+  cardTotals,
   computeStreak,
   dailyReviewCounts,
   dueForecast,
   effectiveGoal,
+  lastRatingByCard,
   lessonProgress,
   lessonStatus,
   retentionRate,
@@ -236,6 +238,113 @@ describe("lessonProgress", () => {
       { lessonId: 2, title: "第二課", total: 5, added: 0, learned: 0 },
     ]);
   });
+
+  it("已會(暫停)的字計為已學會,不論 state:標為已會的新卡也能讓該課完成", () => {
+    const cards = [
+      card({ cardId: "L02-V001", lessonId: 2, state: 0, suspended: true }), // 已會的新卡
+      card({ cardId: "L02-V002", lessonId: 2, state: 2, suspended: true }),
+      card({ cardId: "L02-V003", lessonId: 2, state: 2 }),
+      card({ cardId: "L02-V004", lessonId: 2, state: 2 }),
+      card({ cardId: "L02-V005", lessonId: 2, state: 2 }),
+    ];
+
+    const [, l2] = lessonProgress(cards, index);
+    expect(l2).toMatchObject({ added: 5, learned: 5 });
+    expect(lessonStatus(l2)).toBe("done");
+  });
+
+  it("已會以字為單位:只有回想卡暫停(T10.3 前的舊資料)也算該字已會;回想卡不計入 added", () => {
+    const cards = [
+      card({ cardId: "L02-V001", lessonId: 2, state: 0 }),
+      card({ cardId: "L02-V001@r", lessonId: 2, direction: "rev", state: 0, suspended: true }),
+      card({ cardId: "L02-V002", lessonId: 2, state: 0 }),
+      card({ cardId: "L02-V002@r", lessonId: 2, direction: "rev", state: 2 }),
+    ];
+
+    const [, l2] = lessonProgress(cards, index);
+    expect(l2).toMatchObject({ added: 2, learned: 1 });
+  });
+
+  it("最後一次評分為「重來」的卡不算已學會;之後答對即恢復", () => {
+    const cards = [
+      card({ cardId: "L02-V001", lessonId: 2, state: 2 }), // 只答過重來(首評 Again 後仍為 Review)
+      card({ cardId: "L02-V002", lessonId: 2, state: 2 }), // 重來後又答對
+      card({ cardId: "L02-V003", lessonId: 2, state: 2 }), // 無紀錄(匯入資料):依 state
+    ];
+    const logs = [
+      log({ cardId: "L02-V001", rating: 1, state: 0, reviewedAt: now.getTime() - DAY }),
+      log({ cardId: "L02-V002", rating: 1, state: 0, reviewedAt: now.getTime() - 2 * DAY }),
+      log({ cardId: "L02-V002", rating: 3, state: 2, reviewedAt: now.getTime() - DAY }),
+    ];
+
+    const [, l2] = lessonProgress(cards, index, lastRatingByCard(logs));
+    expect(l2).toMatchObject({ added: 3, learned: 2 });
+
+    // 整課只答過重來:仍為進行中(修正前會顯示已完成)
+    const allAgain = [
+      card({ cardId: "L01-V001", lessonId: 1, state: 2 }),
+      card({ cardId: "L01-V002", lessonId: 1, state: 2 }),
+    ];
+    const againLogs = allAgain.map((c) => log({ cardId: c.cardId, rating: 1, state: 0 }));
+    const small: LessonIndex = {
+      lessons: [{ id: 1, title: "第一課", vocabCount: 2, grammarCount: 0 }],
+    };
+    const [l1] = lessonProgress(allAgain, small, lastRatingByCard(againLogs));
+    expect(l1.learned).toBe(0);
+    expect(lessonStatus(l1)).toBe("in-progress");
+  });
+
+  it("已會的字即使最後一次評「重來」仍計為已學會", () => {
+    const cards = [card({ cardId: "L02-V001", lessonId: 2, state: 2, suspended: true })];
+    const logs = [log({ cardId: "L02-V001", rating: 1 })];
+
+    const [, l2] = lessonProgress(cards, index, lastRatingByCard(logs));
+    expect(l2.learned).toBe(1);
+  });
+});
+
+describe("lastRatingByCard", () => {
+  it("每張卡取 reviewedAt 最新的一筆評分,與陣列順序無關", () => {
+    const logs = [
+      log({ cardId: "a", rating: 3, reviewedAt: 300 }),
+      log({ cardId: "a", rating: 1, reviewedAt: 100 }), // 較早,即使排在後面也不採用
+      log({ cardId: "b", rating: 1, reviewedAt: 200 }),
+      log({ cardId: "b", rating: 4, reviewedAt: 150 }),
+    ];
+
+    expect(lastRatingByCard(logs)).toEqual(
+      new Map([
+        ["a", 3],
+        ["b", 1],
+      ]),
+    );
+  });
+
+  it("同一時刻多筆:取較晚寫入(陣列中較後)者;無紀錄為空 map", () => {
+    const logs = [
+      log({ cardId: "a", rating: 3, reviewedAt: 100 }),
+      log({ cardId: "a", rating: 1, reviewedAt: 100 }),
+    ];
+
+    expect(lastRatingByCard(logs).get("a")).toBe(1);
+    expect(lastRatingByCard([]).size).toBe(0);
+  });
+});
+
+describe("cardTotals", () => {
+  it("單字 = 正向卡數;卡片含回想卡;已會以字計(任一方向暫停,雙向不重複)", () => {
+    const cards = [
+      card({ cardId: "L01-V001" }),
+      card({ cardId: "L01-V001@r", direction: "rev" }),
+      card({ cardId: "L01-V002", suspended: true }),
+      card({ cardId: "L01-V002@r", direction: "rev", suspended: true }),
+      card({ cardId: "L01-V003" }),
+      card({ cardId: "L01-V003@r", direction: "rev", suspended: true }), // 舊資料:只暫停 @r
+    ];
+
+    expect(cardTotals(cards)).toEqual({ words: 3, cards: 6, suspendedWords: 2 });
+    expect(cardTotals([])).toEqual({ words: 0, cards: 0, suspendedWords: 0 });
+  });
 });
 
 describe("studySummary", () => {
@@ -247,17 +356,18 @@ describe("studySummary", () => {
     ],
   };
 
-  it("空卡:started 0、totalCards 0、totalLessons 為 index 課數", () => {
+  it("空卡:started 0、totalWords 0、totalLessons 為 index 課數", () => {
     expect(studySummary([], index)).toEqual({
       startedLessons: 0,
       totalLessons: 3,
-      totalCards: 0,
+      totalWords: 0,
     });
   });
 
-  it("startedLessons = 至少 1 張卡的相異課數;totalCards = 卡片總數", () => {
+  it("startedLessons = 至少 1 張卡的相異課數;totalWords = 正向卡數(回想卡不重複計)", () => {
     const cards = [
       card({ cardId: "L01-V001", lessonId: 1 }),
+      card({ cardId: "L01-V001@r", lessonId: 1, direction: "rev" }),
       card({ cardId: "L01-V002", lessonId: 1 }),
       card({ cardId: "L02-V001", lessonId: 2 }),
     ];
@@ -265,8 +375,10 @@ describe("studySummary", () => {
     expect(studySummary(cards, index)).toEqual({
       startedLessons: 2,
       totalLessons: 3,
-      totalCards: 3,
+      totalWords: 3,
     });
+    // 與統計頁「單字」同口徑
+    expect(studySummary(cards, index).totalWords).toBe(cardTotals(cards).words);
   });
 });
 
@@ -407,7 +519,7 @@ describe("stageDistribution", () => {
   it("依 state 與 stability 分桶;suspended 優先", () => {
     const cards = [
       card({ state: 0 }), // new
-      card({ state: 1 }), // learning
+      card({ state: 1 }), // learning(僅匯入舊資料會出現)
       card({ state: 3 }), // relearning → learning
       card({ state: 2, stability: 5 }), // young
       card({ state: 2, stability: 21 }), // mature(門檻值)
@@ -421,6 +533,32 @@ describe("stageDistribution", () => {
       mature: 2,
       suspended: 1,
     });
+  });
+
+  it("學習中 = Review 且最後一次評「重來」;不再計入未成熟/已成熟,已會仍優先", () => {
+    const cards = [
+      card({ cardId: "again-young", state: 2, stability: 0.4 }),
+      card({ cardId: "again-mature", state: 2, stability: 30 }), // 成熟卡遺忘
+      card({ cardId: "again-suspended", state: 2, suspended: true }),
+      card({ cardId: "good-young", state: 2, stability: 5 }),
+      card({ cardId: "good-mature", state: 2, stability: 30 }),
+      card({ cardId: "recovered", state: 2, stability: 3 }), // 重來後又答對
+      card({ cardId: "new", state: 0 }),
+    ];
+    const logs = [
+      log({ cardId: "again-young", rating: 1, state: 0 }),
+      log({ cardId: "again-mature", rating: 1, state: 2 }),
+      log({ cardId: "again-suspended", rating: 1 }),
+      log({ cardId: "good-young", rating: 3 }),
+      log({ cardId: "good-mature", rating: 4 }),
+      log({ cardId: "recovered", rating: 1, reviewedAt: now.getTime() - DAY }),
+      log({ cardId: "recovered", rating: 3, reviewedAt: now.getTime() }),
+    ];
+
+    const counts = stageDistribution(cards, lastRatingByCard(logs));
+    expect(counts).toEqual({ new: 1, learning: 2, young: 2, mature: 1, suspended: 1 });
+    // 各桶互斥:總和 = 卡數
+    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(cards.length);
   });
 
   it("空集合全為 0", () => {

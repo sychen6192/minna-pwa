@@ -220,7 +220,7 @@
   做什麼:(1) 課程頁初始 furigana 讀 `getSetting("furigana")`,頁內切換只影響本頁;furigana 隱藏時含漢字的字不顯示重音讀音(避免洩漏讀音)。(2) `ttsEnabled` 關閉時不渲染任何發音鈕(課程頁、複習、練習、測驗)。(3) tts.ts:語音清單非同步載入(`voiceschanged` + 逾時)、優先 `localService` 的 ja 語音並快取;朗讀文字去除［］〔〕（）〜…／等記號。
   驗收:LessonDetail 測試(全域 hide → 無 rt;hide 時含漢字字無重音讀音;ttsEnabled=false 無發音鈕);tts 測試(延遲 voiceschanged、localService 優先、記號剝除);`pnpm verify` 全綠。
 
-- [ ] **T10.7 進度與統計語意**
+- [x] **T10.7 進度與統計語意**
   做什麼:(1) `lessonProgress`:正向卡已會(suspended)計為已學會;最後一次評分為「重來」的卡不計為已學會(`lastRatingByCard(logs)` 純函式),課程列表一併讀 logs;統計「學習中」改為「Review 且最後評分為重來」。(2) 頑固卡於 stability ≥ 成熟門檻後解除(`isLeech`)。(3) 統計卡數與首頁一致(註明單字/卡片)。(4)「重置所有進度」保留設定(只清 cards/logs/progress),文案同步;DATA_MODEL 註記。
   驗收:stats 測試(已會計入完成、只答過重來者不算已學會、階段分布);isLeech 成熟解除測試;backup 測試(重置後 settings 保留);`pnpm verify` 全綠。
 

@@ -170,7 +170,7 @@ interface ProgressRow {
 interface SettingsRow { key: string; value: unknown }
 ```
 
-settings 預設值(首次啟動寫入):
+settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAllSettings` 讀取時回退為下列值;重置不回填):
 
 | key | 預設 |
 |---|---|
@@ -217,3 +217,8 @@ settings 預設值(首次啟動寫入):
    - fuzz(T10.2):ts-fsrs `enable_fuzz` 開啟,種子 = `cardId + reps`(`GenSeedStrategyWithCardId`,與評分時刻無關),同一張卡的預估與實際套用一致;fuzz 後間隔仍為整數天。ts-fsrs 只對 ≥ 2.5 天的間隔加 fuzz,預設保留率下新卡首評(Good 3 天)不受影響;兄弟卡同日不出由 bury 保證。
    - 復原與重看(T10.3):`rate()` 回傳 `{ card, prev, logId }`;`undoRate({ prev, logId })` 於同一 transaction 放回評分前的卡片、刪除該筆 log(logs 唯一的逐筆刪除路徑,重置/匯入的整表清除除外;每日上限由 logs 計算,復原後額度隨之回復)。複習 session 內的「重看」只存在頁面 state,不呼叫 `rate()`、不寫 log(同日再評分會重複扣 stability 與 lapses)。「已會」以字為單位:`setWordSuspended` 同時作用於正向卡與 `@r`,課程頁以任一方向暫停視為已會;新建 `@r` 繼承正向卡的 `suspended`。T10.3 前只暫停單一方向的既有資料不遷移,恢復時兩個方向一併恢復。
    - 錯題加入複習(T10.4):`requeueWrong(vocabIds, lessonId, now)` 於同一 transaction 以字為單位處理——無正向卡者照 `addCards` 建立(含 `@r`);已暫停者兩個方向一併恢復;已學過(state ≠ New)且 `due ≥ nextStudyDayStart(now)` 的卡把 `due` 設為 now(今日已評過、受 bury 者改設為 `nextStudyDayStart(now)`)。不寫 log、不改 stability/difficulty/lastReview,下次評分由 ts-fsrs 以距 lastReview 的實際學習日數計算(等同提前複習);提前的卡佔今日複習額度。回傳各類字數 `{ created, tomorrow, unsuspended, alreadyDue, requeued, pendingNew }`(每字只歸一類,優先序同此順序):分類依「這個字何時會出現」——原本就有學過的卡今日到期者為 `alreadyDue`(另一方向未到期的卡仍照規則提前),只有新卡者為 `pendingNew`(依每日新卡額度引入,不宣稱已在今日佇列)。
+6. **進度與統計語意**(T10.7):一律由 `cards` + `logs` 即時推導(`stats.ts` 純函式),不另存欄位。
+   - 單字 vs 卡片:「單字」= 正向卡數(首頁「累計單字」、統計頁「單字」、各課「已加入」同口徑);「卡片」另含 `@r` 回想卡(統計頁附註、階段分布以卡片計)。「已會」以字計:任一方向暫停即算、雙向不重複。
+   - 已學會(各課進度、課程列表「已完成」):正向卡所屬的字已會,或 state = Review 且最後一次評分(`lastRatingByCard`,依 `reviewedAt` 最新)不是「重來」。
+   - 階段分布:已會(暫停)優先;學習中 = Review 且最後一次評分為「重來」(long-term scheduler 答錯後仍為 Review;state Learning/Relearning 僅可能來自匯入的舊資料,同歸學習中);其餘 Review 依 stability 分未成熟 / 已成熟(≥ `MATURE_STABILITY` = 21 天)。
+   - 頑固卡:`lapses ≥ LEECH_THRESHOLD`(4)且 stability < `MATURE_STABILITY`;`lapses` 只增不減,成熟即解除,再遺忘而 stability 掉回門檻下時再次列入。

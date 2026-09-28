@@ -10,6 +10,7 @@ import { findExampleSentence } from "@/lib/examples";
 import { getSetting } from "@/lib/db";
 import { displayNote } from "@/lib/notes";
 import { baseVocabId, cardDirection, getLeeches, LEECH_THRESHOLD } from "@/lib/srs";
+import { MATURE_STABILITY } from "@/lib/stats";
 import { speechText } from "@/lib/tts";
 import { useTtsEnabled } from "@/lib/useSetting";
 import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
@@ -111,7 +112,8 @@ export default function PracticePage() {
       <Centered>
         <p className="text-lg font-medium">目前沒有頑固卡 🎉</p>
         <p className="mt-2 text-sm text-foreground/60">
-          複習中一再答錯(達 {LEECH_THRESHOLD} 次)的字會列為頑固卡,集中在這裡加強。
+          複習中一再答錯(達 {LEECH_THRESHOLD} 次)的字會列為頑固卡,集中在這裡加強;記牢(穩定度達{" "}
+          {MATURE_STABILITY} 天)後自動解除。
         </p>
         <Link href="/" className="mt-4 text-sm text-sky-700 underline">
           回首頁

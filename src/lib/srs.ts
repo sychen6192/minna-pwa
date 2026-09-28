@@ -10,7 +10,9 @@ import {
   type Grade,
   type ReviewLog,
 } from "ts-fsrs";
+import { baseVocabId, cardDirection, REVERSE_SUFFIX } from "@/lib/cardId";
 import { db, getAllSettings, type CardRow, type LogRow } from "@/lib/db";
+import { MATURE_STABILITY } from "@/lib/stats";
 import {
   addStudyDays,
   fromFsrsTime,
@@ -76,20 +78,8 @@ async function getScheduler(): Promise<FSRS> {
 // 學習日」,輸出再以同一次呼叫的 now 為基準經 fromFsrsTime 換回(studyDay.ts)。
 // DB 內永遠是真實時刻(DATA_MODEL §4-5)。
 
-/** 回想方向卡的 cardId 尾綴(義→日,T9.2) */
-export const REVERSE_SUFFIX = "@r";
-
-/** 由 cardId 取回原單字 id(去除回想卡尾綴)。 */
-export function baseVocabId(cardId: string): string {
-  return cardId.endsWith(REVERSE_SUFFIX)
-    ? cardId.slice(0, -REVERSE_SUFFIX.length)
-    : cardId;
-}
-
-/** 卡片方向(缺省視為 fwd,相容舊資料)。 */
-export function cardDirection(card: CardRow): "fwd" | "rev" {
-  return card.direction ?? "fwd";
-}
+// 卡片 id / 方向工具定義於 cardId.ts(不依賴 ts-fsrs,供 stats 等共用),此處轉匯出
+export { baseVocabId, cardDirection, REVERSE_SUFFIX };
 
 function newCardRow(
   cardId: string,
@@ -490,9 +480,13 @@ export async function setWordSuspended(vocabId: string, suspended: boolean): Pro
     .modify({ suspended });
 }
 
-/** 「已會/暫停」卡數量。 */
-export function countSuspended(): Promise<number> {
-  return db.cards.filter((c) => c.suspended === true).count();
+/**
+ * 「已會」的字數:以字為單位(T10.3),任一方向的卡暫停即算、雙向卡不重複計
+ * (與 suspendedWordIds 一致)。
+ */
+export async function countSuspended(): Promise<number> {
+  const rows = await db.cards.filter((c) => c.suspended === true).toArray();
+  return new Set(rows.map((c) => baseVocabId(c.cardId))).size;
 }
 
 /**
@@ -549,9 +543,13 @@ export function countDueByTomorrow(now: number): Promise<number> {
  */
 export const LEECH_THRESHOLD = 4;
 
-/** 是否為頑固卡:複習階段已遺忘達門檻次數。 */
+/**
+ * 是否為頑固卡:複習階段已遺忘達門檻次數,且尚未成熟。`lapses` 只增不減,故以
+ * stability ≥ MATURE_STABILITY(已成熟)視為已克服而解除;之後再遺忘、stability 掉回
+ * 門檻下即再次列入。
+ */
 export function isLeech(card: CardRow): boolean {
-  return card.lapses >= LEECH_THRESHOLD;
+  return card.lapses >= LEECH_THRESHOLD && card.stability < MATURE_STABILITY;
 }
 
 /** 頑固卡數量(`lapses` 未建索引,以 filter 全掃;個人資料量無虞;排除已暫停)。 */
