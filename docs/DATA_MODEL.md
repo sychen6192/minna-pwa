@@ -177,7 +177,7 @@ settings 預設值(首次啟動寫入):
 | `newPerDay` | 10 |
 | `maxReviewsPerDay` | 200 |
 | `dailyGoal` | 20(每日複習目標張數,首頁進度環) |
-| `reverseCards` | false(開啟後新增單字同時建義→日回想卡;cardId 加 `@r` 尾綴) |
+| `reverseCards` | false(開啟後新增單字同時建義→日回想卡;cardId 加 `@r` 尾綴;「已會」以字為單位同時作用於兩個方向,`@r` 建立時繼承正向卡的暫停狀態) |
 | `desiredRetention` | 0.9(FSRS 目標保留率,0.80–0.97;越高複習越頻繁) |
 | `ttsEnabled` | true |
 | `furigana` | `"show"`(`show` \| `hide`) |
@@ -198,9 +198,12 @@ settings 預設值(首次啟動寫入):
 
 匯入規則:`version` 相符才允許;匯入 = 全清後寫入(UI 端雙重確認)。
 
+重置(F6.3):清空 `cards`、`logs`、`progress`,**保留 `settings`**(2026-09-28 修訂;原為連設定一起清除)。
+
 ## 4. 不變式(違反即 bug)
 
 1. `cardId` 永遠等於內容資料的 `VocabItem.id`;**內容重新產生不得改變既有 id**(pipeline 必須依教材原順序穩定編號)。
 2. `public/data/**` 只能由 pipeline 或 fixture 任務產生,手改視為錯誤。
 3. 使用者資料只進 IndexedDB;任何元件不得繞過 `db.ts` 直接開 Dexie 連線。
-4. `due`、`reviewedAt` 等時間一律存 epoch ms(number),顯示層才轉時區。
+4. `due`、`reviewedAt` 等時間一律存 epoch ms(number,真實時刻),顯示層才轉時區。
+5. **學習日**(2026-09-28 追加):以本地時區**凌晨 4 點**換日(`src/lib/studyDay.ts`,對標 Anki)。每日上限、到期判定(`due` 落在今日學習日結束前即到期)、今日目標、streak 與統計分日一律依學習日。ts-fsrs 內部以 UTC 日期計算 `elapsed_days`,故 `srs.ts` 餵入 ts-fsrs 的時間先平移為「UTC 日 = 本地學習日」、輸出再換回真實時刻;DB 內永遠是真實時刻,平移只存在於 `srs.ts` 內部。
