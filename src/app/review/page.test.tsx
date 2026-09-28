@@ -47,10 +47,12 @@ vi.mock("@/lib/db", () => ({
   db: { logs: { toArray: () => logsToArray() } },
 }));
 
-const SETTINGS: Record<string, unknown> = { furigana: "show", dailyGoal: 20 };
+const SETTINGS: Record<string, unknown> = { furigana: "show", dailyGoal: 20, ttsEnabled: true };
 
+// 只替換 speak;speechText 等用真實實作
 const speak = vi.fn();
-vi.mock("@/lib/tts", () => ({
+vi.mock("@/lib/tts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tts")>()),
   speak: (...a: unknown[]) => speak(...a),
 }));
 
@@ -323,23 +325,24 @@ describe("ReviewPage", () => {
     expect(goodRow).toHaveTextContent("1");
   });
 
+  const lessonWithExample: Lesson = {
+    ...lesson,
+    grammar: [
+      {
+        id: "L13-G01",
+        pattern: "型",
+        examples: [
+          {
+            id: "L13-S01",
+            ruby: [{ b: "公園で" }, { b: "遊", r: "あそ" }, { b: "びます。" }],
+            translation: "在公園玩。",
+          },
+        ],
+      },
+    ],
+  };
+
   it("翻卡後顯示同課例句(附翻譯)與例句/單字發音鈕", async () => {
-    const lessonWithExample: Lesson = {
-      ...lesson,
-      grammar: [
-        {
-          id: "L13-G01",
-          pattern: "型",
-          examples: [
-            {
-              id: "L13-S01",
-              ruby: [{ b: "公園で" }, { b: "遊", r: "あそ" }, { b: "びます。" }],
-              translation: "在公園玩。",
-            },
-          ],
-        },
-      ],
-    };
     buildQueue.mockResolvedValue([cardRow]);
     getLesson.mockResolvedValue(lessonWithExample);
     previewIntervals.mockResolvedValue(previews);
@@ -356,11 +359,48 @@ describe("ReviewPage", () => {
       screen.getByRole("button", { name: "播放例句發音" }),
     ).toBeInTheDocument();
 
-    // 單字發音鈕 → speak(kana)
+    // 單字發音鈕 → speak(kana);例句發音鈕 → speak(表面文字)
     await user.click(
       screen.getByRole("button", { name: "播放 あそびます 的發音" }),
     );
     expect(speak).toHaveBeenCalledWith("あそびます");
+    await user.click(screen.getByRole("button", { name: "播放例句發音" }));
+    expect(speak).toHaveBeenLastCalledWith("公園で遊びます。");
+  });
+
+  it("設定 TTS 發音關閉:翻卡後不渲染單字與例句發音鈕", async () => {
+    getSetting.mockImplementation(async (key: string) =>
+      key === "ttsEnabled" ? false : SETTINGS[key],
+    );
+    buildQueue.mockResolvedValue([cardRow]);
+    getLesson.mockResolvedValue(lessonWithExample);
+    previewIntervals.mockResolvedValue(previews);
+    countDueByTomorrow.mockResolvedValue(0);
+    const user = userEvent.setup();
+    render(<ReviewPage />);
+
+    await screen.findByText(/點擊卡片/);
+    await clickFlip(user);
+    expect(screen.getByText("在公園玩。")).toBeInTheDocument(); // 例句仍顯示
+    expect(screen.queryAllByRole("button", { name: /播放/ })).toHaveLength(0);
+    expect(getSetting).toHaveBeenCalledWith("ttsEnabled");
+  });
+
+  it("單字發音鈕讀清理過的讀音(すき［な］→ すきな)", async () => {
+    buildQueue.mockResolvedValue([cardRow]);
+    getLesson.mockResolvedValue({
+      ...lesson,
+      vocab: [{ ...lesson.vocab[0], ruby: [{ b: "好", r: "す" }, { b: "き［な］" }], kana: "すき［な］" }],
+    });
+    previewIntervals.mockResolvedValue(previews);
+    countDueByTomorrow.mockResolvedValue(0);
+    const user = userEvent.setup();
+    render(<ReviewPage />);
+
+    await screen.findByText(/點擊卡片/);
+    await clickFlip(user);
+    await user.click(screen.getByRole("button", { name: "播放 すきな 的發音" }));
+    expect(speak).toHaveBeenCalledWith("すきな");
   });
 
   it("翻卡後讀音帶重音標記(有 accent 資料時)", async () => {

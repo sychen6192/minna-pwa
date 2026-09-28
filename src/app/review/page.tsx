@@ -29,6 +29,8 @@ import {
 } from "@/lib/srs";
 import { computeStreak, effectiveGoal, reviewsToday, type GoalProgress } from "@/lib/stats";
 import { studyDayKey } from "@/lib/studyDay";
+import { speechText } from "@/lib/tts";
+import { useTtsEnabled } from "@/lib/useSetting";
 import { cn } from "@/lib/utils";
 import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
 
@@ -191,6 +193,7 @@ export default function ReviewPage() {
   const [flipped, flippedRef, setFlipped] = useSyncedState(false);
   const [undo, undoRef, setUndo] = useSyncedState<UndoEntry | null>(null);
   const [furigana, setFurigana] = useState<FuriganaMode>("show");
+  const ttsEnabled = useTtsEnabled();
   const [previews, setPreviews] = useState<IntervalPreviews | null>(null);
   const [tomorrowDue, setTomorrowDue] = useState(0);
   const [summary, setSummary] = useState<SummaryInfo | null>(null);
@@ -642,9 +645,11 @@ export default function ReviewPage() {
       {/* 揭曉後的發音與例句(置於 flip button 外,避免 button 巢狀) */}
       {flipped && (
         <div className="space-y-2 px-4 pb-2">
-          <div className="flex justify-center">
-            <SpeakButton text={item.vocab.kana} label="發音" />
-          </div>
+          {ttsEnabled && (
+            <div className="flex justify-center">
+              <SpeakButton text={speechText(item.vocab)} label="發音" />
+            </div>
+          )}
           {item.example && (
             <div className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
               <div className="flex items-start gap-2">
@@ -654,10 +659,12 @@ export default function ReviewPage() {
                     {item.example.translation}
                   </p>
                 </div>
-                <SpeakButton
-                  text={plainText(item.example.ruby)}
-                  ariaLabel="播放例句發音"
-                />
+                {ttsEnabled && (
+                  <SpeakButton
+                    text={speechText(plainText(item.example.ruby))}
+                    ariaLabel="播放例句發音"
+                  />
+                )}
               </div>
             </div>
           )}

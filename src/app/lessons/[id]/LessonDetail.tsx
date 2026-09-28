@@ -6,7 +6,8 @@ import { PitchAccent, hasPitch } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
 import { addCards, existingCardIds, setWordSuspended, suspendedWordIds } from "@/lib/srs";
-import { speak } from "@/lib/tts";
+import { speak, speechText } from "@/lib/tts";
+import { useSetting, useTtsEnabled } from "@/lib/useSetting";
 import { cn } from "@/lib/utils";
 import type { Lesson } from "@/schemas/lesson";
 
@@ -22,7 +23,13 @@ export function LessonDetail({ id }: { id: number }) {
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("vocab");
-  const [furigana, setFurigana] = useState<FuriganaMode>("show");
+  // furigana 初始值 = 全域設定;頁內切換只影響本頁(不寫回設定)
+  const globalFurigana = useSetting("furigana");
+  const [furiganaOverride, setFuriganaOverride] = useState<FuriganaMode | null>(null);
+  const furigana = furiganaOverride ?? globalFurigana ?? "show";
+  const ttsEnabled = useTtsEnabled();
+  // 設定讀到後才渲染內容,避免先閃出 furigana / 發音鈕
+  const ready = lesson !== null && globalFurigana !== undefined && ttsEnabled !== undefined;
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [suspended, setSuspendedIds] = useState<Set<string>>(new Set());
 
@@ -67,17 +74,21 @@ export function LessonDetail({ id }: { id: number }) {
     });
   }, []);
 
-  // 文法錨點深連結(F4.1):#Lxx-Gxx → 切至文型分頁並捲動到該文法點
+  // 文法錨點深連結(F4.1):#Lxx-Gxx → 切至文型分頁(內容渲染後),
+  // 待文型分頁 commit 後再捲動(rAF 不保證分頁已渲染,設定載入改變時序後常捲不到)
+  const [anchor, setAnchor] = useState<string | null>(null);
   useEffect(() => {
-    if (!lesson) return;
+    if (!ready) return;
     const hash = decodeURIComponent(window.location.hash.slice(1));
     if (!/-G\d+$/.test(hash)) return;
     setTab("grammar");
-    // 等文型分頁渲染完成後捲動
-    requestAnimationFrame(() => {
-      document.getElementById(hash)?.scrollIntoView({ block: "start" });
-    });
-  }, [lesson]);
+    setAnchor(hash);
+  }, [ready]);
+  useEffect(() => {
+    if (!anchor || tab !== "grammar") return;
+    document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+    setAnchor(null);
+  }, [anchor, tab]);
 
   const addOne = useCallback(
     async (cardId: string) => {
@@ -103,7 +114,7 @@ export function LessonDetail({ id }: { id: number }) {
     );
   }
 
-  if (!lesson) {
+  if (!lesson || !ready) {
     return (
       <p className="px-4 py-8 text-center text-sm text-foreground/60">
         載入中…
@@ -121,7 +132,7 @@ export function LessonDetail({ id }: { id: number }) {
         <button
           type="button"
           aria-pressed={furigana === "show"}
-          onClick={() => setFurigana((f) => (f === "show" ? "hide" : "show"))}
+          onClick={() => setFuriganaOverride(furigana === "show" ? "hide" : "show")}
           className="ml-3 shrink-0 rounded border border-foreground/20 px-2 py-1 text-xs"
         >
           {furigana === "show" ? "隱藏假名" : "顯示假名"}
@@ -152,6 +163,7 @@ export function LessonDetail({ id }: { id: number }) {
         <VocabList
           lesson={lesson}
           furigana={furigana}
+          tts={ttsEnabled === true}
           added={added}
           suspended={suspended}
           onAddOne={addOne}
@@ -170,6 +182,7 @@ export function LessonDetail({ id }: { id: number }) {
 function VocabList({
   lesson,
   furigana,
+  tts,
   added,
   suspended,
   onAddOne,
@@ -178,6 +191,8 @@ function VocabList({
 }: {
   lesson: Lesson;
   furigana: FuriganaMode;
+  /** 設定「TTS 發音」;false 時不渲染發音鈕 */
+  tts: boolean;
   added: Set<string>;
   suspended: Set<string>;
   onAddOne: (cardId: string) => void;
@@ -200,20 +215,25 @@ function VocabList({
       <ul>
         {lesson.vocab.map((v) => {
           const isAdded = added.has(v.id);
+          // 隱藏假名時,含漢字讀音的字不顯示重音列(它寫出完整讀音);純假名字照常顯示
+          const readingHidden = furigana === "hide" && v.ruby.some((s) => s.r !== undefined);
+          const spoken = speechText(v); // 名稱與實際朗讀一致(同複習/練習的 SpeakButton)
           return (
             <li key={v.id} className="border-b border-foreground/10 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="flex flex-wrap items-center gap-2 text-lg">
                   <RubyText segments={v.ruby} furigana={furigana} />
-                  <button
-                    type="button"
-                    aria-label={`播放 ${v.kana} 的發音`}
-                    onClick={() => speak(v.kana)}
-                    className="shrink-0 text-foreground/60 transition-colors active:text-foreground"
-                  >
-                    <Volume2 className="size-4" aria-hidden />
-                  </button>
-                  {hasPitch(v.kana, v.accent) && (
+                  {tts && (
+                    <button
+                      type="button"
+                      aria-label={`播放 ${spoken} 的發音`}
+                      onClick={() => speak(spoken)}
+                      className="shrink-0 text-foreground/60 transition-colors active:text-foreground"
+                    >
+                      <Volume2 className="size-4" aria-hidden />
+                    </button>
+                  )}
+                  {hasPitch(v.kana, v.accent) && !readingHidden && (
                     <PitchAccent
                       kana={v.kana}
                       accent={v.accent}

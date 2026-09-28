@@ -33,7 +33,7 @@ flowchart TD
 | 狀態管理 | Zustand | 輕量,只管複習 session 等 UI 狀態 |
 | 日文處理 | WanaKana + 原生 `<ruby>` | 輸入正規化;furigana 由資料提供、不做 runtime 斷詞 |
 | 客端搜尋 | MiniSearch | 跨課全文檢索,無後端 |
-| 音訊 | Web Speech API(`ja-JP`) | 零成本 TTS;無可用 voice 時靜默降級 |
+| 音訊 | Web Speech API(`ja-JP`) | 零成本 TTS;語音清單非同步載入(`voiceschanged`,最多等 1.5 秒),優先裝置內建(`localService`)日語 voice;朗讀文字去除教材記號(［］〔〕（）〜…／);無可用 voice 時靜默降級 |
 | 統計圖表 | Recharts | 熱力圖、到期預測、留存曲線 |
 | 測試 | Vitest + @testing-library/react + fake-indexeddb | — |
 
@@ -88,7 +88,8 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)
     │   ├── quiz.ts             # 出題引擎(純函式)
     │   ├── stats.ts            # 統計聚合(純函式 + DB 查詢)
-    │   ├── tts.ts              # Web Speech API 包裝
+    │   ├── tts.ts              # Web Speech API 包裝 + 朗讀文字清理(speechText)
+    │   ├── useSetting.ts       # 讀取全域設定的 hook(useSetting / useTtsEnabled;經 db.ts)
     │   └── search.ts           # MiniSearch 索引建立與查詢
     ├── schemas/lesson.ts       # Zod:資料契約唯一真相
     └── sw.ts                   # Serwist service worker

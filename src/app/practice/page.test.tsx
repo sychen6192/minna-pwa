@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, vi } from "vitest";
-import { db, type CardRow } from "@/lib/db";
+import { afterEach, beforeEach, vi } from "vitest";
+import { db, setSetting, type CardRow } from "@/lib/db";
 import type { Lesson } from "@/schemas/lesson";
 import PracticePage from "./page";
 
@@ -24,6 +24,13 @@ const lesson: Lesson = {
       note: "〔公園で〜〕",
     },
     { id: "L13-V002", ruby: [{ b: "本" }], kana: "ほん", meaning: "書", pos: "名", note: "読み物" },
+    {
+      id: "L13-V003",
+      ruby: [{ b: "夫", r: "おっと" }, { b: "／" }, { b: "主人", r: "しゅじん" }],
+      kana: "おっと／しゅじん",
+      meaning: "丈夫",
+      pos: "名",
+    },
   ],
   grammar: [],
   dialogues: [],
@@ -46,8 +53,34 @@ function leechCard(id: string, lapses: number): CardRow {
 }
 
 beforeEach(async () => {
-  await db.cards.clear();
+  await Promise.all([db.cards.clear(), db.settings.clear()]);
 });
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/** 以 mock 取代 Web Speech(日語 voice 已載入),回傳 speak 的 spy */
+function installSpeech() {
+  const speak = vi.fn();
+  vi.stubGlobal(
+    "speechSynthesis",
+    Object.assign(new EventTarget(), {
+      getVoices: () => [{ lang: "ja-JP", name: "Kyoko", localService: true }],
+      speak,
+      cancel: () => {},
+    }),
+  );
+  vi.stubGlobal(
+    "SpeechSynthesisUtterance",
+    class {
+      lang = "";
+      voice: unknown = null;
+      constructor(public text: string) {}
+    },
+  );
+  return speak;
+}
 
 describe("PracticePage", () => {
   it("無頑固卡:顯示空狀態", async () => {
@@ -76,6 +109,33 @@ describe("PracticePage", () => {
 
     await user.click(screen.getByRole("button", { name: "完成" }));
     expect(await screen.findByText(/頑固卡練習完成/)).toBeInTheDocument();
+  });
+
+  it("發音鈕:以清理過的讀音朗讀(Web Speech 為 mock)", async () => {
+    const synthSpeak = installSpeech();
+    await db.cards.bulkAdd([leechCard("L13-V003", 5)]);
+    const user = userEvent.setup();
+    render(<PracticePage />);
+
+    await screen.findByText("1 / 1");
+    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    await user.click(screen.getByRole("button", { name: "播放 おっと 的發音" }));
+    expect(synthSpeak).toHaveBeenCalledTimes(1);
+    expect(synthSpeak.mock.calls[0][0]).toMatchObject({ text: "おっと", lang: "ja-JP" });
+  });
+
+  it("設定 TTS 發音關閉:翻卡後沒有發音鈕,也不會朗讀", async () => {
+    const synthSpeak = installSpeech();
+    await setSetting("ttsEnabled", false);
+    await db.cards.bulkAdd([leechCard("L13-V003", 5)]);
+    const user = userEvent.setup();
+    render(<PracticePage />);
+
+    await screen.findByText("1 / 1");
+    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    expect(screen.getByText("丈夫")).toBeInTheDocument();
+    expect(screen.queryAllByRole("button", { name: /播放/ })).toHaveLength(0);
+    expect(synthSpeak).not.toHaveBeenCalled();
   });
 
   it("回想卡:題面有詞性・課號,note 只在翻面後顯示", async () => {

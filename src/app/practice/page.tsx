@@ -10,6 +10,8 @@ import { findExampleSentence } from "@/lib/examples";
 import { getSetting } from "@/lib/db";
 import { displayNote } from "@/lib/notes";
 import { baseVocabId, cardDirection, getLeeches, LEECH_THRESHOLD } from "@/lib/srs";
+import { speechText } from "@/lib/tts";
+import { useTtsEnabled } from "@/lib/useSetting";
 import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
 
 /** ruby 分段的表面文字(TTS 讀例句用) */
@@ -35,6 +37,7 @@ export default function PracticePage() {
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [furigana, setFurigana] = useState<FuriganaMode>("show");
+  const ttsEnabled = useTtsEnabled();
 
   useEffect(() => {
     let active = true;
@@ -194,9 +197,11 @@ export default function PracticePage() {
 
       {flipped && (
         <div className="space-y-2 px-4 pb-2">
-          <div className="flex justify-center">
-            <SpeakButton text={item.vocab.kana} label="發音" />
-          </div>
+          {ttsEnabled && (
+            <div className="flex justify-center">
+              <SpeakButton text={speechText(item.vocab)} label="發音" />
+            </div>
+          )}
           {item.example && (
             <div className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
               <div className="flex items-start gap-2">
@@ -206,10 +211,12 @@ export default function PracticePage() {
                     {item.example.translation}
                   </p>
                 </div>
-                <SpeakButton
-                  text={plainText(item.example.ruby)}
-                  ariaLabel="播放例句發音"
-                />
+                {ttsEnabled && (
+                  <SpeakButton
+                    text={speechText(plainText(item.example.ruby))}
+                    ariaLabel="播放例句發音"
+                  />
+                )}
               </div>
             </div>
           )}

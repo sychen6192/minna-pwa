@@ -39,7 +39,10 @@ const lesson: Lesson = {
   dialogues: [],
 };
 vi.mock("@/lib/content", () => ({ getLesson: async () => lesson }));
-vi.mock("@/lib/tts", () => ({ speak: () => {} }));
+vi.mock("@/lib/tts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tts")>()),
+  speak: () => {},
+}));
 
 import ReviewPage from "./page";
 

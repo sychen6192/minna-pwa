@@ -179,8 +179,8 @@ settings 預設值(首次啟動寫入):
 | `dailyGoal` | 20(每日複習目標張數,首頁進度環;有效目標 = min(dailyGoal, 今日已複習 + 今日佇列剩餘);今日已複習且佇列清空即算達標,今日無卡可做且未複習時維持設定值) |
 | `reverseCards` | false(開啟後新增單字同時建義→日回想卡;cardId 加 `@r` 尾綴;「已會」以字為單位同時作用於兩個方向,`@r` 建立時繼承正向卡的暫停狀態;同一字的兩個方向不在同一學習日出現,`@r` 新卡於正向卡首評的隔日起才引入,見 §4-5) |
 | `desiredRetention` | 0.9(FSRS 目標保留率,0.80–0.97;越高複習越頻繁) |
-| `ttsEnabled` | true |
-| `furigana` | `"show"`(`show` \| `hide`) |
+| `ttsEnabled` | true(false 時課程頁、複習、練習都不顯示發音鈕) |
+| `furigana` | `"show"`(`show` \| `hide`;課程頁/複習/練習/測驗的初始值,課程頁內切換只影響本頁、不寫回) |
 | `installPromptDismissed` | false(加入主畫面提示已被關閉) |
 
 ## 3. 匯出 / 匯入格式

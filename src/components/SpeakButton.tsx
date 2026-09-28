@@ -3,7 +3,10 @@
 import { Volume2 } from "lucide-react";
 import { speak } from "@/lib/tts";
 
-/** 日語發音鈕:以 Web Speech 朗讀 `text`(無可用 voice 時靜默降級)。 */
+/**
+ * 日語發音鈕:以 Web Speech 朗讀 `text`(無可用 voice 時靜默降級)。
+ * `text` 由呼叫端以 speechText 清理;設定 `ttsEnabled` 關閉時由呼叫端不渲染(useTtsEnabled)。
+ */
 export function SpeakButton({
   text,
   label,
