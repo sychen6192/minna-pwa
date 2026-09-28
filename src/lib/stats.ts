@@ -1,16 +1,22 @@
 import type { LessonIndex } from "@/schemas/lesson";
 import type { CardRow, LogRow } from "./db";
+import {
+  addStudyDays,
+  nextStudyDayStart,
+  studyDayKey,
+  studyDayStart,
+} from "./studyDay";
 
 // 統計聚合(SPEC F5)。全部純函式:頁面撈 rows 進來,這裡不碰 DB。
-// 分日/分週一律以「本地時區」為準(DATA_MODEL §4:儲存 epoch ms,顯示層轉時區)。
+// 分日/分週一律以「學習日」為準(DATA_MODEL §4-5:本地時區凌晨 4 點換日,studyDay.ts)。
 
 export interface DayCount {
-  date: string; // YYYY-MM-DD(本地時區)
+  date: string; // YYYY-MM-DD(學習日)
   count: number;
 }
 
 export interface WeekRate {
-  weekStart: string; // 該週週一 YYYY-MM-DD(本地時區)
+  weekStart: string; // 該週週一 YYYY-MM-DD(學習日)
   rate: number | null; // 無資料週為 null
 }
 
@@ -41,52 +47,45 @@ export interface StageCounts {
 /** 成熟門檻(天):對標 Anki 的 mature 定義(interval ≥ 21 天)。 */
 export const MATURE_STABILITY = 21;
 
-function localDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+/** 該學習日所屬週的週一(學習日起點,epoch ms) */
+function studyWeekStart(ms: number): number {
+  const weekday = new Date(studyDayStart(ms)).getDay(); // 0 = 週日
+  return addStudyDays(ms, -((weekday + 6) % 7));
 }
 
-/** 以日期欄位加減天數(而非 ms 運算),跨 DST 安全 */
-function shiftDays(base: Date, days: number): Date {
-  return new Date(base.getFullYear(), base.getMonth(), base.getDate() + days);
-}
-
-/** 該日所屬週的週一 */
-function mondayOf(date: Date): Date {
-  return shiftDays(date, -((date.getDay() + 6) % 7));
-}
-
-/** 過去 days 天(含今日)的每日複習量,zero-fill 全視窗 */
+/** 過去 days 個學習日(含今日)的每日複習量,zero-fill 全視窗 */
 export function dailyReviewCounts(logs: LogRow[], now: Date, days = 84): DayCount[] {
   const result: DayCount[] = [];
   const indexByDate = new Map<string, number>();
   for (let i = days - 1; i >= 0; i--) {
-    const key = localDateKey(shiftDays(now, -i));
+    const key = studyDayKey(addStudyDays(now.getTime(), -i));
     indexByDate.set(key, result.length);
     result.push({ date: key, count: 0 });
   }
   for (const entry of logs) {
-    const idx = indexByDate.get(localDateKey(new Date(entry.reviewedAt)));
+    const idx = indexByDate.get(studyDayKey(entry.reviewedAt));
     if (idx !== undefined) result[idx].count++;
   }
   return result;
 }
 
-/** 未來 days 天(含今日)的到期卡量;逾期歸入今日;New 卡不列入(由 newPerDay 配額管理) */
+/**
+ * 未來 days 個學習日(含今日)的到期卡量;今日學習日結束前到期者(含逾期)歸入今日,
+ * 與 srs 的到期判定一致;New 卡(由 newPerDay 配額管理)與暫停卡不列入
+ */
 export function dueForecast(cards: CardRow[], now: Date, days: number): DayCount[] {
   const result: DayCount[] = [];
   const indexByDate = new Map<string, number>();
   for (let i = 0; i < days; i++) {
-    const key = localDateKey(shiftDays(now, i));
+    const key = studyDayKey(addStudyDays(now.getTime(), i));
     indexByDate.set(key, result.length);
     result.push({ date: key, count: 0 });
   }
-  const todayKey = localDateKey(now);
+  const todayKey = studyDayKey(now.getTime());
+  const todayEnd = nextStudyDayStart(now.getTime());
   for (const c of cards) {
-    if (c.state === 0) continue;
-    const key = c.due <= now.getTime() ? todayKey : localDateKey(new Date(c.due));
+    if (c.state === 0 || c.suspended) continue;
+    const key = c.due < todayEnd ? todayKey : studyDayKey(c.due);
     const idx = indexByDate.get(key);
     if (idx !== undefined) result[idx].count++;
   }
@@ -110,19 +109,19 @@ export function retentionRate(
   return total === 0 ? null : kept / total;
 }
 
-/** 過去 weeks 週(含本週)的週別留存率,weekStart 為週一 */
+/** 過去 weeks 週(含本週)的週別留存率,weekStart 為週一(週界同樣以學習日換日) */
 export function weeklyRetention(logs: LogRow[], now: Date, weeks = 12): WeekRate[] {
-  const thisMonday = mondayOf(now);
+  const thisMonday = studyWeekStart(now.getTime());
   const buckets = new Map<string, { total: number; kept: number }>();
   const order: string[] = [];
   for (let i = weeks - 1; i >= 0; i--) {
-    const key = localDateKey(shiftDays(thisMonday, -7 * i));
+    const key = studyDayKey(addStudyDays(thisMonday, -7 * i));
     order.push(key);
     buckets.set(key, { total: 0, kept: 0 });
   }
   for (const entry of logs) {
     if (entry.state !== 2) continue;
-    const bucket = buckets.get(localDateKey(mondayOf(new Date(entry.reviewedAt))));
+    const bucket = buckets.get(studyDayKey(studyWeekStart(entry.reviewedAt)));
     if (!bucket) continue;
     bucket.total++;
     if (entry.rating > 1) bucket.kept++;
@@ -191,28 +190,29 @@ export function stageDistribution(cards: CardRow[]): StageCounts {
   return counts;
 }
 
-/** 今日(本地時區)已複習張數。 */
+/** 今日(學習日,凌晨 4 點換日)已複習筆數。 */
 export function reviewsToday(logs: LogRow[], now: Date): number {
-  const key = localDateKey(now);
-  return logs.filter((l) => localDateKey(new Date(l.reviewedAt)) === key).length;
+  const key = studyDayKey(now.getTime());
+  return logs.filter((l) => studyDayKey(l.reviewedAt) === key).length;
 }
 
 /**
- * 連續學習天數:從今天(若今日已複習)或昨天(今日尚未複習的寬限)往回,
+ * 連續學習天數(以學習日計):從今天(若今日已複習)或昨天(今日尚未複習的寬限)往回,
  * 連續每天都有 ≥1 筆複習紀錄的天數。今日與昨日皆無紀錄則為 0。
  */
 export function computeStreak(logs: LogRow[], now: Date): number {
-  const days = new Set(logs.map((l) => localDateKey(new Date(l.reviewedAt))));
+  const days = new Set(logs.map((l) => studyDayKey(l.reviewedAt)));
   if (days.size === 0) return 0;
 
-  let anchor = shiftDays(now, 0); // 今日 00:00(本地)
-  if (!days.has(localDateKey(anchor))) {
-    anchor = shiftDays(now, -1); // 今日未複習 → 從昨日起算(寬限)
-    if (!days.has(localDateKey(anchor))) return 0;
+  const today = now.getTime();
+  let anchor = studyDayStart(today);
+  if (!days.has(studyDayKey(anchor))) {
+    anchor = addStudyDays(today, -1); // 今日未複習 → 從昨日起算(寬限)
+    if (!days.has(studyDayKey(anchor))) return 0;
   }
 
   let streak = 0;
-  for (let d = anchor; days.has(localDateKey(d)); d = shiftDays(d, -1)) {
+  for (let d = anchor; days.has(studyDayKey(d)); d = addStudyDays(d, -1)) {
     streak++;
   }
   return streak;

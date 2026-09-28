@@ -196,7 +196,7 @@
 
 ### A. 學習正確性
 
-- [ ] **T10.1 學習日(4 點換日)與 ts-fsrs UTC 日界修正**
+- [x] **T10.1 學習日(4 點換日)與 ts-fsrs UTC 日界修正**
   做什麼:新增純函式 `src/lib/studyDay.ts`(`ROLLOVER_HOUR = 4`、`studyDayStart`、`nextStudyDayStart`、`studyDayKey`、`toFsrsTime`/輸出換回)。ts-fsrs 以 UTC 日期算 `elapsed_days`(台灣等於 08:00 換日),srs.ts 餵入 ts-fsrs 的所有時間(now、`due`、`last_review`)先平移成「UTC 日 = 本地學習日」,輸出以呼叫當下的 now 為基準換回真實時間(不對平移後的時刻再查一次時差,避免 DST 偏一小時);`previewIntervals` 同步。到期判定改為「按日」:`due < nextStudyDayStart(now)`(buildQueue、countDue、明日到期預估)。stats.ts 的分日(reviewsToday、computeStreak、dailyReviewCounts、dueForecast、retention 週界)改用 `studyDayKey`。DATA_MODEL §4 先更新。
   驗收:studyDay.ts 單元測試(Asia/Taipei 與 America/New_York DST 前後);srs 測試——22:00 評 Good(3 天)之卡於第 3 天 07:30 入列、跨 08:00 兩次複習的 `elapsedDays` 相同、03:00 的複習算前一天;stats 既有 00:00 分日測試改 4 點語意;`pnpm verify` 全綠。
 

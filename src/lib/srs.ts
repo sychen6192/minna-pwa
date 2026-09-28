@@ -9,6 +9,12 @@ import {
   type ReviewLog,
 } from "ts-fsrs";
 import { db, getAllSettings, type CardRow, type LogRow } from "@/lib/db";
+import {
+  addStudyDays,
+  fromFsrsTime,
+  nextStudyDayStart,
+  toFsrsTime,
+} from "@/lib/studyDay";
 
 /** 評分:Again / Hard / Good / Easy(對齊 ts-fsrs Rating 1–4) */
 export type ReviewRating = 1 | 2 | 3 | 4;
@@ -39,6 +45,9 @@ async function getScheduler(): Promise<FSRS> {
 }
 
 // ── CardRow ↔ ts-fsrs Card 轉換 ─────────────────────────────────────
+// 餵入 ts-fsrs 的時間(now、due、last_review)一律先經 toFsrsTime 平移成「UTC 日 = 本地
+// 學習日」,輸出再以同一次呼叫的 now 為基準經 fromFsrsTime 換回(studyDay.ts)。
+// DB 內永遠是真實時刻(DATA_MODEL §4-5)。
 
 /** 回想方向卡的 cardId 尾綴(義→日,T9.2) */
 export const REVERSE_SUFFIX = "@r";
@@ -79,7 +88,7 @@ function newCardRow(
 
 function toFsrsCard(row: CardRow): Card {
   return {
-    due: new Date(row.due),
+    due: new Date(toFsrsTime(row.due)),
     stability: row.stability,
     difficulty: row.difficulty,
     elapsed_days: 0, // deprecated,FSRS 內部以 last_review 重算
@@ -89,31 +98,40 @@ function toFsrsCard(row: CardRow): Card {
     lapses: row.lapses,
     state: row.state as State,
     last_review:
-      row.lastReview !== undefined ? new Date(row.lastReview) : undefined,
+      row.lastReview !== undefined
+        ? new Date(toFsrsTime(row.lastReview))
+        : undefined,
   };
 }
 
-function applyFsrsCard(row: CardRow, card: Card): CardRow {
+/** 套用 ts-fsrs 輸出(平移時間)並換回真實時刻;`now` 為該次評分的真實時刻。 */
+function applyFsrsCard(row: CardRow, card: Card, now: number): CardRow {
   return {
     ...row,
-    due: card.due.getTime(),
+    due: fromFsrsTime(card.due.getTime(), now),
     stability: card.stability,
     difficulty: card.difficulty,
     reps: card.reps,
     lapses: card.lapses,
     state: card.state as CardRow["state"],
-    lastReview: card.last_review?.getTime(),
+    lastReview: card.last_review
+      ? fromFsrsTime(card.last_review.getTime(), now)
+      : undefined,
   };
 }
 
-function toLogRow(cardId: string, log: ReviewLog): LogRow {
+/**
+ * ts-fsrs ReviewLog → LogRow。時間欄位取真實值:`due` 為卡片評分前的 due
+ * (ts-fsrs 的 log.due 是平移後的 last_review ?? due),`reviewedAt` 為評分時刻。
+ */
+function toLogRow(prev: CardRow, log: ReviewLog, now: number): LogRow {
   return {
-    cardId,
+    cardId: prev.cardId,
     rating: log.rating as LogRow["rating"],
     state: log.state as LogRow["state"],
-    due: log.due.getTime(),
+    due: prev.due,
     elapsedDays: log.elapsed_days,
-    reviewedAt: log.review.getTime(),
+    reviewedAt: now,
   };
 }
 
@@ -171,14 +189,16 @@ export async function ensureReverseCards(now: number = Date.now()): Promise<numb
 }
 
 /**
- * 今日佇列 = 到期卡(state≠New 且 due≤now,受 maxReviewsPerDay)
+ * 今日佇列 = 到期卡(state≠New 且 due 落在今日學習日結束前,含逾期;受 maxReviewsPerDay)
  *           + 新卡(state=New,受 newPerDay)。
+ * 到期按「日」判定(`due < nextStudyDayStart(now)`):今日稍晚才到期的卡今天就可複習。
  * 到期卡依 due 由舊到新;新卡依 cardId(= 教材順序)。
  */
 export async function buildQueue(now: number = Date.now()): Promise<CardRow[]> {
   const { newPerDay, maxReviewsPerDay } = await getAllSettings();
 
-  const dueCards = (await db.cards.where("due").belowOrEqual(now).toArray())
+  const dayEnd = nextStudyDayStart(now);
+  const dueCards = (await db.cards.where("due").below(dayEnd).toArray())
     .filter((c) => c.state !== State.New && !c.suspended)
     .sort((a, b) => a.due - b.due)
     .slice(0, maxReviewsPerDay);
@@ -217,16 +237,29 @@ export async function existingCardIds(vocabIds: string[]): Promise<string[]> {
   return db.cards.where("cardId").anyOf(vocabIds).primaryKeys();
 }
 
-/**
- * 計算在 `at`(epoch ms)前到期的複習卡數量(state≠New)。
- * 用於結算頁的「明日到期預估」等統計。
- */
-export async function countDue(at: number): Promise<number> {
+/** 在 `end`(epoch ms,不含)之前到期的複習卡數(state≠New、排除暫停)。 */
+function countDueBefore(end: number): Promise<number> {
   return db.cards
     .where("due")
-    .belowOrEqual(at)
+    .below(end)
     .filter((c) => c.state !== State.New && !c.suspended)
     .count();
+}
+
+/**
+ * 今日(`now` 所屬學習日)到期的複習卡數:`due < nextStudyDayStart(now)`,含逾期;
+ * 不含新卡、暫停卡,也不套 maxReviewsPerDay 上限。與 buildQueue 的到期判定一致。
+ */
+export function countDue(now: number): Promise<number> {
+  return countDueBefore(nextStudyDayStart(now));
+}
+
+/**
+ * 到明日學習日結束前到期的複習卡數(今日未完成者 + 明日到期者)。
+ * 用於複習頁空狀態/結算頁的「明日到期」預估。
+ */
+export function countDueByTomorrow(now: number): Promise<number> {
+  return countDueBefore(addStudyDays(now, 2));
 }
 
 /**
@@ -265,12 +298,12 @@ export async function rate(
     if (!row) throw new Error(`找不到卡片:${cardId}`);
     const { card, log } = scheduler.next(
       toFsrsCard(row),
-      new Date(now),
+      new Date(toFsrsTime(now)),
       rating as Grade,
     );
-    const updated = applyFsrsCard(row, card);
+    const updated = applyFsrsCard(row, card, now);
     await db.cards.put(updated);
-    await db.logs.add(toLogRow(cardId, log));
+    await db.logs.add(toLogRow(row, log, now));
     return updated;
   });
 }
@@ -288,6 +321,7 @@ export type IntervalPreviews = {
 
 /**
  * 四鍵預估間隔(不寫入任何資料)。卡片不存在則丟錯。
+ * 時間平移與 rate() 相同,同一 now 下預估的 due 即實際套用的 due。
  */
 export async function previewIntervals(
   cardId: string,
@@ -296,9 +330,12 @@ export async function previewIntervals(
   const row = await db.cards.get(cardId);
   if (!row) throw new Error(`找不到卡片:${cardId}`);
   const scheduler = await getScheduler();
-  const preview = scheduler.repeat(toFsrsCard(row), new Date(now));
+  const preview = scheduler.repeat(
+    toFsrsCard(row),
+    new Date(toFsrsTime(now)),
+  );
   const pick = (g: Grade): RatingPreview => ({
-    due: preview[g].card.due.getTime(),
+    due: fromFsrsTime(preview[g].card.due.getTime(), now),
     days: preview[g].card.scheduled_days,
   });
   return {

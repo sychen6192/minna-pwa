@@ -155,8 +155,8 @@ interface LogRow {
   cardId: string;
   rating: 1 | 2 | 3 | 4;     // Again / Hard / Good / Easy
   state: 0 | 1 | 2 | 3;      // 評分當下的卡片狀態
-  due: number;               // 評分前的 due
-  elapsedDays: number;
+  due: number;               // 評分前的 due(真實時刻)
+  elapsedDays: number;       // 距上次複習的學習日數(§4-5)
   reviewedAt: number;        // epoch ms
 }
 // 欄位對齊 ts-fsrs 的 ReviewLog,足以日後餵 FSRS optimizer 做個人化參數
@@ -206,4 +206,9 @@ settings 預設值(首次啟動寫入):
 2. `public/data/**` 只能由 pipeline 或 fixture 任務產生,手改視為錯誤。
 3. 使用者資料只進 IndexedDB;任何元件不得繞過 `db.ts` 直接開 Dexie 連線。
 4. `due`、`reviewedAt` 等時間一律存 epoch ms(number,真實時刻),顯示層才轉時區。
-5. **學習日**(2026-09-28 追加):以本地時區**凌晨 4 點**換日(`src/lib/studyDay.ts`,對標 Anki)。每日上限、到期判定(`due` 落在今日學習日結束前即到期)、今日目標、streak 與統計分日一律依學習日。ts-fsrs 內部以 UTC 日期計算 `elapsed_days`,故 `srs.ts` 餵入 ts-fsrs 的時間先平移為「UTC 日 = 本地學習日」、輸出再換回真實時刻;DB 內永遠是真實時刻,平移只存在於 `srs.ts` 內部。
+5. **學習日**(2026-09-28 追加):以本地時區**凌晨 4 點**換日(`src/lib/studyDay.ts`,對標 Anki)。每日上限、到期判定(`due` 落在今日學習日結束前即到期)、今日目標、streak 與統計分日一律依學習日。ts-fsrs 內部以 UTC 日期計算 `elapsed_days`,故 `srs.ts` 餵入 ts-fsrs 的時間先平移為「UTC 日 = 本地學習日」、輸出再換回真實時刻;DB 內永遠是真實時刻,平移只存在於 `srs.ts` 內部。細則:
+   - 學習日邊界以本地日期欄位建構(`new Date(y, m, d, 4)`),DST 切換日的學習日為 23 或 25 小時,換日點不偏移;日期鍵 `studyDayKey` = 學習日的 `YYYY-MM-DD`。
+   - 到期:`due < nextStudyDayStart(now)`(含逾期)。`countDue(now)` = 今日到期的複習卡數;`countDueByTomorrow(now)` = 到明日學習日結束前到期者(明日到期預估)。
+   - 餵入:`toFsrsTime(t)` = 學習日日期的 UTC 00:00 + 距學習日起點的經過時間(上限 1 天 − 1 ms);now、`due`、`lastReview` 各自換算。
+   - 換回:以該次呼叫的 now 為基準取整日差 n,結果為 now 的本地牆上時間 n 個日曆日之後(`due` 保持評分當下的牆上時間;遇 DST 跳時缺口而該時間不存在時,截在目標學習日內);不對平移後的時刻再查時差。`previewIntervals` 與 `rate` 用同一套換算,預估即實際。
+   - `LogRow.due` 存卡片評分前的 `due`(真實時刻),不沿用 ts-fsrs `ReviewLog.due`(其值為 `last_review ?? due`);`reviewedAt` 為評分真實時刻;`elapsedDays` 以學習日計。

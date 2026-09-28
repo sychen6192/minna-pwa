@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
 import { db, type CardRow } from "@/lib/db";
+import { nextStudyDayStart } from "@/lib/studyDay";
 import Home from "./page";
 
 // content.ts 走 fetch;首頁只需課程索引
@@ -93,8 +94,13 @@ describe("Home(今日儀表板)", () => {
 
   it("有卡但無到期:顯示完成訊息,不顯示開始複習", async () => {
     await db.cards.bulkAdd([
-      // due 在未來 → 不到期
-      card({ cardId: "L01-V001", lessonId: 1, due: Date.now() + DAY, state: 2 }),
+      // due 在明日學習日 → 今日不到期(不用 now + 24h:DST 回撥日的學習日長 25 小時)
+      card({
+        cardId: "L01-V001",
+        lessonId: 1,
+        due: nextStudyDayStart(Date.now()) + 3_600_000,
+        state: 2,
+      }),
     ]);
 
     render(<Home />);

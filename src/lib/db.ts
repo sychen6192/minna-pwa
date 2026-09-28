@@ -22,8 +22,8 @@ export interface LogRow {
   cardId: string;
   rating: 1 | 2 | 3 | 4; // Again / Hard / Good / Easy
   state: 0 | 1 | 2 | 3; // 評分當下的卡片狀態
-  due: number; // 評分前的 due
-  elapsedDays: number;
+  due: number; // 評分前的 due(真實時刻)
+  elapsedDays: number; // 距上次複習的學習日數(DATA_MODEL §4-5)
   reviewedAt: number; // epoch ms
 }
 

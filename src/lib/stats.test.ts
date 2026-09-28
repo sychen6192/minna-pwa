@@ -1,4 +1,5 @@
 import type { LessonIndex } from "@/schemas/lesson";
+import { useTimeZone } from "@/test/timeZone";
 import type { CardRow, LogRow } from "./db";
 import {
   computeStreak,
@@ -54,11 +55,13 @@ describe("dailyReviewCounts", () => {
     expect(res[83]).toEqual({ date: "2026-07-04", count: 0 });
   });
 
-  it("以本地時區分日:同日累計,23:59 與翌日 00:01 分屬兩日", () => {
+  it("以學習日分日(凌晨 4 點換日):23:59、翌日 00:01 與 03:59 同屬前一日,04:00 起屬當日", () => {
     const res = dailyReviewCounts(
       [
         log({ reviewedAt: new Date(2026, 6, 3, 23, 59).getTime() }),
         log({ reviewedAt: new Date(2026, 6, 4, 0, 1).getTime() }),
+        log({ reviewedAt: new Date(2026, 6, 4, 3, 59).getTime() }),
+        log({ reviewedAt: new Date(2026, 6, 4, 4, 0).getTime() }),
         log({ reviewedAt: new Date(2026, 6, 4, 8, 0).getTime() }),
       ],
       now,
@@ -66,7 +69,7 @@ describe("dailyReviewCounts", () => {
     );
     const byDate = new Map(res.map((d) => [d.date, d.count]));
 
-    expect(byDate.get("2026-07-03")).toBe(1);
+    expect(byDate.get("2026-07-03")).toBe(3);
     expect(byDate.get("2026-07-04")).toBe(2);
   });
 
@@ -74,7 +77,8 @@ describe("dailyReviewCounts", () => {
     const res = dailyReviewCounts(
       [
         log({ reviewedAt: new Date(2026, 3, 11, 12, 0).getTime() }), // 窗前一日
-        log({ reviewedAt: new Date(2026, 6, 5, 0, 1).getTime() }), // 未來
+        log({ reviewedAt: new Date(2026, 3, 12, 3, 59).getTime() }), // 仍屬窗前一日(4/11)
+        log({ reviewedAt: new Date(2026, 6, 5, 4, 1).getTime() }), // 未來(明日學習日)
       ],
       now,
       84,
@@ -93,28 +97,32 @@ describe("dueForecast", () => {
     expect(res[6]).toEqual({ date: "2026-07-10", count: 0 });
   });
 
-  it("逾期卡與今日稍晚到期的卡都歸入今日", () => {
+  it("逾期卡與今日(學習日)稍晚到期的卡都歸入今日", () => {
     const res = dueForecast(
       [
         card({ due: now.getTime() - 5 * DAY }), // 逾期
         card({ due: new Date(2026, 6, 4, 23, 0).getTime() }), // 今晚
+        card({ due: new Date(2026, 6, 5, 3, 0).getTime() }), // 翌日凌晨仍屬今日學習日
       ],
       now,
       7,
     );
 
-    expect(res[0].count).toBe(2);
+    expect(res[0].count).toBe(3);
+    expect(res[1].count).toBe(0);
   });
 
-  it("未來到期按本地日分桶;超出視窗不計", () => {
+  it("未來到期按學習日分桶;超出視窗不計", () => {
     const cards = [
       card({ due: new Date(2026, 6, 8, 9, 0).getTime() }),
+      card({ due: new Date(2026, 6, 11, 3, 0).getTime() }), // 凌晨 → 屬 7/10(第 7 天)
       card({ due: new Date(2026, 6, 11, 9, 0).getTime() }), // 第 8 天
     ];
 
     const week = dueForecast(cards, now, 7);
     expect(week.find((d) => d.date === "2026-07-08")?.count).toBe(1);
-    expect(week.reduce((sum, d) => sum + d.count, 0)).toBe(1);
+    expect(week.find((d) => d.date === "2026-07-10")?.count).toBe(1);
+    expect(week.reduce((sum, d) => sum + d.count, 0)).toBe(2);
 
     const month = dueForecast(cards, now, 30);
     expect(month.find((d) => d.date === "2026-07-11")?.count).toBe(1);
@@ -124,6 +132,16 @@ describe("dueForecast", () => {
     const res = dueForecast([card({ state: 0 })], now, 7);
 
     expect(res[0].count).toBe(0);
+  });
+
+  it("暫停卡(已會)不列入到期預測(與 srs 到期判定一致)", () => {
+    const res = dueForecast(
+      [card({ due: now.getTime() - DAY, suspended: true })],
+      now,
+      7,
+    );
+
+    expect(res.every((d) => d.count === 0)).toBe(true);
   });
 });
 
@@ -180,6 +198,20 @@ describe("weeklyRetention", () => {
     expect(res[11]).toEqual({ weekStart: "2026-06-29", rate: 0.5 });
     expect(res[10]).toEqual({ weekStart: "2026-06-22", rate: null }); // 無資料週
     expect(res[0].weekStart).toBe("2026-04-13"); // 12 週前的週一
+  });
+
+  it("週界同樣以學習日換日:週一 03:00 屬上週日", () => {
+    const res = weeklyRetention(
+      [
+        log({ rating: 1, reviewedAt: new Date(2026, 5, 29, 3, 0).getTime() }), // 週一凌晨 → 上週
+        log({ rating: 3, reviewedAt: new Date(2026, 5, 29, 4, 0).getTime() }), // 週一 04:00 → 本週
+      ],
+      now,
+      12,
+    );
+
+    expect(res[11]).toEqual({ weekStart: "2026-06-29", rate: 1 });
+    expect(res[10]).toEqual({ weekStart: "2026-06-22", rate: 0 });
   });
 });
 
@@ -238,14 +270,25 @@ describe("studySummary", () => {
 });
 
 describe("reviewsToday", () => {
-  it("只計今日(本地時區)的複習筆數", () => {
+  it("只計今日(學習日)的複習筆數", () => {
     const logs = [
       log({ reviewedAt: now.getTime() }),
       log({ reviewedAt: now.getTime() - 3 * 3600_000 }), // 今日稍早
       log({ reviewedAt: now.getTime() - DAY }), // 昨日
+      log({ reviewedAt: new Date(2026, 6, 4, 3, 0).getTime() }), // 今天凌晨 03:00 → 屬昨日
     ];
     expect(reviewsToday(logs, now)).toBe(2);
     expect(reviewsToday([], now)).toBe(0);
+  });
+
+  it("凌晨 03:00 時,前一晚的複習仍算「今日」", () => {
+    const lateNight = new Date(2026, 6, 5, 3, 0); // 仍屬 7/4 學習日
+    const logs = [
+      log({ reviewedAt: new Date(2026, 6, 4, 22, 0).getTime() }),
+      log({ reviewedAt: new Date(2026, 6, 5, 2, 30).getTime() }),
+      log({ reviewedAt: new Date(2026, 6, 4, 3, 59).getTime() }), // 7/3 學習日
+    ];
+    expect(reviewsToday(logs, lateNight)).toBe(2);
   });
 });
 
@@ -293,6 +336,17 @@ describe("computeStreak", () => {
       log({ reviewedAt: now.getTime() - DAY }),
     ];
     expect(computeStreak(logs, now)).toBe(2);
+  });
+
+  it("凌晨 03:00 的複習算前一天:接續 streak", () => {
+    const logs = [
+      log({ reviewedAt: new Date(2026, 6, 2, 12, 0).getTime() }), // 7/2
+      log({ reviewedAt: new Date(2026, 6, 4, 3, 0).getTime() }), // 7/4 03:00 → 7/3
+    ];
+    // 今日(7/4)未複習 → 寬限從昨日(7/3)起算:7/3、7/2 連續
+    expect(computeStreak(logs, now)).toBe(2);
+    // 凌晨 03:00 查看時,「今日」仍是 7/3
+    expect(computeStreak(logs, new Date(2026, 6, 4, 3, 30))).toBe(2);
   });
 });
 
@@ -351,5 +405,81 @@ describe("stageDistribution", () => {
       mature: 0,
       suspended: 0,
     });
+  });
+});
+
+describe("學習日分日跨 DST(America/New_York,2026-03-08)", () => {
+  useTimeZone("America/New_York");
+
+  /** 2026-03-dd hh:mm(紐約時間)。須在測試內呼叫。 */
+  const at = (d: number, h: number, mi = 0) => new Date(2026, 2, d, h, mi).getTime();
+
+  it("dailyReviewCounts:23 小時的 3/7 學習日仍以 04:00 為界,日期鍵連續", () => {
+    const res = dailyReviewCounts(
+      [
+        log({ reviewedAt: at(8, 3, 30) }), // EDT 03:30 → 3/7
+        log({ reviewedAt: at(8, 4, 0) }), // → 3/8
+        log({ reviewedAt: at(8, 23, 0) }),
+        log({ reviewedAt: at(9, 3, 0) }), // → 3/8
+      ],
+      new Date(at(9, 12)),
+      7,
+    );
+
+    expect(res.map((d) => d.date)).toEqual([
+      "2026-03-03",
+      "2026-03-04",
+      "2026-03-05",
+      "2026-03-06",
+      "2026-03-07",
+      "2026-03-08",
+      "2026-03-09",
+    ]);
+    expect(res.slice(-3).map((d) => d.count)).toEqual([1, 3, 0]);
+  });
+
+  it("dueForecast:DST 當晚凌晨到期仍屬今日,之後按學習日分桶", () => {
+    const res = dueForecast(
+      [
+        card({ due: at(8, 3, 30) }), // 3/7 學習日
+        card({ due: at(9, 4, 0) }),
+      ],
+      new Date(at(7, 12)),
+      3,
+    );
+
+    expect(res).toEqual([
+      { date: "2026-03-07", count: 1 },
+      { date: "2026-03-08", count: 0 },
+      { date: "2026-03-09", count: 1 },
+    ]);
+  });
+
+  it("reviewsToday / computeStreak:跨 DST 仍以學習日計", () => {
+    const logs = [
+      log({ reviewedAt: at(7, 12) }),
+      log({ reviewedAt: at(9, 3, 0) }), // → 3/8
+    ];
+    expect(reviewsToday(logs, new Date(at(9, 3, 30)))).toBe(1); // 今日 = 3/8
+    expect(reviewsToday(logs, new Date(at(9, 12)))).toBe(0);
+    expect(computeStreak(logs, new Date(at(9, 12)))).toBe(2); // 寬限:3/8、3/7
+    const withToday = [...logs, log({ reviewedAt: at(9, 4, 10) })];
+    expect(computeStreak(withToday, new Date(at(9, 12)))).toBe(3);
+  });
+
+  it("weeklyRetention:週一(3/9)03:00 屬上週,04:00 起屬本週", () => {
+    const res = weeklyRetention(
+      [
+        log({ rating: 1, reviewedAt: at(9, 3, 0) }),
+        log({ rating: 3, reviewedAt: at(9, 4, 0) }),
+      ],
+      new Date(at(10, 12)),
+      2,
+    );
+
+    expect(res).toEqual([
+      { weekStart: "2026-03-02", rate: 0 },
+      { weekStart: "2026-03-09", rate: 1 },
+    ]);
   });
 });

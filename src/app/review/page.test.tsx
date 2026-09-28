@@ -17,13 +17,13 @@ vi.mock("next/link", () => ({
 const buildQueue = vi.fn();
 const rate = vi.fn();
 const previewIntervals = vi.fn();
-const countDue = vi.fn();
+const countDueByTomorrow = vi.fn();
 const setSuspended = vi.fn();
 vi.mock("@/lib/srs", () => ({
   buildQueue: (...a: unknown[]) => buildQueue(...a),
   rate: (...a: unknown[]) => rate(...a),
   previewIntervals: (...a: unknown[]) => previewIntervals(...a),
-  countDue: (...a: unknown[]) => countDue(...a),
+  countDueByTomorrow: (...a: unknown[]) => countDueByTomorrow(...a),
   baseVocabId: (id: string) => (id.endsWith("@r") ? id.slice(0, -2) : id),
   cardDirection: (c: { direction?: "fwd" | "rev" }) => c.direction ?? "fwd",
   setSuspended: (...a: unknown[]) => setSuspended(...a),
@@ -87,7 +87,7 @@ function setupOneCard() {
   getLesson.mockResolvedValue(lesson);
   previewIntervals.mockResolvedValue(previews);
   rate.mockResolvedValue(cardRow);
-  countDue.mockResolvedValue(0);
+  countDueByTomorrow.mockResolvedValue(0);
 }
 
 afterEach(() => {
@@ -97,10 +97,13 @@ afterEach(() => {
 describe("ReviewPage", () => {
   it("佇列空時顯示今日完成與明日到期", async () => {
     buildQueue.mockResolvedValue([]);
-    countDue.mockResolvedValue(5);
+    countDueByTomorrow.mockResolvedValue(5);
     render(<ReviewPage />);
     expect(await screen.findByText("今日複習完成 🎉")).toBeInTheDocument();
     expect(screen.getByText(/明日到期:5 張/)).toBeInTheDocument();
+    // 明日到期以學習日估算(countDueByTomorrow 取當下時刻,不再自行 +24h)
+    const [at] = countDueByTomorrow.mock.calls[0] as [number];
+    expect(Math.abs(at - Date.now())).toBeLessThan(5_000);
   });
 
   it("翻卡→評分→結算(點擊操作)", async () => {
@@ -147,7 +150,7 @@ describe("ReviewPage", () => {
     getSetting.mockResolvedValue("show");
     getLesson.mockResolvedValue(lessonWithExample);
     previewIntervals.mockResolvedValue(previews);
-    countDue.mockResolvedValue(0);
+    countDueByTomorrow.mockResolvedValue(0);
     const user = userEvent.setup();
     render(<ReviewPage />);
 
@@ -175,7 +178,7 @@ describe("ReviewPage", () => {
       vocab: [{ ...lesson.vocab[0], accent: 4 }],
     });
     previewIntervals.mockResolvedValue(previews);
-    countDue.mockResolvedValue(0);
+    countDueByTomorrow.mockResolvedValue(0);
     const user = userEvent.setup();
     render(<ReviewPage />);
 
@@ -191,7 +194,7 @@ describe("ReviewPage", () => {
     getSetting.mockResolvedValue("show");
     getLesson.mockResolvedValue(lesson);
     previewIntervals.mockResolvedValue(previews);
-    countDue.mockResolvedValue(0);
+    countDueByTomorrow.mockResolvedValue(0);
     const user = userEvent.setup();
     render(<ReviewPage />);
 
@@ -218,7 +221,7 @@ describe("ReviewPage", () => {
       ],
     });
     previewIntervals.mockResolvedValue(previews);
-    countDue.mockResolvedValue(0);
+    countDueByTomorrow.mockResolvedValue(0);
     const user = userEvent.setup();
     render(<ReviewPage />);
 

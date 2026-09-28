@@ -13,7 +13,7 @@ import {
   baseVocabId,
   buildQueue,
   cardDirection,
-  countDue,
+  countDueByTomorrow,
   previewIntervals,
   rate,
   setSuspended,
@@ -21,8 +21,6 @@ import {
   type ReviewRating,
 } from "@/lib/srs";
 import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
-
-const DAY = 86_400_000;
 
 /** ruby 分段的表面文字(TTS 讀例句用) */
 function plainText(segs: RubySeg[]): string {
@@ -66,7 +64,7 @@ export default function ReviewPage() {
       const cards = await buildQueue(now);
       if (!active) return;
       if (cards.length === 0) {
-        const due = await countDue(now + DAY);
+        const due = await countDueByTomorrow(now);
         if (active) {
           setTomorrowDue(due);
           setPhase("empty");
@@ -129,7 +127,7 @@ export default function ReviewPage() {
   const advance = useCallback(async () => {
     const next = index + 1;
     if (next >= items.length) {
-      const due = await countDue(Date.now() + DAY);
+      const due = await countDueByTomorrow(Date.now());
       setTomorrowDue(due);
       setPhase("summary");
     } else {
