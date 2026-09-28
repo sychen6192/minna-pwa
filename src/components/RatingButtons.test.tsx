@@ -37,4 +37,15 @@ describe("RatingButtons", () => {
     await user.click(screen.getByRole("button", { name: "良好" }));
     expect(onRate).toHaveBeenCalledWith(3);
   });
+
+  it("disabled 時四鍵皆停用、點擊不觸發 onRate(評分寫入中)", async () => {
+    const onRate = vi.fn();
+    const user = userEvent.setup();
+    render(<RatingButtons previews={previews} onRate={onRate} disabled />);
+    for (const label of ["重來", "困難", "良好", "輕鬆"]) {
+      expect(screen.getByRole("button", { name: label })).toBeDisabled();
+    }
+    await user.click(screen.getByRole("button", { name: "良好" }));
+    expect(onRate).not.toHaveBeenCalled();
+  });
 });

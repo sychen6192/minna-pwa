@@ -215,3 +215,4 @@ settings 預設值(首次啟動寫入):
    - 每日上限(T10.2)由今日學習日的 logs 扣除:新卡額度 = `newPerDay` − 今日首評的相異新卡數(`LogRow.state` 為評分**前**狀態,`state = New` 即首評);複習額度 = `maxReviewsPerDay` − 今日評分前 `state ≠ New` 的筆數(首評不佔複習額度)。同日重開頁面不會再發額度。
    - 兄弟卡 bury(T10.2):同一字(`baseVocabId`)今日已評過或已入列者,另一方向今日不入列,卡片不改動、仍保持到期,下一學習日才出。New 的 `@r` 卡須正向卡已非 New 且首評不在今日;新卡額度先給正向卡。
    - fuzz(T10.2):ts-fsrs `enable_fuzz` 開啟,種子 = `cardId + reps`(`GenSeedStrategyWithCardId`,與評分時刻無關),同一張卡的預估與實際套用一致;fuzz 後間隔仍為整數天。ts-fsrs 只對 ≥ 2.5 天的間隔加 fuzz,預設保留率下新卡首評(Good 3 天)不受影響;兄弟卡同日不出由 bury 保證。
+   - 復原與重看(T10.3):`rate()` 回傳 `{ card, prev, logId }`;`undoRate({ prev, logId })` 於同一 transaction 放回評分前的卡片、刪除該筆 log(logs 唯一的逐筆刪除路徑,重置/匯入的整表清除除外;每日上限由 logs 計算,復原後額度隨之回復)。複習 session 內的「重看」只存在頁面 state,不呼叫 `rate()`、不寫 log(同日再評分會重複扣 stability 與 lapses)。「已會」以字為單位:`setWordSuspended` 同時作用於正向卡與 `@r`,課程頁以任一方向暫停視為已會;新建 `@r` 繼承正向卡的 `suspended`。T10.3 前只暫停單一方向的既有資料不遷移,恢復時兩個方向一併恢復。

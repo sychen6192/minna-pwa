@@ -5,7 +5,7 @@ import { Check, Plus, Volume2 } from "lucide-react";
 import { PitchAccent, hasPitch } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
-import { addCards, existingCardIds, setSuspended, suspendedCardIds } from "@/lib/srs";
+import { addCards, existingCardIds, setWordSuspended, suspendedWordIds } from "@/lib/srs";
 import { speak } from "@/lib/tts";
 import { cn } from "@/lib/utils";
 import type { Lesson } from "@/schemas/lesson";
@@ -40,12 +40,12 @@ export function LessonDetail({ id }: { id: number }) {
     };
   }, [id]);
 
-  // 初始化「已加入複習」與「已會/暫停」狀態
+  // 初始化「已加入複習」與「已會/暫停」狀態(已會以字為單位:任一方向暫停即算)
   useEffect(() => {
     if (!lesson) return;
     let active = true;
     const ids = lesson.vocab.map((v) => v.id);
-    Promise.all([existingCardIds(ids), suspendedCardIds(ids)])
+    Promise.all([existingCardIds(ids), suspendedWordIds(ids)])
       .then(([addedIds, suspIds]) => {
         if (!active) return;
         setAdded(new Set(addedIds));
@@ -58,7 +58,7 @@ export function LessonDetail({ id }: { id: number }) {
   }, [lesson]);
 
   const toggleSuspend = useCallback(async (cardId: string, next: boolean) => {
-    await setSuspended(cardId, next);
+    await setWordSuspended(cardId, next); // 正向與回想卡一併
     setSuspendedIds((prev) => {
       const s = new Set(prev);
       if (next) s.add(cardId);

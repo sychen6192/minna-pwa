@@ -169,8 +169,21 @@ function toLogRow(prev: CardRow, log: ReviewLog, now: number): LogRow {
 // ── 公開 API ────────────────────────────────────────────────────────
 
 /**
+ * 新建某字的回想卡(`@r`);「已會」以字為單位,正向卡已暫停者回想卡一併暫停(T10.3)。
+ */
+function newReverseRow(
+  fwd: CardRow | undefined,
+  vocabId: string,
+  lessonId: number,
+  at: Date,
+): CardRow {
+  const row = newCardRow(`${vocabId}${REVERSE_SUFFIX}`, lessonId, at, "rev");
+  return fwd?.suspended === true ? { ...row, suspended: true } : row;
+}
+
+/**
  * 將單字加入複習(冪等):已存在的 cardId 不重複建立、不重置進度。
- * `reverseCards` 設定開啟時,同時建立義→日回想方向卡(cardId 加 `@r`)。
+ * `reverseCards` 設定開啟時,同時建立義→日回想方向卡(cardId 加 `@r`,繼承正向卡的暫停狀態)。
  */
 export async function addCards(
   vocabIds: string[],
@@ -180,27 +193,31 @@ export async function addCards(
   if (vocabIds.length === 0) return;
   const { reverseCards } = await getAllSettings();
   await db.transaction("rw", db.cards, async () => {
-    const wanted: { id: string; dir: "fwd" | "rev" }[] = vocabIds.map((id) => ({
-      id,
-      dir: "fwd" as const,
-    }));
-    if (reverseCards) {
-      for (const id of vocabIds) wanted.push({ id: `${id}${REVERSE_SUFFIX}`, dir: "rev" });
-    }
-    const existing = new Set(
-      await db.cards.where("cardId").anyOf(wanted.map((w) => w.id)).primaryKeys(),
+    const wanted = reverseCards
+      ? [...vocabIds, ...vocabIds.map((id) => `${id}${REVERSE_SUFFIX}`)]
+      : vocabIds;
+    const existing = new Map(
+      (await db.cards.where("cardId").anyOf(wanted).toArray()).map((c) => [c.cardId, c]),
     );
     const at = new Date(now);
-    const toAdd = wanted
-      .filter((w) => !existing.has(w.id))
-      .map((w) => newCardRow(w.id, lessonId, at, w.dir));
+    const toAdd: CardRow[] = [];
+    for (const id of vocabIds) {
+      if (!existing.has(id)) toAdd.push(newCardRow(id, lessonId, at));
+    }
+    if (reverseCards) {
+      for (const id of vocabIds) {
+        if (!existing.has(`${id}${REVERSE_SUFFIX}`)) {
+          toAdd.push(newReverseRow(existing.get(id), id, lessonId, at));
+        }
+      }
+    }
     if (toAdd.length > 0) await db.cards.bulkAdd(toAdd);
   });
 }
 
 /**
- * 為所有既有的正向卡補上回想方向卡(冪等)。用於使用者中途開啟 `reverseCards` 時,
- * 讓設定立即對已加入的字生效。回傳新建立的回想卡數量。
+ * 為所有既有的正向卡補上回想方向卡(冪等;繼承正向卡的暫停狀態)。用於使用者中途開啟
+ * `reverseCards` 時,讓設定立即對已加入的字生效。回傳新建立的回想卡數量。
  */
 export async function ensureReverseCards(now: number = Date.now()): Promise<number> {
   return db.transaction("rw", db.cards, async () => {
@@ -213,7 +230,7 @@ export async function ensureReverseCards(now: number = Date.now()): Promise<numb
           cardDirection(c) === "fwd" &&
           !existingIds.has(`${c.cardId}${REVERSE_SUFFIX}`),
       )
-      .map((c) => newCardRow(`${c.cardId}${REVERSE_SUFFIX}`, c.lessonId, at, "rev"));
+      .map((c) => newReverseRow(c, c.cardId, c.lessonId, at));
     if (toAdd.length > 0) await db.cards.bulkAdd(toAdd);
     return toAdd.length;
   });
@@ -349,9 +366,16 @@ export async function hasAnyCards(): Promise<boolean> {
   return (await db.cards.count()) > 0;
 }
 
-/** 標記卡片「已會/暫停」或恢復;暫停的卡不再進入複習佇列。 */
-export async function setSuspended(cardId: string, suspended: boolean): Promise<void> {
-  await db.cards.update(cardId, { suspended });
+/**
+ * 以字為單位標記「已會/暫停」或恢復(T10.3):同時作用於正向卡與 `@r` 回想卡(存在者);
+ * 暫停的卡不再進入複習佇列。`vocabId` 傳入回想卡 id 亦可(取 baseVocabId)。
+ */
+export async function setWordSuspended(vocabId: string, suspended: boolean): Promise<void> {
+  const base = baseVocabId(vocabId);
+  await db.cards
+    .where("cardId")
+    .anyOf([base, `${base}${REVERSE_SUFFIX}`])
+    .modify({ suspended });
 }
 
 /** 「已會/暫停」卡數量。 */
@@ -359,11 +383,18 @@ export function countSuspended(): Promise<number> {
   return db.cards.filter((c) => c.suspended === true).count();
 }
 
-/** 回傳 `cardIds` 中處於暫停狀態的子集(課程頁標示用)。 */
-export async function suspendedCardIds(cardIds: string[]): Promise<string[]> {
-  if (cardIds.length === 0) return [];
-  const rows = await db.cards.where("cardId").anyOf(cardIds).toArray();
-  return rows.filter((c) => c.suspended === true).map((c) => c.cardId);
+/**
+ * 回傳 `vocabIds` 中「已會」的字(任一方向的卡暫停即算;課程頁標示用)。
+ * 舊資料可能只暫停了單一方向,恢復時 setWordSuspended 會一併恢復兩個方向。
+ */
+export async function suspendedWordIds(vocabIds: string[]): Promise<string[]> {
+  if (vocabIds.length === 0) return [];
+  const ids = [...vocabIds, ...vocabIds.map((id) => `${id}${REVERSE_SUFFIX}`)];
+  const rows = await db.cards.where("cardId").anyOf(ids).toArray();
+  const suspended = new Set(
+    rows.filter((c) => c.suspended === true).map((c) => baseVocabId(c.cardId)),
+  );
+  return vocabIds.filter((id) => suspended.has(id));
 }
 
 /**
@@ -422,27 +453,51 @@ export async function getLeeches(): Promise<CardRow[]> {
   return rows.sort((a, b) => b.lapses - a.lapses);
 }
 
+export interface RateResult {
+  /** 評分後的卡片 */
+  card: CardRow;
+  /** 評分前的卡片(undoRate 還原用) */
+  prev: CardRow;
+  /** 此次評分寫入的 log id(undoRate 刪除用) */
+  logId: number;
+}
+
 /**
- * 評分:更新卡片 FSRS 狀態並寫入複習紀錄(log)。回傳更新後的卡片。
+ * 評分:更新卡片 FSRS 狀態並寫入複習紀錄(log)。回傳更新後的卡片與復原所需的
+ * 評分前快照、log id(見 undoRate)。
  */
 export async function rate(
   cardId: string,
   rating: ReviewRating,
   now: number = Date.now(),
-): Promise<CardRow> {
+): Promise<RateResult> {
   const scheduler = await getScheduler();
   return db.transaction("rw", db.cards, db.logs, async () => {
-    const row = await db.cards.get(cardId);
-    if (!row) throw new Error(`找不到卡片:${cardId}`);
+    const prev = await db.cards.get(cardId);
+    if (!prev) throw new Error(`找不到卡片:${cardId}`);
     const { card, log } = scheduler.next(
-      toFsrsCard(row),
+      toFsrsCard(prev),
       new Date(toFsrsTime(now)),
       rating as Grade,
     );
-    const updated = applyFsrsCard(row, card, now);
+    const updated = applyFsrsCard(prev, card, now);
     await db.cards.put(updated);
-    await db.logs.add(toLogRow(row, log, now));
-    return updated;
+    const logId = await db.logs.add(toLogRow(prev, log, now));
+    return { card: updated, prev, logId };
+  });
+}
+
+/**
+ * 復原一次評分(T10.3):同一 transaction 內放回評分前的卡片、刪除該筆 log。
+ * 今日上限由 logs 計算(planQueue),刪 log 後額度隨之回復。以快照還原,不經 ts-fsrs。
+ */
+export async function undoRate({
+  prev,
+  logId,
+}: Pick<RateResult, "prev" | "logId">): Promise<void> {
+  await db.transaction("rw", db.cards, db.logs, async () => {
+    await db.cards.put(prev);
+    await db.logs.delete(logId);
   });
 }
 

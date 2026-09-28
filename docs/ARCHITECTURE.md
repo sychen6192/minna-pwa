@@ -83,6 +83,8 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── content.ts          # 載入 + Zod parse + 記憶體快取
     │   ├── db.ts               # Dexie 定義(唯一 DB 入口)
     │   ├── srs.ts              # ts-fsrs 唯一入口
+    │   ├── relearn.ts          # 複習 session 內重看的插入規則(純函式)
+    │   ├── notes.ts            # 單字 note 呈現:過濾段落標記(純函式)
     │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)
     │   ├── quiz.ts             # 出題引擎(純函式)
     │   ├── stats.ts            # 統計聚合(純函式 + DB 查詢)

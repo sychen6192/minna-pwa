@@ -21,8 +21,9 @@ const lesson: Lesson = {
       kana: "あそびます",
       meaning: "玩、遊玩",
       pos: "動I",
+      note: "〔公園で〜〕",
     },
-    { id: "L13-V002", ruby: [{ b: "本" }], kana: "ほん", meaning: "書", pos: "名" },
+    { id: "L13-V002", ruby: [{ b: "本" }], kana: "ほん", meaning: "書", pos: "名", note: "読み物" },
   ],
   grammar: [],
   dialogues: [],
@@ -61,16 +62,31 @@ describe("PracticePage", () => {
 
     // 第一張 = lapses 最多者(遊びます,5 次)
     await screen.findByText("1 / 2");
+    expect(screen.queryByText("〔公園で〜〕")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "顯示答案" }));
     expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
     expect(screen.getByText(/答錯 5 次/)).toBeInTheDocument();
+    expect(screen.getByText("〔公園で〜〕")).toBeInTheDocument(); // 搭配 note
 
     await user.click(screen.getByRole("button", { name: "下一張" }));
     await screen.findByText("2 / 2");
     await user.click(screen.getByRole("button", { name: "顯示答案" }));
     expect(screen.getByText("書")).toBeInTheDocument();
+    expect(screen.queryByText("読み物")).not.toBeInTheDocument(); // 段落標記不顯示
 
     await user.click(screen.getByRole("button", { name: "完成" }));
     expect(await screen.findByText(/頑固卡練習完成/)).toBeInTheDocument();
+  });
+
+  it("回想卡:題面有詞性・課號,note 只在翻面後顯示", async () => {
+    await db.cards.bulkAdd([{ ...leechCard("L13-V001@r", 5), direction: "rev" }]);
+    const user = userEvent.setup();
+    render(<PracticePage />);
+
+    await screen.findByText("1 / 1");
+    expect(screen.getByText("動I・第 13 課")).toBeInTheDocument();
+    expect(screen.queryByText("〔公園で〜〕")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    expect(screen.getByText("〔公園で〜〕")).toBeInTheDocument();
   });
 });

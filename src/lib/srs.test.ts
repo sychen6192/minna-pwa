@@ -14,14 +14,15 @@ import {
   hasAnyCards,
   queueCounts,
   setFuzzForTesting,
-  setSuspended,
-  suspendedCardIds,
+  setWordSuspended,
+  suspendedWordIds,
   existingCardIds,
   getLeeches,
   isLeech,
   LEECH_THRESHOLD,
   previewIntervals,
   rate,
+  undoRate,
 } from "./srs";
 import { addStudyDays, studyDayKey, studyDayStart } from "./studyDay";
 import type { CardRow } from "./db";
@@ -98,7 +99,7 @@ describe("buildQueue", () => {
 
   it("到期卡受 maxReviewsPerDay 上限裁切", async () => {
     await addCards(["a", "b", "c"], 13, NOW);
-    const due = (await rate("a", 3, NOW)).due;
+    const due = (await rate("a", 3, NOW)).card.due;
     await rate("b", 3, NOW);
     await rate("c", 3, NOW); // 三張同 due(新卡首評 Good 固定 3 天,fuzz 不作用)
     await setSetting("newPerDay", 0);
@@ -110,7 +111,7 @@ describe("buildQueue", () => {
 
   it("到期卡在前、新卡在後", async () => {
     await addCards(["rev"], 13, NOW);
-    const due = (await rate("rev", 3, NOW)).due;
+    const due = (await rate("rev", 3, NOW)).card.due;
     await addCards(["new1"], 13, due); // 新卡
     const queue = await buildQueue(due);
     expect(queue.map((c) => c.cardId)).toEqual(["rev", "new1"]);
@@ -118,7 +119,7 @@ describe("buildQueue", () => {
 
   it("未到期的卡不入列", async () => {
     await addCards(["a"], 13, NOW);
-    const due = (await rate("a", 3, NOW)).due;
+    const due = (await rate("a", 3, NOW)).card.due;
     await setSetting("newPerDay", 0);
     expect(await buildQueue(due - DAY)).toHaveLength(0); // 到期前一天
     // 到期學習日的前一刻仍不入列
@@ -127,7 +128,7 @@ describe("buildQueue", () => {
 
   it("按日到期:到期學習日一開始即入列(不必等到 due 的時刻)", async () => {
     await addCards(["a"], 13, NOW);
-    const due = (await rate("a", 3, NOW)).due;
+    const due = (await rate("a", 3, NOW)).card.due;
     await setSetting("newPerDay", 0);
     const queue = await buildQueue(studyDayStart(due));
     expect(queue.map((c) => c.cardId)).toEqual(["a"]);
@@ -137,7 +138,7 @@ describe("buildQueue", () => {
 describe("rate", () => {
   it("更新卡片:離開 New、reps 遞增、due 前移", async () => {
     await addCards(["a"], 13, NOW);
-    const updated = await rate("a", 3, NOW);
+    const { card: updated } = await rate("a", 3, NOW);
     expect(updated.reps).toBe(1);
     expect(updated.state).not.toBe(0);
     expect(updated.due).toBeGreaterThan(NOW);
@@ -160,7 +161,7 @@ describe("rate", () => {
 
   it("log 時間欄位為真實時刻:due = 評分前的 due,reviewedAt = 評分時刻", async () => {
     await addCards(["a"], 13, NOW);
-    const first = await rate("a", 3, NOW);
+    const { card: first } = await rate("a", 3, NOW);
     const at = first.due + 2 * 3600_000; // 到期後 2 小時複習
     await rate("a", 3, at);
     const second = (await db.logs.toArray()).find((l) => l.state === 2);
@@ -170,10 +171,10 @@ describe("rate", () => {
 
   it("四評分:下次 due Again < Hard < Good < Easy", async () => {
     await addCards(["a", "b", "c", "d"], 13, NOW);
-    const again = await rate("a", 1, NOW);
-    const hard = await rate("b", 2, NOW);
-    const good = await rate("c", 3, NOW);
-    const easy = await rate("d", 4, NOW);
+    const { card: again } = await rate("a", 1, NOW);
+    const { card: hard } = await rate("b", 2, NOW);
+    const { card: good } = await rate("c", 3, NOW);
+    const { card: easy } = await rate("d", 4, NOW);
     expect(again.due).toBeLessThan(hard.due);
     expect(hard.due).toBeLessThan(good.due);
     expect(good.due).toBeLessThan(easy.due);
@@ -187,7 +188,7 @@ describe("rate", () => {
 describe("countDue", () => {
   it("計算今日(學習日)到期的複習卡,當日稍晚才到期者也算(排除 New)", async () => {
     await addCards(["a", "b", "new"], 13, NOW);
-    const dueA = (await rate("a", 3, NOW)).due;
+    const dueA = (await rate("a", 3, NOW)).card.due;
     await rate("b", 3, NOW); // 與 a 同 due
     expect(await countDue(dueA - DAY)).toBe(0); // 尚未到期
     expect(await countDue(studyDayStart(dueA) - 1)).toBe(0); // 前一學習日最後一刻
@@ -197,7 +198,7 @@ describe("countDue", () => {
 
   it("countDueByTomorrow:到明日學習日結束前到期者(明日到期預估)", async () => {
     await addCards(["a"], 13, NOW);
-    const dueA = (await rate("a", 3, NOW)).due;
+    const dueA = (await rate("a", 3, NOW)).card.due;
     expect(await countDueByTomorrow(addStudyDays(dueA, -2))).toBe(0); // 後天才到期
     expect(await countDue(addStudyDays(dueA, -1))).toBe(0);
     expect(await countDueByTomorrow(addStudyDays(dueA, -1))).toBe(1); // 明日到期
@@ -342,36 +343,93 @@ describe("雙向卡(T9.2)", () => {
   });
 })
 
-describe("suspend 已會/暫停(T9.3)", () => {
-  it("setSuspended:暫停的卡不進複習佇列、不計到期", async () => {
+describe("suspend 已會/暫停(T9.3;T10.3 以字為單位)", () => {
+  it("setWordSuspended:暫停的卡不進複習佇列、不計到期", async () => {
     await addCards(["a", "b"], 13, NOW);
     await rate("a", 3, NOW); // a 進入複習態
     const dueA = (await db.cards.get("a"))!.due;
 
-    await setSuspended("a", true);
+    await setWordSuspended("a", true);
     const queue = await buildQueue(dueA);
     expect(queue.map((c) => c.cardId)).not.toContain("a");
     expect(await countDue(dueA)).toBe(0); // a 暫停、b 仍 New,皆不計
 
     // 恢復後又出現
-    await setSuspended("a", false);
+    await setWordSuspended("a", false);
     expect((await buildQueue(dueA)).map((c) => c.cardId)).toContain("a");
   });
 
   it("暫停的新卡也不入列", async () => {
     await addCards(["a", "b"], 13, NOW);
-    await setSuspended("a", true);
+    await setWordSuspended("a", true);
     const queue = await buildQueue(NOW);
     expect(queue.map((c) => c.cardId)).toEqual(["b"]);
   });
 
-  it("countSuspended / suspendedCardIds", async () => {
+  it("countSuspended / suspendedWordIds", async () => {
     await addCards(["a", "b", "c"], 13, NOW);
-    await setSuspended("a", true);
-    await setSuspended("c", true);
+    await setWordSuspended("a", true);
+    await setWordSuspended("c", true);
     expect(await countSuspended()).toBe(2);
-    expect((await suspendedCardIds(["a", "b", "c"])).sort()).toEqual(["a", "c"]);
-    expect(await suspendedCardIds([])).toEqual([]);
+    expect(await suspendedWordIds(["a", "b", "c"])).toEqual(["a", "c"]);
+    expect(await suspendedWordIds([])).toEqual([]);
+  });
+
+  it("setWordSuspended:同時作用於正向與 @r(傳入 @r id 亦同),恢復亦雙向", async () => {
+    await setSetting("reverseCards", true);
+    await addCards(["X", "Y"], 13, NOW);
+    const suspendedOf = async (id: string) => (await db.cards.get(id))?.suspended;
+
+    await setWordSuspended("X@r", true); // 在複習中略過回想卡
+    expect(await suspendedOf("X")).toBe(true);
+    expect(await suspendedOf("X@r")).toBe(true);
+    expect(await suspendedOf("Y")).toBeUndefined(); // 其他字不受影響
+    expect(await suspendedOf("Y@r")).toBeUndefined();
+
+    await setWordSuspended("X", false);
+    expect(await suspendedOf("X")).toBe(false);
+    expect(await suspendedOf("X@r")).toBe(false);
+  });
+
+  it("setWordSuspended:reverseCards 關閉(只有正向卡)時照常作用", async () => {
+    await addCards(["X"], 13, NOW);
+    await setWordSuspended("X", true);
+    expect((await db.cards.get("X"))?.suspended).toBe(true);
+    expect(await db.cards.count()).toBe(1); // 不會建立 @r
+  });
+
+  it("suspendedWordIds:任一方向暫停即算已會(舊資料只暫停 @r 時課程頁仍可恢復)", async () => {
+    await setSetting("reverseCards", true);
+    await addCards(["X", "Y"], 13, NOW);
+    await db.cards.update("X@r", { suspended: true }); // T10.3 前的單向暫停
+    expect(await suspendedWordIds(["X", "Y"])).toEqual(["X"]);
+
+    await setWordSuspended("X", false); // 課程頁「已會·恢復」
+    expect(await suspendedWordIds(["X", "Y"])).toEqual([]);
+    expect((await db.cards.get("X@r"))?.suspended).toBe(false);
+  });
+
+  it("@r 建立時繼承正向卡的暫停狀態(addCards / ensureReverseCards),不入列", async () => {
+    await addCards(["A", "B"], 13, NOW); // reverseCards 關:只有正向卡
+    await rate("A", 3, NOW);
+    await rate("B", 3, NOW);
+    await setWordSuspended("A", true);
+
+    // 中途開啟回想卡:ensureReverseCards 補建
+    expect(await ensureReverseCards(NOW)).toBe(2);
+    expect((await db.cards.get("A@r"))?.suspended).toBe(true);
+    expect((await db.cards.get("B@r"))?.suspended).toBeUndefined();
+
+    // addCards 對既有已暫停的正向卡補建 @r
+    await setSetting("reverseCards", true);
+    await addCards(["C"], 13, NOW);
+    await setWordSuspended("C", true);
+    await db.cards.delete("C@r");
+    await addCards(["C"], 13, NOW);
+    expect((await db.cards.get("C@r"))?.suspended).toBe(true);
+
+    const later = addStudyDays(NOW, 1);
+    expect(queueIds(await buildQueue(later))).toEqual(["B@r"]);
   });
 
   it("暫停的頑固卡不列入 leech", async () => {
@@ -379,11 +437,58 @@ describe("suspend 已會/暫停(T9.3)", () => {
       { cardId: "x", lessonId: 1, type: "vocab", due: NOW, stability: 1, difficulty: 5, reps: 5, lapses: LEECH_THRESHOLD + 1, state: 2 },
     ]);
     expect(await countLeeches()).toBe(1);
-    await setSuspended("x", true);
+    await setWordSuspended("x", true);
     expect(await countLeeches()).toBe(0);
     expect(await getLeeches()).toEqual([]);
   });
 })
+
+describe("復原評分(T10.3)", () => {
+  it("rate 回傳 { card, prev, logId }:prev 為評分前的卡、logId 為寫入的 log", async () => {
+    await addCards(["a"], 13, NOW);
+    const before = await db.cards.get("a");
+    const { card, prev, logId } = await rate("a", 3, NOW);
+    expect(prev).toEqual(before);
+    expect(card).toEqual(await db.cards.get("a"));
+    expect((await db.logs.get(logId))?.cardId).toBe("a");
+  });
+
+  it("undoRate:卡片還原為評分前(deep-equal)、log 刪除", async () => {
+    await addCards(["a"], 13, NOW);
+    await rate("a", 3, NOW); // 先有一筆歷史,確認只刪本次
+    const at = addStudyDays(NOW, 3);
+    const before = await db.cards.get("a");
+    const result = await rate("a", 1, at);
+    expect(await db.logs.count()).toBe(2);
+
+    await undoRate(result);
+    expect(await db.cards.get("a")).toEqual(before);
+    const logs = await db.logs.toArray();
+    expect(logs).toHaveLength(1);
+    expect(logs[0].reviewedAt).toBe(NOW);
+  });
+
+  it("undoRate 後今日新卡額度回復(上限由 logs 計算)", async () => {
+    await setSetting("newPerDay", 1);
+    await addCards(["a", "b"], 13, NOW);
+    const result = await rate("a", 3, NOW);
+    expect(await buildQueue(NOW + 60_000)).toEqual([]);
+
+    await undoRate(result);
+    expect(queueIds(await buildQueue(NOW + 60_000))).toEqual(["a"]);
+    expect(await queueCounts(NOW + 60_000)).toMatchObject({ fresh: 1, newToday: 0 });
+  });
+
+  it("同日再以 rate() 重評會多扣一次(lapses +1)——session 內重看因此只曝光、不呼叫 rate()", async () => {
+    await addCards(["a"], 13, NOW);
+    await rate("a", 3, NOW);
+    const at = addStudyDays(NOW, 3);
+    const { card: first } = await rate("a", 1, at);
+    const { card: second } = await rate("a", 1, at + 60_000);
+    expect(second.lapses).toBe(first.lapses + 1);
+    expect(second.stability).toBeLessThan(first.stability);
+  });
+});
 
 describe("desiredRetention(T9.4)", () => {
   it("較高目標保留率 → 相同卡的 Good 間隔較短(複習更頻繁)", async () => {
@@ -419,7 +524,7 @@ describe("學習日與 ts-fsrs 日界(T10.1,Asia/Taipei)", () => {
     const preview = await previewIntervals("a", at(1, 22));
     expect(preview.good.days).toBe(3);
 
-    const card = await rate("a", 3, at(1, 22));
+    const { card } = await rate("a", 3, at(1, 22));
     expect(card.due).toBe(at(4, 22)); // 真實時刻:同一牆上時間 3 天後
     expect(card.due).toBe(preview.good.due);
     expect(card.lastReview).toBe(at(1, 22));
@@ -458,7 +563,7 @@ describe("學習日與 ts-fsrs 日界(T10.1,Asia/Taipei)", () => {
     expect((await lastLog("a")).elapsedDays).toBe(0);
 
     // b:9/2 03:00 評 Good(3 天)→ 學習日 9/1 + 3 = 9/4,當天早上即入列
-    const b = await rate("b", 3, at(2, 3));
+    const { card: b } = await rate("b", 3, at(2, 3));
     expect(b.due).toBe(at(5, 3));
     expect(studyDayKey(b.due)).toBe("2026-09-04");
     expect(ids(await buildQueue(at(4, 7, 30)))).toContain("b");
@@ -477,9 +582,9 @@ describe("學習日與 ts-fsrs 日界(T10.1,America/New_York DST)", () => {
   it("DST 開始(3/8):due 保持牆上時間、按學習日入列、elapsedDays 以學習日計", async () => {
     await setSetting("newPerDay", 0);
     await addCards(["a", "b"], 13, at(3, 6, 18));
-    const a = await rate("a", 3, at(3, 6, 18)); // EST
+    const { card: a } = await rate("a", 3, at(3, 6, 18)); // EST
     expect(a.due).toBe(at(3, 9, 18)); // EDT:真實間隔少 1 小時,牆上時間不變
-    const b = await rate("b", 3, at(3, 7, 4, 30)); // 3/7 學習日只有 23 小時
+    const { card: b } = await rate("b", 3, at(3, 7, 4, 30)); // 3/7 學習日只有 23 小時
     expect(b.due).toBe(at(3, 10, 4, 30)); // 不偏成 03:30(否則會早一個學習日)
     expect(studyDayKey(b.due)).toBe("2026-03-10");
 
@@ -498,7 +603,7 @@ describe("學習日與 ts-fsrs 日界(T10.1,America/New_York DST)", () => {
     await rate("a", 3, at(10, 31, 4, 30)); // EDT
     const now = at(11, 1, 3, 30); // EST,距 10/31 04:00 已 24.5 小時,仍屬 10/31
     const preview = await previewIntervals("a", now);
-    const good = await rate("a", 3, now);
+    const { card: good } = await rate("a", 3, now);
     const logs = await db.logs.where("cardId").equals("a").sortBy("reviewedAt");
     expect(logs[1].elapsedDays).toBe(0);
     // 下次到期:學習日 10/31 + 間隔天數,牆上時間 03:30 保留;預估 = 實際
@@ -710,7 +815,7 @@ describe("queueCounts / hasAnyCards(T10.2)", () => {
   it("hasAnyCards:空 DB 為 false;有卡(含暫停)為 true", async () => {
     expect(await hasAnyCards()).toBe(false);
     await addCards(["a"], 13, NOW);
-    await setSuspended("a", true);
+    await setWordSuspended("a", true);
     expect(await hasAnyCards()).toBe(true);
   });
 });
@@ -745,7 +850,7 @@ describe("fuzz(T10.2)", () => {
       const preview = await previewIntervals(id, NOW);
       const later = await previewIntervals(id, NOW + 4_000);
       expect(later[key].days).toBe(preview[key].days);
-      const rated = await rate(id, rating, NOW);
+      const { card: rated } = await rate(id, rating, NOW);
       expect(rated.due).toBe(preview[key].due);
     }
   });

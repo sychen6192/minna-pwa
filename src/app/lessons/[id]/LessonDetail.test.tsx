@@ -15,13 +15,13 @@ vi.mock("@/lib/tts", () => ({
 
 const addCards = vi.fn();
 const existingCardIds = vi.fn();
-const setSuspended = vi.fn();
-const suspendedCardIds = vi.fn();
+const setWordSuspended = vi.fn();
+const suspendedWordIds = vi.fn();
 vi.mock("@/lib/srs", () => ({
   addCards: (...a: unknown[]) => addCards(...a),
   existingCardIds: (...a: unknown[]) => existingCardIds(...a),
-  setSuspended: (...a: unknown[]) => setSuspended(...a),
-  suspendedCardIds: (...a: unknown[]) => suspendedCardIds(...a),
+  setWordSuspended: (...a: unknown[]) => setWordSuspended(...a),
+  suspendedWordIds: (...a: unknown[]) => suspendedWordIds(...a),
 }));
 
 import { LessonDetail } from "./LessonDetail";
@@ -72,8 +72,8 @@ const sampleLesson: Lesson = {
 
 beforeEach(() => {
   existingCardIds.mockResolvedValue([]);
-  suspendedCardIds.mockResolvedValue([]);
-  setSuspended.mockResolvedValue(undefined);
+  suspendedWordIds.mockResolvedValue([]);
+  setWordSuspended.mockResolvedValue(undefined);
   addCards.mockResolvedValue(undefined);
 });
 
@@ -233,22 +233,23 @@ describe("LessonDetail", () => {
     render(<LessonDetail id={13} />);
     await screen.findByLabelText("あそびます 已加入複習");
 
-    // 標記已會 → setSuspended(true) → 轉為恢復鈕
+    // 標記已會 → setWordSuspended(true)(以字為單位)→ 轉為恢復鈕
     await user.click(screen.getByRole("button", { name: "標記已會:あそびます" }));
-    expect(setSuspended).toHaveBeenCalledWith("L13-V001", true);
+    expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
     await user.click(await screen.findByRole("button", { name: "恢復複習:あそびます" }));
-    expect(setSuspended).toHaveBeenCalledWith("L13-V001", false);
+    expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", false);
   });
 
-  it("已暫停的單字初始顯示恢復鈕", async () => {
+  it("已暫停的單字初始顯示恢復鈕(以字查詢暫停狀態)", async () => {
     getLesson.mockResolvedValue(sampleLesson);
     existingCardIds.mockResolvedValue(["L13-V001"]);
-    suspendedCardIds.mockResolvedValue(["L13-V001"]);
+    suspendedWordIds.mockResolvedValue(["L13-V001"]);
     render(<LessonDetail id={13} />);
 
     expect(
       await screen.findByRole("button", { name: "恢復複習:あそびます" }),
     ).toBeInTheDocument();
+    expect(suspendedWordIds).toHaveBeenCalledWith(["L13-V001", "L13-V002"]);
   });
 
   it("載入失敗顯示錯誤", async () => {

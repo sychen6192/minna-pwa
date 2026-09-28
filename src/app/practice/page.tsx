@@ -8,6 +8,7 @@ import { SpeakButton } from "@/components/SpeakButton";
 import { getLesson } from "@/lib/content";
 import { findExampleSentence } from "@/lib/examples";
 import { getSetting } from "@/lib/db";
+import { displayNote } from "@/lib/notes";
 import { baseVocabId, cardDirection, getLeeches, LEECH_THRESHOLD } from "@/lib/srs";
 import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
 
@@ -18,6 +19,7 @@ function plainText(segs: RubySeg[]): string {
 
 interface DrillItem {
   vocab: VocabItem;
+  lessonId: number;
   lessonTitle: string;
   lapses: number;
   example: Sentence | null;
@@ -54,6 +56,7 @@ export default function PracticePage() {
           return lesson && vocab
             ? {
                 vocab,
+                lessonId: card.lessonId,
                 lessonTitle: lesson.title,
                 lapses: card.lapses,
                 example: findExampleSentence(vocab, lesson),
@@ -130,6 +133,7 @@ export default function PracticePage() {
   // phase === "drill"
   const item = items[index];
   const isRev = item.direction === "rev";
+  const note = displayNote(item.vocab.note);
   return (
     <div className="flex min-h-[80vh] flex-col">
       <div className="flex items-center justify-between px-4 py-2 text-xs text-foreground/60">
@@ -145,8 +149,14 @@ export default function PracticePage() {
         onClick={() => !flipped && setFlipped(true)}
         className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center"
       >
+        {/* 回想卡題面加詞性・課號(同義詞消歧,不洩漏讀音) */}
         {isRev ? (
-          <div className="text-2xl font-medium">{item.vocab.meaning}</div>
+          <div>
+            <div className="text-2xl font-medium">{item.vocab.meaning}</div>
+            <div className="mt-1 text-xs text-foreground/60">
+              {item.vocab.pos}・第 {item.lessonId} 課
+            </div>
+          </div>
         ) : (
           <div className="text-3xl">
             <RubyText segments={item.vocab.ruby} furigana={furigana} />
@@ -171,8 +181,12 @@ export default function PracticePage() {
                 <div className="text-lg">{item.vocab.meaning}</div>
               </>
             )}
+            {/* 搭配提示;回想卡只在翻面後顯示 */}
+            {note && <div className="text-sm text-foreground/70">{note}</div>}
             <div className="text-xs text-foreground/60">
-              {item.vocab.pos}・{item.lessonTitle}・答錯 {item.lapses} 次
+              {/* 回想卡題面已有詞性 */}
+              {!isRev && `${item.vocab.pos}・`}
+              {item.lessonTitle}・答錯 {item.lapses} 次
             </div>
           </div>
         )}

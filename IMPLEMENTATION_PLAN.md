@@ -204,7 +204,7 @@
   做什麼:(1) `buildQueue` 讀今日(學習日)logs:新卡額度 = `newPerDay − 今日首評的相異新卡數`(log.state===0 即評分前為 New),複習額度同理扣今日已複習筆數——修正「每次載入」重給 10 張的漏洞。(2) 雙向卡 sibling bury:同一 baseVocabId 今日已評過或已在佇列者不再入列;New 的 `@r` 卡須正向兄弟已非 New 且首評不在今日;正向卡先填滿新卡額度。(3) srs 新增共用 `queueCounts(now)`(`{ due, fresh, newCapReached }`)與 `hasAnyCards()`;首頁 Hero 顯示「複習 X + 新卡 Y」並在 >0 時給「開始複習」,全 0 才慶祝;`/review` 空狀態區分「尚未加入單字」「今日完成」「今日新卡已達上限」。(4) 今日目標改為 `min(dailyGoal, 今日已複習 + 佇列剩餘)`,佇列清空即算達標。(5) 首頁與 `/review`(僅空/結算狀態)在 `visibilitychange`/`pageshow` 可見時重新計算「今天」。(6) 開啟 fuzz,以 `GenSeedStrategyWithCardId` 為種子(`toFsrsCard` 帶 `card_id`),預估間隔與實際套用一致、兄弟卡不再同日成團;需確定值的測試改用關閉 fuzz 的內部選項。
   驗收:srs 測試——評完 newPerDay 張後同日 buildQueue 無新卡、隔日恢復;複習上限同理;reverseCards 開啟時同日佇列不同時含 X 與 X@r;preview 與 rate 間隔一致;首頁「只有新卡」顯示開始複習;review 空 DB 顯示引導;`pnpm verify` 全綠。
 
-- [ ] **T10.3 複習 session 體驗**
+- [x] **T10.3 複習 session 體驗**
   做什麼:(1) 評「重來」的卡於本 session 約 5 張後重看(只曝光、不呼叫 `rate()`、不寫 log;按鈕「還不熟,再一次」(最多再 2 次)/「記住了」),結算頁列出本次答錯的字。(2) 復原:`rate()` 回傳 `{ card, prev, logId }`,新增 `undoRate()`(同一 transaction put 回 prev、刪 log);頂列「↶ 復原」可撤回上一個評分或略過(含移除插入的重看項、離開結算頁)。(3) 防重入:評分/略過進行中忽略輸入、RatingButtons 傳 disabled、忽略 `e.repeat`。(4)「已會·略過」只在翻面後出現、移離計數器;srs 新增 `setWordSuspended(vocabId, s)` 同時作用於 fwd 與 `@r`,課程頁與複習頁共用,暫停查詢以字為單位;`addCards`/`ensureReverseCards` 建 `@r` 時繼承正向卡的 suspended。(5) 翻面後顯示 `vocab.note` 搭配提示(`displayNote` 過濾「読み物」「会話」「補充單字(自行練習發音)」段落標記;rev 卡只在翻面後顯示);rev 卡題面加「詞性・第 N 課」以消除同義詞歧義。(6) 結算頁主連結改「回首頁」並顯示今日目標/連續天數。
   驗收:review 頁測試(重來後計數 +1、重看項不寫 log;復原後回到上一張已翻面且 logs 還原;連按兩次只評一次;翻面前無略過鍵);srs 測試(undoRate 還原 deep-equal、setWordSuspended 雙向、@r 繼承暫停);displayNote 測試;`pnpm verify` 全綠。
 
