@@ -10,13 +10,16 @@ import {
   DEFAULT_MAX_LESSON,
   DRILL_COUNT,
   DRILL_GROUPS,
+  DRILL_LEVELS,
   LAST_LESSON,
   availableGroupForms,
   drillPool,
+  drillableCounts,
   formLabel,
   formLabelLang,
   groupFormLesson,
   groupOf,
+  levelForms,
   makeDrillRound,
   parseUpto,
   type DrillGroup,
@@ -65,7 +68,7 @@ async function initialRange(
   }
 }
 
-/** 活用練習(T11.4,F7.3):範圍與形的設定 → 10 題(選擇/輸入)→ 結果。不寫入 SRS/DB。 */
+/** 活用練習(T11.4、T11.5,F7.3):範圍與形的設定 → 10 題(選擇/輸入)→ 結果。不寫入 SRS/DB。 */
 export default function DrillPage() {
   const [state, setState] = useState<DrillState | null>(null);
   const [lessons, setLessons] = useState<ReadonlyMap<number, Lesson>>(
@@ -253,6 +256,11 @@ export default function DrillPage() {
             : [...state.excluded, key],
         });
       }}
+      onSetForms={(group, forms, on) => {
+        const keys = new Set(forms.map((f) => formKey(group, f)));
+        const rest = state.excluded.filter((k) => !keys.has(k));
+        update({ excluded: on ? rest : [...rest, ...keys] });
+      }}
       onStart={start}
     />
   );
@@ -277,6 +285,7 @@ function DrillSetup({
   focusHeading,
   onRangeChange,
   onToggle,
+  onSetForms,
   onStart,
 }: {
   state: DrillState;
@@ -287,6 +296,12 @@ function DrillSetup({
   focusHeading: boolean;
   onRangeChange: (maxLesson: number) => void;
   onToggle: (group: DrillGroup, form: ConjForm) => void;
+  /** 一列(基本/進階)的形全選(on)或取消全選 */
+  onSetForms: (
+    group: DrillGroup,
+    forms: readonly ConjForm[],
+    on: boolean,
+  ) => void;
   onStart: () => void;
 }) {
   const rangeId = useId();
@@ -298,11 +313,17 @@ function DrillSetup({
   }, []);
   const { maxLesson } = state;
   const excluded = new Set(state.excluded);
+  // 範圍內的字數(0 則該組的形不可選)
   const counts: Record<DrillGroup, number> = { verb: 0, adj: 0 };
   for (const item of pool ?? []) {
     const group = groupOf(item.pos);
     if (group) counts[group]++;
   }
+  // 標題顯示的字數:勾選的形實際能出題者(進階形各有排除,只勾可能形時不算 わかります)
+  const drillable = useMemo(
+    () => (pool === null ? null : drillableCounts(pool, selection)),
+    [pool, selection],
+  );
   const anyAvailable = DRILL_GROUPS.some(
     ({ group }) => availableGroupForms(group, maxLesson).length > 0,
   );
@@ -372,7 +393,7 @@ function DrillSetup({
         {hint && <p className="mt-2 text-xs text-muted-foreground">{hint}</p>}
       </section>
 
-      {DRILL_GROUPS.map(({ group, label, forms }) => {
+      {DRILL_GROUPS.map(({ group, label }) => {
         const headingId = `${rangeId}-${group}`;
         const empty = pool !== null && counts[group] === 0;
         return (
@@ -383,44 +404,82 @@ function DrillSetup({
           >
             <h2
               id={headingId}
-              className="mb-2 flex items-baseline gap-2 text-sm font-medium"
+              className="flex items-baseline gap-2 text-sm font-medium"
             >
               {label}{" "}
               <span className="text-xs font-normal text-muted-foreground tabular-nums">
-                {pool === null ? "…" : `${counts[group]} 個`}
+                {drillable === null ? "…" : `${drillable[group]} 個`}
               </span>
             </h2>
-            <div
-              role="group"
-              aria-labelledby={headingId}
-              className="flex flex-wrap gap-2"
-            >
-              {forms.map((form) => {
-                const lesson = groupFormLesson(group, form);
-                const locked = lesson > maxLesson;
-                const pressed =
-                  !locked && !empty && !excluded.has(formKey(group, form));
-                const name = formLabel(group, form);
+            {/* 形 chips 分兩列:基本形、進階形(第 27 課起;形容詞為條件形),各列可全選/取消全選 */}
+            <div role="group" aria-labelledby={headingId} className="space-y-1">
+              {DRILL_LEVELS.map(({ level, label: levelLabel }) => {
+                const forms = levelForms(group, level);
+                if (forms.length === 0) return null;
+                const levelId = `${headingId}-${level}`;
+                const selectable = empty
+                  ? []
+                  : forms.filter((f) => groupFormLesson(group, f) <= maxLesson);
+                const allOn = selectable.every(
+                  (f) => !excluded.has(formKey(group, f)),
+                );
+                const toggleText = allOn ? "取消全選" : "全選";
                 return (
-                  <button
-                    key={form}
-                    type="button"
-                    aria-pressed={pressed}
-                    disabled={locked || empty}
-                    onClick={() => onToggle(group, form)}
-                    className={buttonVariants({
-                      variant: "outline",
-                      size: "sm",
-                      className: cn("flex-col gap-0 leading-5", TOGGLE_BUTTON),
-                    })}
-                  >
-                    <span lang={formLabelLang(name)}>{name}</span>
-                    {locked && (
-                      <span className="text-[11px] leading-3.5">
-                        第 {lesson} 課學
-                      </span>
-                    )}
-                  </button>
+                  <div key={level} role="group" aria-labelledby={levelId}>
+                    <div className="flex min-h-11 items-center justify-between">
+                      <h3
+                        id={levelId}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {levelLabel}
+                      </h3>
+                      {selectable.length >= 2 && (
+                        <button
+                          type="button"
+                          aria-label={`${toggleText}:${label}・${levelLabel}`}
+                          onClick={() => onSetForms(group, selectable, !allOn)}
+                          className="-mr-2 inline-flex min-h-11 min-w-11 items-center justify-end px-2 text-xs text-link underline-offset-4 hover:underline"
+                        >
+                          {toggleText}
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {forms.map((form) => {
+                        const lesson = groupFormLesson(group, form);
+                        const locked = lesson > maxLesson;
+                        const pressed =
+                          !locked &&
+                          !empty &&
+                          !excluded.has(formKey(group, form));
+                        const name = formLabel(group, form);
+                        return (
+                          <button
+                            key={form}
+                            type="button"
+                            aria-pressed={pressed}
+                            disabled={locked || empty}
+                            onClick={() => onToggle(group, form)}
+                            className={buttonVariants({
+                              variant: "outline",
+                              size: "sm",
+                              className: cn(
+                                "flex-col gap-0 leading-5",
+                                TOGGLE_BUTTON,
+                              ),
+                            })}
+                          >
+                            <span lang={formLabelLang(name)}>{name}</span>
+                            {locked && (
+                              <span className="text-[11px] leading-3.5">
+                                第 {lesson} 課學
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
             </div>

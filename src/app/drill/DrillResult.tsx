@@ -5,8 +5,8 @@ import Link from "next/link";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { Button } from "@/components/ui/button";
 import {
-  formLabel,
   formLabelLang,
+  formPrompt,
   grammarHref,
   grammarLinks,
 } from "@/lib/drill";
@@ -64,7 +64,7 @@ export function DrillResult({
           <h2 className="mb-2 text-sm font-medium">錯題({wrong.length})</h2>
           <ul className="divide-y divide-border border-y border-border">
             {wrong.map(({ question: q, given }, i) => {
-              const label = formLabel(q.group, q.form);
+              const label = formPrompt(q.group, q.form);
               // 普通形另附規則所在的文法點(同回饋畫面)
               const links = grammarLinks(q.item.pos, q.form);
               // 只差讀音的選項(来ない きない/こない):正解與作答一律顯示讀音

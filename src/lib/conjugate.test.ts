@@ -1,19 +1,26 @@
 import type { Pos, RubySeg } from "@/schemas/lesson";
 import {
   ADJ_FORMS,
+  ADVANCED_VERB_FORMS,
+  BASIC_ADJ_FORMS,
+  BASIC_VERB_FORMS,
   CONJUGATION_EXCLUDED,
   FORM_INTRO,
   VERB_FORMS,
+  basicFormsOf,
   conjClass,
   conjugate,
+  conjugateByRule,
   conjugationBase,
   formIntro,
   formsOf,
+  isAdvancedForm,
   isConjugable,
   type ConjForm,
   type ConjugableItem,
   type FormIntro,
 } from "./conjugate";
+import { FORM_EXCLUSIONS } from "./conjugateExclusions";
 
 /** 精簡的 ruby 寫法:以「|」分段,「漢字(よみ)」為漢字段,其餘為假名段 */
 function rb(text: string): RubySeg[] {
@@ -197,6 +204,275 @@ describe("Ⅲ類動詞", () => {
   });
 });
 
+describe("進階形(T11.5)", () => {
+  // [ruby, 詞性, 可能, 意向, 命令, 禁止, 條件, 被動, 使役](教材各形的變換規則)
+  it.each([
+    [
+      "書(か)|きます",
+      "動I",
+      "かける",
+      "かこう",
+      "かけ",
+      "かくな",
+      "かけば",
+      "かかれる",
+      "かかせる",
+    ],
+    [
+      "買(か)|います",
+      "動I",
+      "かえる",
+      "かおう",
+      "かえ",
+      "かうな",
+      "かえば",
+      "かわれる",
+      "かわせる",
+    ],
+    [
+      "待(ま)|ちます",
+      "動I",
+      "まてる",
+      "まとう",
+      "まて",
+      "まつな",
+      "まてば",
+      "またれる",
+      "またせる",
+    ],
+    [
+      "帰(かえ)|ります",
+      "動I",
+      "かえれる",
+      "かえろう",
+      "かえれ",
+      "かえるな",
+      "かえれば",
+      "かえられる",
+      "かえらせる",
+    ],
+    [
+      "飲(の)|みます",
+      "動I",
+      "のめる",
+      "のもう",
+      "のめ",
+      "のむな",
+      "のめば",
+      "のまれる",
+      "のませる",
+    ],
+    [
+      "遊(あそ)|びます",
+      "動I",
+      "あそべる",
+      "あそぼう",
+      "あそべ",
+      "あそぶな",
+      "あそべば",
+      "あそばれる",
+      "あそばせる",
+    ],
+    [
+      "死(し)|にます",
+      "動I",
+      "しねる",
+      "しのう",
+      "しね",
+      "しぬな",
+      "しねば",
+      "しなれる",
+      "しなせる",
+    ],
+    [
+      "急(いそ)|ぎます",
+      "動I",
+      "いそげる",
+      "いそごう",
+      "いそげ",
+      "いそぐな",
+      "いそげば",
+      "いそがれる",
+      "いそがせる",
+    ],
+    [
+      "話(はな)|します",
+      "動I",
+      "はなせる",
+      "はなそう",
+      "はなせ",
+      "はなすな",
+      "はなせば",
+      "はなされる",
+      "はなさせる",
+    ],
+    [
+      "行(い)|きます",
+      "動I",
+      "いける",
+      "いこう",
+      "いけ",
+      "いくな",
+      "いけば",
+      "いかれる",
+      "いかせる",
+    ],
+    [
+      "食(た)|べます",
+      "動II",
+      "たべられる",
+      "たべよう",
+      "たべろ",
+      "たべるな",
+      "たべれば",
+      "たべられる",
+      "たべさせる",
+    ],
+    [
+      "見(み)|ます",
+      "動II",
+      "みられる",
+      "みよう",
+      "みろ",
+      "みるな",
+      "みれば",
+      "みられる",
+      "みさせる",
+    ],
+    [
+      "勉強(べんきょう)|します",
+      "動III",
+      "べんきょうできる",
+      "べんきょうしよう",
+      "べんきょうしろ",
+      "べんきょうするな",
+      "べんきょうすれば",
+      "べんきょうされる",
+      "べんきょうさせる",
+    ],
+    [
+      "来(き)|ます",
+      "動III",
+      "こられる",
+      "こよう",
+      "こい",
+      "くるな",
+      "くれば",
+      "こられる",
+      "こさせる",
+    ],
+  ] as const)(
+    "%s(%s)→ %s / %s / %s / %s / %s / %s / %s",
+    (ruby, pos, ...expected) => {
+      const v = item(pos, ruby);
+      expect(ADVANCED_VERB_FORMS.map((f) => kana(v, f))).toEqual(expected);
+    },
+  );
+
+  it("只改假名段,漢字段原樣;可能/被動/使役輸出辞書形(〜る)", () => {
+    const v = item("動I", "書(か)|きます");
+    expect(show(v, "potential")).toBe("書(か)|ける");
+    expect(show(v, "passive")).toBe("書(か)|かれる");
+    expect(show(v, "causative")).toBe("書(か)|かせる");
+    expect(show(item("動II", "寝(ね)|ます"), "imperative")).toBe("寝(ね)|ろ");
+  });
+
+  it("する 的可能形是 できる(單獨的 します、名詞 + します、前綴保留)", () => {
+    expect(show(item("動III", "します"), "potential")).toBe("できる");
+    expect(show(item("動III", "勉強(べんきょう)|します"), "potential")).toBe(
+      "勉強(べんきょう)|できる",
+    );
+    expect(show(item("動III", "そのままに します"), "passive")).toBe(
+      "そのままに される",
+    );
+  });
+
+  it("来る:「来」段讀音 こ(可能/意向/命令/被動/使役)、く(禁止/條件);命令形 来(こ)い", () => {
+    const v = item("動III", "来(き)|ます");
+    expect(show(v, "potential")).toBe("来(こ)|られる");
+    expect(show(v, "volitional")).toBe("来(こ)|よう");
+    expect(show(v, "imperative")).toBe("来(こ)|い");
+    expect(show(v, "prohibitive")).toBe("来(く)|るな");
+    expect(show(v, "conditional")).toBe("来(く)|れば");
+    expect(show(v, "passive")).toBe("来(こ)|られる");
+    expect(show(v, "causative")).toBe("来(こ)|させる");
+    // 複合、假名書寫
+    expect(show(item("動III", "持(も)|って |来(き)|ます"), "imperative")).toBe(
+      "持(も)|って |来(こ)|い",
+    );
+    expect(kana(item("動III", "きます"), "imperative")).toBe("こい");
+    expect(kana(item("動III", "きます"), "conditional")).toBe("くれば");
+  });
+
+  it("-aru 敬語與ございます:進階形一律 null(規則推導也是 null)", () => {
+    for (const ruby of [
+      "いらっしゃいます",
+      "おっしゃいます",
+      "くださいます",
+      "なさいます",
+      "ございます",
+    ]) {
+      const v = item("動I", ruby);
+      for (const f of ADVANCED_VERB_FORMS) {
+        expect(conjugate(v, f), `${ruby} ${f}`).toBeNull();
+        expect(conjugateByRule(v, f), `${ruby} ${f}`).toBeNull();
+      }
+    }
+  });
+
+  it("教材明說或推知沒有此形(依讀音):わかります/できます/あります 無可能、命令;見えます/聞こえます 無可能", () => {
+    const wakaru = item("動I", "わかります");
+    expect(conjugate(wakaru, "potential")).toBeNull();
+    expect(conjugate(wakaru, "imperative")).toBeNull();
+    expect(kana(wakaru, "conditional")).toBe("わかれば");
+    expect(kana(wakaru, "te")).toBe("わかって");
+    // 規則上推導得出,只是教材說不用
+    expect(conjugateByRule(wakaru, "potential")?.kana).toBe("わかれる");
+    expect(conjugate(item("動II", "できます"), "potential")).toBeNull();
+    expect(conjugate(item("動II", "できます"), "imperative")).toBeNull();
+    expect(conjugate(item("動I", "あります"), "imperative")).toBeNull();
+    expect(kana(item("動I", "あります"), "conditional")).toBe("あれば");
+    expect(conjugate(item("動II", "見(み)|えます"), "potential")).toBeNull();
+    expect(kana(item("動II", "見(み)|えます"), "conditional")).toBe("みえれば");
+    expect(conjugate(item("動II", "聞(き)|こえます"), "potential")).toBeNull();
+    // 見ます、聞きます 的可能形照常(L27-G03 見られます、聞けます)
+    expect(kana(item("動II", "見(み)|ます"), "potential")).toBe("みられる");
+    expect(kana(item("動I", "聞(き)|きます"), "potential")).toBe("きける");
+  });
+
+  it("「〜を」前綴的可能形不練(L27-G02 可能動詞句的對象用が),其他形照常", () => {
+    const v = item("動II", "お|茶(ちゃ)|を |たてます");
+    expect(conjugate(v, "potential")).toBeNull();
+    expect(conjugateByRule(v, "potential")?.kana).toBe("おちゃをたてられる");
+    expect(show(v, "imperative")).toBe("お|茶(ちゃ)|を |たてろ");
+    expect(
+      conjugate(item("動III", "世話(せわ)|を します"), "potential"),
+    ).toBeNull();
+    // 「〜に」「〜て」前綴不受影響
+    expect(kana(item("動II", "火(ひ)|に かけます"), "potential")).toBe(
+      "ひにかけられる",
+    );
+  });
+
+  it("語意排除依 id(FORM_EXCLUSIONS):同形的字換了 id 就照規則", () => {
+    const rain = { ...item("動I", "降(ふ)|ります"), id: "L14-V017" };
+    expect(FORM_EXCLUSIONS.get("L14-V017")?.forms).toContain("imperative");
+    expect(conjugate(rain, "imperative")).toBeNull();
+    expect(kana(rain, "conditional")).toBe("ふれば");
+    expect(kana(rain, "te")).toBe("ふって");
+    expect(conjugateByRule(rain, "imperative")?.kana).toBe("ふれ");
+    expect(kana(item("動I", "降(ふ)|ります"), "imperative")).toBe("ふれ");
+  });
+
+  it("形容詞沒有動詞的進階形;動詞問形容詞專屬的形仍為 null", () => {
+    const adj = item("い形", "高(たか)|い");
+    for (const f of ADVANCED_VERB_FORMS.filter((x) => x !== "conditional")) {
+      expect(conjugate(adj, f)).toBeNull();
+    }
+    expect(show(adj, "conditional")).toBe("高(たか)|ければ");
+  });
+});
+
 describe("い形容詞", () => {
   it("去掉「い」:くない/かった/くなかった/くて/く 與丁寧體", () => {
     const v = item("い形", "寒(さむ)|い");
@@ -220,6 +496,17 @@ describe("い形容詞", () => {
 
   it("只看整個詞是 いい:かわいい 照一般規則", () => {
     expect(kana(item("い形", "かわいい"), "neg")).toBe("かわいくない");
+  });
+
+  it("條件形:「い」→ ければ(L35-G01);いい → よければ", () => {
+    expect(show(item("い形", "寒(さむ)|い"), "conditional")).toBe(
+      "寒(さむ)|ければ",
+    );
+    expect(kana(item("い形", "いい"), "conditional")).toBe("よければ");
+    expect(kana(item("い形", "いい （よい）", "いい"), "conditional")).toBe(
+      "よければ",
+    );
+    expect(kana(item("い形", "かわいい"), "conditional")).toBe("かわいければ");
   });
 
   it("同讀音並列只活用第一個寫法", () => {
@@ -264,6 +551,15 @@ describe("な形容詞", () => {
   it("kana 欄含［な］(すき［な］)時輸出 kana 為純假名", () => {
     const v = item("な形", "好(す)|き［な］", "すき［な］");
     expect(kana(v, "neg")).toBe("すきじゃない");
+  });
+
+  it("條件形:語幹 + なら(L35-G01,去掉「な」)", () => {
+    expect(
+      show(item("な形", "静(しず)|か［な］", "しずか"), "conditional"),
+    ).toBe("静(しず)|かなら");
+    expect(show(item("な形", "大変(たいへん)"), "conditional")).toBe(
+      "大変(たいへん)|なら",
+    );
   });
 });
 
@@ -352,11 +648,14 @@ describe("conjugationBase:活用的基底(活用練習用)", () => {
 });
 
 describe("isConjugable", () => {
-  it("未指定形:該詞性每一形都能推導", () => {
+  it("未指定形:該詞性每一個基本形都能推導(進階形各有排除,不影響)", () => {
     expect(isConjugable(item("動I", "書(か)|きます"))).toBe(true);
     expect(isConjugable(item("な形", "大変(たいへん)"))).toBe(true);
     expect(isConjugable(item("名", "学生(がくせい)"))).toBe(false);
     expect(isConjugable(item("動I", "ございます"))).toBe(false);
+    // 沒有可能形、命令形,仍可練基本形
+    expect(isConjugable(item("動I", "わかります"))).toBe(true);
+    expect(isConjugable(item("動I", "いらっしゃいます"))).toBe(true);
   });
 
   it("指定形:看該形", () => {
@@ -374,7 +673,7 @@ it("不改動輸入的 ruby", () => {
 });
 
 describe("類別、形與導入課次", () => {
-  it("conjClass / formsOf", () => {
+  it("conjClass / formsOf / basicFormsOf / isAdvancedForm", () => {
     expect(conjClass("動I")).toBe("verb");
     expect(conjClass("動III")).toBe("verb");
     expect(conjClass("い形")).toBe("iAdj");
@@ -383,6 +682,13 @@ describe("類別、形與導入課次", () => {
     expect(formsOf("動II")).toBe(VERB_FORMS);
     expect(formsOf("な形")).toBe(ADJ_FORMS);
     expect(formsOf("名")).toEqual([]);
+    expect(basicFormsOf("動I")).toBe(BASIC_VERB_FORMS);
+    expect(basicFormsOf("い形")).toBe(BASIC_ADJ_FORMS);
+    expect(basicFormsOf("名")).toEqual([]);
+    expect(VERB_FORMS).toEqual([...BASIC_VERB_FORMS, ...ADVANCED_VERB_FORMS]);
+    expect(ADJ_FORMS).toEqual([...BASIC_ADJ_FORMS, "conditional"]);
+    expect(VERB_FORMS.filter(isAdvancedForm)).toEqual(ADVANCED_VERB_FORMS);
+    expect(ADJ_FORMS.filter(isAdvancedForm)).toEqual(["conditional"]);
   });
 
   it("FORM_INTRO:lesson 與文法點 id 的課號一致;各形依導入順序排列", () => {
@@ -422,5 +728,22 @@ describe("類別、形與導入課次", () => {
     expect(formIntro("動I", "adv")).toBeNull();
     expect(formIntro("い形", "dict")).toBeNull();
     expect(formIntro("名", "te")).toBeNull();
+  });
+
+  it("進階形的導入文法點:可能 L27、意向 L31、命令/禁止 L33、條件 L35(動詞與形容詞)、被動 L37、使役 L48", () => {
+    expect(
+      ADVANCED_VERB_FORMS.map((f) => formIntro("動II", f)?.grammarId),
+    ).toEqual([
+      "L27-G01",
+      "L31-G01",
+      "L33-G01",
+      "L33-G01",
+      "L35-G01",
+      "L37-G01",
+      "L48-G01",
+    ]);
+    expect(formIntro("い形", "conditional")?.grammarId).toBe("L35-G01");
+    expect(formIntro("な形", "conditional")?.grammarId).toBe("L35-G01");
+    expect(formIntro("い形", "potential")).toBeNull();
   });
 });

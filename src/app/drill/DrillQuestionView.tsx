@@ -7,8 +7,8 @@ import { SpeakButton } from "@/components/SpeakButton";
 import { Button } from "@/components/ui/button";
 import {
   checkDrillAnswer,
-  formLabel,
   formLabelLang,
+  formPrompt,
   grammarHref,
   grammarLinks,
   type DrillOption,
@@ -58,7 +58,8 @@ export function DrillQuestionView({
     if (answered) nextRef.current?.focus();
   }, [answered]);
 
-  const label = formLabel(q.group, q.form);
+  // 形名與作答的形狀(可能形(辞書形)…)
+  const label = formPrompt(q.group, q.form);
   const links = grammarLinks(q.item.pos, q.form);
   // 選項只差讀音(来ない きない/こない)時,選項與正解一律顯示讀音
   const answerFurigana: FuriganaMode = q.forceReading ? "show" : furigana;

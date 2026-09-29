@@ -244,6 +244,226 @@ describe("DrillPage 設定:範圍", () => {
   });
 });
 
+describe("DrillPage 設定:進階形(T11.5)", () => {
+  const ADVANCED = [
+    ["可能形", 27],
+    ["意向形", 31],
+    ["命令形", 33],
+    ["禁止形", 33],
+    ["條件形(ば)", 35],
+    ["被動形", 37],
+    ["使役形", 48],
+  ] as const;
+
+  /** 某組某列(基本/進階)的 chips(不含全選鈕) */
+  function chipsOf(group: RegExp, level: "基本" | "進階") {
+    const row = within(screen.getByRole("group", { name: group })).getByRole(
+      "group",
+      { name: level },
+    );
+    return within(row)
+      .getAllByRole("button")
+      .filter((b) => b.hasAttribute("aria-pressed"));
+  }
+
+  it("第 1–26 課:進階形 chips 全部鎖住並標示導入課;改成第 1–50 課後全部開放且勾選", async () => {
+    window.history.replaceState(null, "", "/drill?upto=26");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    const select = await rangeSelect();
+    const locked = chipsOf(/^動詞/, "進階");
+    expect(locked.map((c) => c.firstChild?.textContent)).toEqual(
+      ADVANCED.map(([name]) => name),
+    );
+    locked.forEach((chip, i) => {
+      expect(chip).toBeDisabled();
+      expect(chip).toHaveAttribute("aria-pressed", "false");
+      expect(chip).toHaveTextContent(`第 ${ADVANCED[i][1]} 課學`);
+    });
+    // 鎖住的列沒有全選鈕
+    const advRow = within(
+      screen.getByRole("group", { name: /^動詞/ }),
+    ).getByRole("group", { name: "進階" });
+    expect(
+      within(advRow).queryByRole("button", { name: /全選/ }),
+    ).not.toBeInTheDocument();
+    const adjAdv = chipsOf(/^形容詞/, "進階");
+    expect(adjAdv).toHaveLength(1);
+    expect(adjAdv[0]).toHaveTextContent("條件形(〜ければ/〜なら)第 35 課學");
+    expect(adjAdv[0]).toBeDisabled();
+    // 基本形照常開放
+    expect(
+      chipsOf(/^動詞/, "基本").every((c) => !c.hasAttribute("disabled")),
+    ).toBe(true);
+
+    await user.selectOptions(select, "第 1–50 課");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /開始練習/ })).toBeEnabled(),
+    );
+    for (const chip of [
+      ...chipsOf(/^動詞/, "進階"),
+      ...chipsOf(/^形容詞/, "進階"),
+    ]) {
+      expect(chip).toBeEnabled();
+      expect(chip).toHaveAttribute("aria-pressed", "true");
+      expect(chip).not.toHaveTextContent(/課學/);
+    }
+  });
+
+  it("每列可取消全選/全選(只作用於該列)", async () => {
+    window.history.replaceState(null, "", "/drill?upto=50");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /開始練習/ })).toBeEnabled(),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "取消全選:動詞・基本" }),
+    );
+    for (const chip of chipsOf(/^動詞/, "基本"))
+      expect(chip).toHaveAttribute("aria-pressed", "false");
+    for (const chip of chipsOf(/^動詞/, "進階"))
+      expect(chip).toHaveAttribute("aria-pressed", "true");
+
+    // 部分勾選時為「全選」
+    await user.click(chipsOf(/^動詞/, "進階")[0]);
+    await user.click(screen.getByRole("button", { name: "全選:動詞・進階" }));
+    for (const chip of chipsOf(/^動詞/, "進階"))
+      expect(chip).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "全選:動詞・基本" }));
+    for (const chip of chipsOf(/^動詞/, "基本"))
+      expect(chip).toHaveAttribute("aria-pressed", "true");
+    // 形容詞的進階列只有一個形:不給全選鈕
+    expect(
+      screen.queryByRole("button", { name: /形容詞・進階/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("DrillPage 作答:進階形(T11.5)", () => {
+  it("可能形:題目標明答辞書形;選項含常見錯誤與易混淆的被動形;答錯連到 L27-G01", async () => {
+    window.history.replaceState(null, "", "/drill?upto=50");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    await onlyForms(user, /^動詞/, ["可能形"]);
+    await onlyForms(user, /^形容詞/, []);
+    await start(user);
+
+    expect(screen.getByText("第 1 / 1 題")).toBeInTheDocument();
+    expect(document.activeElement).toHaveTextContent(
+      "書きます寫→改成可能形(辞書形)",
+    );
+    const options = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(options.sort()).toEqual(
+      ["書ける", "書けれる", "書かれる", "書きられる"].sort(),
+    );
+    await user.click(screen.getByRole("button", { name: ruby("書かれる") }));
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("答錯 ✗書ける");
+    expect(
+      within(status).getByRole("link", { name: "看文法:第 27 課" }),
+    ).toHaveAttribute("href", "/lessons/27#L27-G01");
+
+    await user.click(screen.getByRole("button", { name: "看結果" }));
+    const row = screen.getAllByRole("listitem")[0];
+    expect(row).toHaveTextContent("書きます→的正解是書ける");
+    expect(row).toHaveTextContent("可能形(辞書形)");
+    expect(row).toHaveTextContent("你的答案:書かれる");
+  });
+
+  it("逐(字, 形)出題:わかります 不出可能形(教材:わかる 本身即可能),仍出て形", async () => {
+    const L09: Lesson = {
+      ...filler(9),
+      vocab: [
+        {
+          id: "L09-V001",
+          ruby: [{ b: "わかります" }],
+          kana: "わかります",
+          meaning: "懂",
+          pos: "動I",
+        },
+      ],
+    };
+    getLesson.mockImplementation((id: number) =>
+      Promise.resolve(
+        id === 9 ? L09 : id === 14 ? L14 : id === 20 ? L20 : filler(id),
+      ),
+    );
+    window.history.replaceState(null, "", "/drill?upto=50");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    const verbGroup = screen.getByRole("group", { name: /^動詞/ });
+    await waitFor(() => expect(verbGroup).toHaveAccessibleName("動詞 2 個"));
+    await onlyForms(user, /^形容詞/, []);
+    // 標題的字數只算勾選的形能出題者
+    expect(screen.getByRole("group", { name: /^形容詞/ })).toHaveAccessibleName(
+      "形容詞 0 個",
+    );
+    await onlyForms(user, /^動詞/, ["可能形"]);
+    expect(verbGroup).toHaveAccessibleName("動詞 1 個");
+    await start(user);
+    // 範圍內兩個動詞,只有 書きます 有可能形
+    expect(screen.getByText("第 1 / 1 題")).toBeInTheDocument();
+    expect(screen.getByText("寫")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: ruby("書ける") }));
+    await user.click(screen.getByRole("button", { name: "看結果" }));
+    await user.click(screen.getByRole("button", { name: "換範圍" }));
+    // 改成只練て形(設定保留了只勾可能形)
+    const verbs = screen.getByRole("group", { name: /^動詞/ });
+    await user.click(within(verbs).getByRole("button", { name: "可能形" }));
+    await user.click(within(verbs).getByRole("button", { name: "て形" }));
+    expect(verbs).toHaveAccessibleName("動詞 2 個");
+    await start(user);
+    // 兩個字都出て形
+    expect(screen.getByText("第 1 / 2 題")).toBeInTheDocument();
+  });
+
+  it("来る 的命令形:選項只差讀音,一律顯示讀音(来(こ)い/来(こ)ろ/来(き)ろ)", async () => {
+    const L05: Lesson = {
+      ...filler(5),
+      vocab: [
+        {
+          id: "L05-V002",
+          ruby: [{ b: "来", r: "き" }, { b: "ます" }],
+          kana: "きます",
+          meaning: "來",
+          pos: "動III",
+        },
+      ],
+    };
+    getLesson.mockImplementation((id: number) =>
+      Promise.resolve(id === 5 ? L05 : filler(id)),
+    );
+    window.history.replaceState(null, "", "/drill?upto=50");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    await onlyForms(user, /^動詞/, ["命令形"]);
+    await start(user);
+    const options = screen
+      .getAllByRole("listitem")
+      .map((li) => li.textContent ?? "");
+    expect(options.sort()).toEqual(
+      ["来こい", "来ころ", "来きろ", "来くるな"].sort(),
+    );
+    const koi = screen
+      .getAllByRole("button")
+      .find((b) => b.textContent === "来こい");
+    if (!koi) throw new Error("找不到 来(こ)い");
+    await user.click(koi);
+    expect(screen.getByRole("status")).toHaveTextContent("答對 ✓来こい");
+    expect(
+      within(screen.getByRole("status")).getByRole("link", {
+        name: "看文法:第 33 課",
+      }),
+    ).toHaveAttribute("href", "/lessons/33#L33-G01");
+  });
+});
+
 describe("DrillPage 作答", () => {
   it("選擇題答對:回饋、正解、朗讀、文法連結;結果頁", async () => {
     window.history.replaceState(null, "", "/drill?upto=14");

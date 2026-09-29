@@ -1,19 +1,30 @@
 import type { Lesson, Pos, RubySeg, VocabItem } from "@/schemas/lesson";
-import { conjugate, formsOf, type ConjForm } from "./conjugate";
+import {
+  ADVANCED_VERB_FORMS,
+  conjugate,
+  conjugateByRule,
+  formsOf,
+  type ConjForm,
+} from "./conjugate";
 import {
   DRILL_GROUPS,
+  DRILL_LEVELS,
   OPTION_COUNT,
   availableForms,
   availableGroupForms,
   canInputDrill,
   checkDrillAnswer,
   drillPool,
+  drillableCounts,
   formLabel,
   formLabelLang,
+  formLevel,
+  formPrompt,
   grammarHref,
   grammarLinks,
   groupFormLesson,
   lessonHasDrill,
+  levelForms,
   makeDrillQuestion,
   makeDrillRound,
   parseUpto,
@@ -184,6 +195,74 @@ describe("availableForms:依範圍開放已導入的形", () => {
     expect(formLabel("adj", "adv")).toBe("連用(〜く/〜に)");
     expect(formLabelLang("ない形")).toBe("ja");
     expect(formLabelLang("過去否定(丁寧)")).toBeUndefined();
+  });
+
+  it("進階形:動詞第 27 課可能、31 意向、33 命令/禁止、35 條件、37 被動、48 使役;形容詞第 35 課條件形", () => {
+    expect(availableForms("verb", 26)).toHaveLength(8);
+    expect(availableForms("verb", 27).slice(8)).toEqual(["potential"]);
+    expect(availableForms("verb", 33).slice(8)).toEqual([
+      "potential",
+      "volitional",
+      "imperative",
+      "prohibitive",
+    ]);
+    expect(availableForms("verb", 47)).not.toContain("causative");
+    expect(availableForms("verb", 50).slice(8)).toEqual(ADVANCED_VERB_FORMS);
+    for (const cls of ["iAdj", "naAdj"] as const) {
+      expect(availableForms(cls, 34)).not.toContain("conditional");
+      expect(availableForms(cls, 35)).toContain("conditional");
+    }
+    expect(groupFormLesson("verb", "potential")).toBe(27);
+    expect(groupFormLesson("verb", "causative")).toBe(48);
+    expect(groupFormLesson("verb", "conditional")).toBe(35);
+    expect(groupFormLesson("adj", "conditional")).toBe(35);
+    expect(groupFormLesson("adj", "potential")).toBe(Infinity);
+  });
+
+  it("層級:基本/進階兩列,每組的形恰分成兩列(教材順序)", () => {
+    expect(DRILL_LEVELS.map((l) => l.label)).toEqual(["基本", "進階"]);
+    expect(levelForms("verb", "advanced")).toEqual(ADVANCED_VERB_FORMS);
+    expect(levelForms("verb", "basic")).toEqual([
+      "masen",
+      "mashita",
+      "masendeshita",
+      "te",
+      "nai",
+      "dict",
+      "ta",
+      "nakatta",
+    ]);
+    expect(levelForms("adj", "advanced")).toEqual(["conditional"]);
+    expect(levelForms("adj", "basic")).toHaveLength(8);
+    for (const { group, forms } of DRILL_GROUPS) {
+      expect([
+        ...levelForms(group, "basic"),
+        ...levelForms(group, "advanced"),
+      ]).toEqual(forms);
+    }
+    expect(formLevel("te")).toBe("basic");
+    expect(formLevel("conditional")).toBe("advanced");
+  });
+
+  it("進階形的形名與題目(可能/被動/使役 標明答辞書形)", () => {
+    expect(ADVANCED_VERB_FORMS.map((f) => formLabel("verb", f))).toEqual([
+      "可能形",
+      "意向形",
+      "命令形",
+      "禁止形",
+      "條件形(ば)",
+      "被動形",
+      "使役形",
+    ]);
+    expect(formLabel("adj", "conditional")).toBe("條件形(〜ければ/〜なら)");
+    expect(formPrompt("verb", "potential")).toBe("可能形(辞書形)");
+    expect(formPrompt("verb", "passive")).toBe("被動形(辞書形)");
+    expect(formPrompt("verb", "causative")).toBe("使役形(辞書形)");
+    expect(formPrompt("verb", "imperative")).toBe("命令形");
+    expect(formPrompt("verb", "te")).toBe("て形");
+    expect(formPrompt("adj", "conditional")).toBe("條件形(〜ければ/〜なら)");
+    expect(formLabelLang("可能形")).toBeUndefined();
+    expect(formLabelLang("條件形(ば)")).toBe("ja");
   });
 });
 
@@ -429,11 +508,11 @@ describe("wrongConjugations:常見的規則錯誤", () => {
     }
   });
 
-  it("每個樣本 × 每一形:不含該字任何正確形(含題目基底與「では」)、不重複、ruby 與 kana 一致", () => {
+  it("每個樣本 × 每一形:不含該字任何依規則成立的形(含不練的進階形、題目基底與「では」)、不重複、ruby 與 kana 一致", () => {
     for (const v of SAMPLES) {
       const valid = new Set(
         formsOf(v.pos).map((f) =>
-          normalizeReading(conjugate(v, f)?.kana ?? ""),
+          normalizeReading(conjugateByRule(v, f)?.kana ?? ""),
         ),
       );
       valid.add(normalizeReading(v.kana));
@@ -455,13 +534,110 @@ describe("wrongConjugations:常見的規則錯誤", () => {
   it("不活用或該詞性沒有此形:空陣列", () => {
     expect(wrongConjugations(item("名", "駅(えき)"), "te")).toEqual([]);
     expect(wrongConjugations(kaku, "adv")).toEqual([]);
+    // 不練的進階形(あります 的可能形)
+    expect(wrongConjugations(aru, "potential")).toEqual([]);
+  });
+});
+
+describe("wrongConjugations:進階形的常見錯誤", () => {
+  it("可能形:ら抜き(食べれる、来れる)、多加「れ」(書けれる)、當成Ⅱ類(書きられる);する(しれる)", () => {
+    expect(wrongKana(taberu, "potential")).toEqual(["たべれる"]);
+    expect(wrongKana(okiru, "potential")).toEqual(["おきれる", "おける"]);
+    expect(wrongKana(kaku, "potential")).toEqual([
+      "かけれる",
+      "かきられる",
+      "かかられる",
+    ]);
+    expect(wrongConjugations(kuru, "potential")[0].ruby).toEqual(
+      rb("来(こ)|れる"),
+    );
+    expect(wrongKana(benkyou, "potential")[0]).toBe("べんきょうしれる");
+  });
+
+  it("意向形:辞書形 + よう(書くよう)、當成Ⅱ類(書きよう)、食べろう、来(き)よう", () => {
+    expect(wrongKana(kaku, "volitional")).toEqual([
+      "かくよう",
+      "かきよう",
+      "かこよう",
+    ]);
+    expect(wrongKana(taberu, "volitional")).toEqual(["たべろう", "たべるよう"]);
+    expect(wrongConjugations(kuru, "volitional")[0].ruby).toEqual(
+      rb("来(き)|よう"),
+    );
+  });
+
+  it("命令形/禁止形:書きろ、書けろ;書けな、書かな;来(こ)るな(禁止形讀 く)", () => {
+    expect(wrongKana(kaku, "imperative").slice(0, 2)).toEqual([
+      "かきろ",
+      "かけろ",
+    ]);
+    expect(wrongKana(taberu, "imperative")).toEqual(["たべれ"]);
+    expect(wrongKana(kaku, "prohibitive").slice(0, 2)).toEqual([
+      "かけな",
+      "かかな",
+    ]);
+    // 書きな(= 書きなさい)在口語中成立,不列為錯誤
+    expect(wrongKana(kaku, "prohibitive")).not.toContain("かきな");
+    expect(wrongConjugations(kuru, "prohibitive")[0].ruby).toEqual(
+      rb("来(こ)|るな"),
+    );
+  });
+
+  it("條件形:書きれば、書くれば;形容詞 高いければ、いい → いければ、静かななら", () => {
+    expect(wrongKana(kaku, "conditional")).toEqual([
+      "かきれば",
+      "かくれば",
+      "かくば",
+    ]);
+    expect(wrongKana(takai, "conditional").slice(0, 2)).toEqual([
+      "たかいければ",
+      "たかいれば",
+    ]);
+    expect(wrongKana(ii, "conditional")[0]).toBe("いければ");
+    expect(wrongKana(shizuka, "conditional")[0]).toBe("しずかななら");
+    // 成立的「高いなら」「静かならば」不列
+    expect(wrongKana(takai, "conditional")).not.toContain("たかいなら");
+    expect(wrongKana(shizuka, "conditional")).not.toContain("しずかならば");
+  });
+
+  it("被動/使役:書かられる、さ入れ 書かさせる、買あれる/買あせる、食べせる;する(さられる、しさせる)", () => {
+    expect(wrongKana(kaku, "passive")).toEqual(["かかられる", "かきられる"]);
+    expect(wrongKana(kaku, "causative")).toEqual(["かかさせる", "かきさせる"]);
+    expect(wrongKana(kau, "passive")).toContain("かあれる");
+    expect(wrongKana(kau, "causative")).toContain("かあせる");
+    expect(wrongKana(taberu, "causative")).toEqual(["たべせる", "たべらせる"]);
+    // 「少了さ」恰為使役義的他動詞(見せる、着せる、寝せる):不當錯誤選項
+    const kiru = item("動II", "着(き)|ます");
+    expect(wrongKana(miru, "causative")).toEqual(["みらせる"]);
+    expect(wrongKana(kiru, "causative")).toEqual(["きらせる"]);
+    expect(wrongKana(neru, "causative")).toEqual(["ねらせる"]);
+    for (let seed = 1; seed <= 20; seed++) {
+      const q = makeDrillQuestion(miru, "causative", "mcq", seeded(seed), 50);
+      expect(q?.options.map((o) => o.kana)).not.toContain("みせる");
+      expect(q?.options).toHaveLength(4);
+    }
+    expect(wrongKana(taberu, "passive")).toEqual(["たべれる"]);
+    expect(wrongKana(suru, "passive")).toEqual(["しられる", "さられる"]);
+    expect(wrongKana(suru, "causative")).toEqual(["しさせる", "すさせる"]);
+  });
+
+  it("錯誤選項不可是該字依規則成立、但不練的形(わかります:わかれる 不當作錯誤)", () => {
+    const wakaru = item("動I", "わかります");
+    expect(conjugate(wakaru, "potential")).toBeNull();
+    for (const f of formsOf(wakaru.pos)) {
+      expect(wrongKana(wakaru, f)).not.toContain("わかれる");
+    }
   });
 });
 
 describe("makeDrillQuestion", () => {
-  it("選擇題:4 個選項、恰一個正解、選項讀音不重複、正解 = conjugate", () => {
+  it("選擇題:4 個選項、恰一個正解、選項讀音不重複、正解 = conjugate(不練的形回傳 null)", () => {
     for (const v of SAMPLES) {
       for (const form of formsOf(v.pos)) {
+        if (conjugate(v, form) === null) {
+          expect(makeDrillQuestion(v, form, "mcq", seeded(1))).toBeNull();
+          continue;
+        }
         const q = makeDrillQuestion(v, form, "mcq", seeded(1));
         expect(q).not.toBeNull();
         if (!q) continue;
@@ -542,6 +718,57 @@ describe("makeDrillQuestion", () => {
   it("無法推導:null", () => {
     expect(makeDrillQuestion(kaku, "adv", "mcq")).toBeNull();
     expect(makeDrillQuestion(item("名", "駅(えき)"), "te", "mcq")).toBeNull();
+    expect(makeDrillQuestion(irassharu, "imperative", "mcq")).toBeNull();
+  });
+
+  it("進階形:錯誤規則與易混淆的同字其他形交錯(書ける:書けれる、書かれる、書きられる);範圍內還沒教的形不混入", () => {
+    const at50 = makeDrillQuestion(kaku, "potential", "mcq", seeded(1), 50);
+    expect(at50?.options.map((o) => o.kana).sort()).toEqual(
+      ["かける", "かけれる", "かかれる", "かきられる"].sort(),
+    );
+    // 第 27–36 課:被動(L37)、使役(L48)還沒教
+    const at30 = makeDrillQuestion(kaku, "potential", "mcq", seeded(1), 30);
+    expect(at30?.options.map((o) => o.kana).sort()).toEqual(
+      ["かける", "かけれる", "かきられる", "かかられる"].sort(),
+    );
+    // 使役 ↔ 被動、命令 ↔ 禁止
+    expect(
+      makeDrillQuestion(kaku, "causative", "mcq", seeded(1), 50)?.options.map(
+        (o) => o.kana,
+      ),
+    ).toContain("かかれる");
+    expect(
+      makeDrillQuestion(kaku, "imperative", "mcq", seeded(1), 50)?.options.map(
+        (o) => o.kana,
+      ),
+    ).toContain("かくな");
+  });
+
+  it("Ⅱ類的可能形 = 被動形(食べられる):互為正解時不當作錯誤選項", () => {
+    for (const form of ["potential", "passive"] as const) {
+      const q = makeDrillQuestion(taberu, form, "mcq", seeded(2), 50);
+      expect(q?.answer.kana).toBe("たべられる");
+      expect(q?.options.filter((o) => o.kana === "たべられる")).toHaveLength(1);
+      expect(q?.options.find((o) => o.kana === "たべられる")?.correct).toBe(
+        true,
+      );
+      // ら抜き 為錯誤選項
+      expect(q?.options.find((o) => o.kana === "たべれる")?.correct).toBe(
+        false,
+      );
+    }
+  });
+
+  it("来る 的進階形:選項表面相同、只差讀音 → forceReading", () => {
+    for (const form of ADVANCED_VERB_FORMS) {
+      expect(
+        makeDrillQuestion(kuru, form, "mcq", seeded(1), 50)?.forceReading,
+        form,
+      ).toBe(true);
+    }
+    expect(
+      makeDrillQuestion(kaku, "potential", "mcq", seeded(1), 50)?.forceReading,
+    ).toBe(false);
   });
 });
 
@@ -590,6 +817,23 @@ describe("checkDrillAnswer:輸入題判分(沿用 quiz.ts 正規化)", () => {
 
   it("IME 習慣的 nn:yomimasenn → 對", () => {
     expect(masen && checkDrillAnswer("yomimasenn", masen)).toBe(true);
+  });
+
+  it("進階形:只接受題目要求的形狀(辞書形 書ける;書けます、ら抜き 食べれる 為錯)", () => {
+    const potential = makeDrillQuestion(kaku, "potential", "input");
+    expect(potential && checkDrillAnswer("kakeru", potential)).toBe(true);
+    expect(potential && checkDrillAnswer("かけます", potential)).toBe(false);
+    const taberareru = makeDrillQuestion(taberu, "potential", "input");
+    expect(taberareru && checkDrillAnswer("taberareru", taberareru)).toBe(true);
+    expect(taberareru && checkDrillAnswer("たべれる", taberareru)).toBe(false);
+    const koi = makeDrillQuestion(kuru, "imperative", "input");
+    expect(koi && checkDrillAnswer("koi", koi)).toBe(true);
+    expect(koi && checkDrillAnswer("kiro", koi)).toBe(false);
+    const kuruna = makeDrillQuestion(kuru, "prohibitive", "input");
+    expect(kuruna && checkDrillAnswer("くるな", kuruna)).toBe(true);
+    expect(kuruna && checkDrillAnswer("こるな", kuruna)).toBe(false);
+    const nara = makeDrillQuestion(shizuka, "conditional", "input");
+    expect(nara && checkDrillAnswer("shizukanara", nara)).toBe(true);
   });
 });
 
@@ -679,6 +923,36 @@ describe("makeDrillRound", () => {
     expect(new Set(qs.map((q) => `${q.item.id}:${q.form}`)).size).toBe(6);
   });
 
+  it("逐(字, 形)判斷:不練的進階形只少那一形(わかります 無可能形,仍出て形)", () => {
+    const wakaru = item("動I", "わかります");
+    const qs = makeDrillRound(
+      [wakaru, kaku],
+      { verb: ["te", "potential"], adj: [] },
+      { rng: seeded(6) },
+    );
+    expect(qs.map((q) => `${q.item.kana}:${q.form}`).sort()).toEqual(
+      ["わかります:te", "かきます:te", "かきます:potential"].sort(),
+    );
+    expect(makeDrillRound([wakaru], { verb: ["potential"], adj: [] })).toEqual(
+      [],
+    );
+  });
+
+  it("drillableCounts:各組只算勾選的形至少有一形能出題的字", () => {
+    const wakaru = item("動I", "わかります");
+    const pool = [wakaru, kaku, takai];
+    expect(
+      drillableCounts(pool, { verb: ["potential"], adj: ["neg"] }),
+    ).toEqual({ verb: 1, adj: 1 });
+    expect(
+      drillableCounts(pool, { verb: ["te", "potential"], adj: [] }),
+    ).toEqual({ verb: 2, adj: 0 });
+    expect(drillableCounts([], { verb: ["te"], adj: ["neg"] })).toEqual({
+      verb: 0,
+      adj: 0,
+    });
+  });
+
   it("勾選中沒有適用的形:空陣列;同一種子結果相同", () => {
     expect(makeDrillRound(verbs, { verb: [], adj: ["neg"] })).toEqual([]);
     expect(makeDrillRound([], { verb: ["te"], adj: [] })).toEqual([]);
@@ -720,6 +994,23 @@ describe("grammarLinks:該形的文法解說", () => {
       grammarId: "L12-G01",
     });
     expect(grammarLinks("名", "te")).toEqual([]);
+  });
+
+  it("進階形:連到寫了變換規則的文法點(不另附)", () => {
+    expect(grammarLinks("動I", "potential")).toEqual([
+      { lesson: 27, grammarId: "L27-G01" },
+    ]);
+    expect(grammarLinks("動II", "volitional")).toEqual([
+      { lesson: 31, grammarId: "L31-G01" },
+    ]);
+    expect(grammarLinks("動III", "prohibitive")).toEqual([
+      { lesson: 33, grammarId: "L33-G01" },
+    ]);
+    expect(grammarLinks("い形", "conditional")).toEqual([
+      { lesson: 35, grammarId: "L35-G01" },
+    ]);
+    expect(grammarLinks("動I", "passive")[0].grammarId).toBe("L37-G01");
+    expect(grammarLinks("動I", "causative")[0].grammarId).toBe("L48-G01");
   });
 
   it("網址:/lessons/N#Lxx-Gxx(課程頁切到文型並捲動)", () => {
