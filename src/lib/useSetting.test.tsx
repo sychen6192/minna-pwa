@@ -1,7 +1,8 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 import { db, setSetting } from "./db";
-import { useSetting, useTtsEnabled } from "./useSetting";
+import { loadJaVoice, VOICE_TIMEOUT_MS } from "./tts";
+import { useJaVoiceAvailable, useSetting, useTtsEnabled } from "./useSetting";
 
 beforeEach(async () => {
   await db.settings.clear();
@@ -13,10 +14,12 @@ afterEach(() => {
 });
 
 /** mock 的 speechSynthesis(只需觀察是否開始載入語音清單) */
-function installSynth() {
-  const getVoices = vi.fn(() => [
+function installSynth(
+  voices: { lang: string; name: string; localService: boolean }[] = [
     { lang: "ja-JP", name: "Kyoko", localService: true },
-  ]);
+  ],
+) {
+  const getVoices = vi.fn(() => voices);
   vi.stubGlobal(
     "speechSynthesis",
     Object.assign(new EventTarget(), {
@@ -81,5 +84,86 @@ describe("useTtsEnabled", () => {
     const { result } = renderHook(() => useTtsEnabled());
     await waitFor(() => expect(result.current).toBe(false));
     expect(getVoices).not.toHaveBeenCalled();
+  });
+});
+
+describe("useJaVoiceAvailable", () => {
+  const KYOKO = { lang: "ja-JP", name: "Kyoko", localService: true };
+
+  it("有日語 voice:查詢中為 undefined,查詢後為 true", async () => {
+    installSynth();
+    const { result } = renderHook(() => useJaVoiceAvailable(true));
+    expect(result.current).toBeUndefined(); // 查詢中
+    await waitFor(() => expect(result.current).toBe(true));
+  });
+
+  it("只有其他語言的 voice:false", async () => {
+    installSynth([{ lang: "en-US", name: "Alex", localService: true }]);
+    const { result } = renderHook(() => useJaVoiceAvailable(true));
+    // 等 hook 內的同一查詢完成(清單已載入:立即 resolve)後仍為 false
+    await act(() => loadJaVoice());
+    expect(result.current).toBe(false);
+  });
+
+  it("不支援語音 API:false", async () => {
+    vi.stubGlobal("speechSynthesis", undefined);
+    const { result } = renderHook(() => useJaVoiceAvailable(true));
+    await act(() => loadJaVoice());
+    expect(result.current).toBe(false);
+  });
+
+  it("設定讀取中為 undefined、關閉為 false,都不碰語音 API", () => {
+    const getVoices = installSynth();
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean | undefined }) => useJaVoiceAvailable(enabled),
+      { initialProps: { enabled: undefined as boolean | undefined } },
+    );
+    expect(result.current).toBeUndefined();
+    rerender({ enabled: false });
+    expect(result.current).toBe(false);
+    expect(getVoices).not.toHaveBeenCalled();
+  });
+
+  it("語音清單在逾時後才到且觸發 voiceschanged(Chrome/Android):重新判斷為 true", async () => {
+    vi.useFakeTimers();
+    try {
+      const voices: (typeof KYOKO)[] = [];
+      installSynth(voices);
+      const { result } = renderHook(() => useJaVoiceAvailable(true));
+      await act(() => vi.advanceTimersByTimeAsync(VOICE_TIMEOUT_MS));
+      expect(result.current).toBe(false); // 逾時:當下沒有日語 voice
+
+      voices.push(KYOKO);
+      await act(async () => {
+        window.speechSynthesis.dispatchEvent(new Event("voiceschanged"));
+      });
+      expect(result.current).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("語音清單晚到但不觸發事件(WebKit):recheckKey 改變時重掃;重掃期間不回到 undefined", async () => {
+    const voices: (typeof KYOKO)[] = [{ lang: "en-US", name: "Alex", localService: true }];
+    installSynth(voices);
+    const { result, rerender } = renderHook(
+      ({ key }: { key: string }) => useJaVoiceAvailable(true, key),
+      { initialProps: { key: "vocab" } },
+    );
+    await act(() => loadJaVoice());
+    expect(result.current).toBe(false);
+
+    voices.push(KYOKO);
+    rerender({ key: "dialogue" });
+    expect(result.current).toBe(false); // 重掃中:維持上次結果
+    await waitFor(() => expect(result.current).toBe(true));
+  });
+
+  it("卸載時取消訂閱 voiceschanged", async () => {
+    installSynth();
+    const remove = vi.spyOn(window.speechSynthesis, "removeEventListener");
+    const { unmount } = renderHook(() => useJaVoiceAvailable(true));
+    unmount();
+    expect(remove).toHaveBeenCalledWith("voiceschanged", expect.any(Function));
   });
 });

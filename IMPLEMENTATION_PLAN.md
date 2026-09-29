@@ -250,7 +250,7 @@
   做什麼:単語分頁加「遮住:無/中文/日文」分段按鈕(aria-pressed),被遮欄位改為可點擊揭示(button + aria-expanded),遮日文時保留發音鈕,提供「全部顯示/重新遮住」(只作用於目前篩出的字);詞性篩選 chips(全部/名詞/動詞/形容詞/其他),分組邏輯為純函式 `src/lib/vocabFilter.ts`;文型與会話分頁「隱藏中譯」開關(點句揭示)。狀態只在元件內(不新增 settings key)。
   驗收:vocabFilter 單元測試(13 種 PosEnum 全覆蓋);LessonDetail 測試(遮罩切換、點擊揭示、篩選、隱藏中譯);`pnpm verify` 全綠。
 
-- [ ] **T11.2 会話朗讀與角色扮演**(LC-04,F7.2)
+- [x] **T11.2 会話朗讀與角色扮演**(LC-04,F7.2)
   做什麼:文型例句與会話每句加發音鈕(`speechText` 清理);純函式 `src/lib/dialogue.ts`(`isTitleLine`、`speakersOf`、`buildPlayback(lines, {role})`);`tts.ts` 新增可取消的 `speakSequence`;会話分頁工具列「▶ 全部播放」(目前句高亮、可停止)與「扮演:[說話者]」(該角色台詞遮住、輪到時暫停等「下一句」)。標題行(L15/L23/L24/L41 的 D01)顯示為小標,不列入播放與扮演。TTS 關閉或無日語語音時隱藏播放功能。
   驗收:dialogue 測試(4 種標題寫法、扮演產生 wait);speakSequence mock 測試(串接、中途取消);LessonDetail 会話測試;`pnpm verify` 全綠。
 

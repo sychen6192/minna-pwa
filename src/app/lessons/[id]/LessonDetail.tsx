@@ -1,14 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Check, Eye, EyeOff, Plus } from "lucide-react";
+import { Check, Eye, EyeOff, Play, Plus, Square } from "lucide-react";
 import { Loading } from "@/components/Loading";
 import { PitchAccent, hasPitch } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { SpeakButton } from "@/components/SpeakButton";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { getLesson } from "@/lib/content";
+import { buildPlayback, isTitleLine, speakersOf, type PlaybackStep } from "@/lib/dialogue";
 import { jaLang } from "@/lib/lang";
 import { lessonTabHash, parseLessonHash, type LessonTab } from "@/lib/lessonHash";
 import { displayNote, isSupplementary, noteSection, type VocabSection } from "@/lib/notes";
@@ -21,8 +22,8 @@ import {
   setWordSuspended,
   suspendedWordIds,
 } from "@/lib/srs";
-import { speechText } from "@/lib/tts";
-import { useSetting, useTtsEnabled } from "@/lib/useSetting";
+import { speakSequence, speechText } from "@/lib/tts";
+import { useJaVoiceAvailable, useSetting, useTtsEnabled } from "@/lib/useSetting";
 import { cn } from "@/lib/utils";
 import { countByPosGroup, filterByPosGroup, POS_FILTERS, type PosFilter } from "@/lib/vocabFilter";
 import type { Lesson, Sentence } from "@/schemas/lesson";
@@ -87,6 +88,9 @@ export function LessonDetail({ id }: { id: number }) {
   const [furiganaOverride, setFuriganaOverride] = useState<FuriganaMode | null>(null);
   const furigana = furiganaOverride ?? globalFurigana ?? "show";
   const ttsEnabled = useTtsEnabled();
+  // 会話全部播放/扮演只靠語音運作:沒有日語 voice 時隱藏。在頁面層查詢(切到会話分頁時多已查好);
+  // 換分頁時重掃(語音清單晚到、又不觸發 voiceschanged 的引擎)
+  const jaVoice = useJaVoiceAvailable(ttsEnabled, tab);
   // 設定讀到後才渲染內容,避免先閃出 furigana / 發音鈕
   const ready = lesson !== null && globalFurigana !== undefined && ttsEnabled !== undefined;
   const [added, setAdded] = useState<Set<string>>(new Set());
@@ -95,10 +99,12 @@ export function LessonDetail({ id }: { id: number }) {
   const [cardStateLoaded, setCardStateLoaded] = useState(false);
   // 整課加入的結果(「已加入 N 字 · 開始複習 →」);未整課加入為 null
   const [addAllResult, setAddAllResult] = useState<AddAllResult | null>(null);
-  // 自我測驗(F7.1):遮罩、詞性篩選、隱藏中譯只存於本頁 state(不寫設定);切換分頁時保留
+  // 自我測驗(F7.1)與会話扮演(F7.2):遮罩、詞性篩選、隱藏中譯、扮演的說話者只存於本頁 state
+  // (不寫設定);切換分頁時保留
   const [mask, setMask] = useState<VocabMask>("none");
   const [posFilter, setPosFilter] = useState<PosFilter>("all");
   const [hideTranslations, setHideTranslations] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
   const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -349,18 +355,28 @@ export function LessonDetail({ id }: { id: number }) {
         <GrammarList
           lesson={lesson}
           furigana={furigana}
+          tts={ttsEnabled === true}
           hideTranslations={hideTranslations}
           onHideTranslationsChange={setHideTranslations}
         />
       )}
-      {tab === "dialogue" && (
-        <DialogueList
-          lesson={lesson}
-          furigana={furigana}
-          hideTranslations={hideTranslations}
-          onHideTranslationsChange={setHideTranslations}
-        />
-      )}
+      {tab === "dialogue" &&
+        (jaVoice === undefined ? (
+          // 第一次查詢日語 voice 中(直接開啟 #dialogue 且語音清單晚到):查好再渲染,
+          // 全部播放與扮演不會晚出現而把台詞往下推
+          <Loading />
+        ) : (
+          <DialogueList
+            lesson={lesson}
+            furigana={furigana}
+            tts={ttsEnabled === true}
+            canPlay={jaVoice}
+            hideTranslations={hideTranslations}
+            onHideTranslationsChange={setHideTranslations}
+            roleChoice={role}
+            onRoleChange={setRole}
+          />
+        ))}
     </div>
   );
 }
@@ -838,7 +854,7 @@ function VocabList({
   );
 }
 
-/** 「隱藏中譯」開關(文型、会話共用;F7.1):名稱固定,狀態由 aria-pressed 表示(同「假名」) */
+/** 「隱藏中譯」開關(文型、会話共用;F7.1):名稱固定,狀態由 aria-pressed 表示(同「假名」)。靠右(ml-auto) */
 function HideTranslationsToggle({
   hidden,
   onChange,
@@ -847,20 +863,23 @@ function HideTranslationsToggle({
   onChange: (hidden: boolean) => void;
 }) {
   return (
-    <div className="flex justify-end px-4 pt-2">
-      <Button
-        variant="outline"
-        size="sm"
-        aria-pressed={hidden}
-        onClick={() => onChange(!hidden)}
-        className={cn("gap-1.5", TOGGLE_BUTTON)}
-      >
-        {/* 圖示表示中譯目前看不看得到 */}
-        {hidden ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
-        隱藏中譯
-      </Button>
-    </div>
+    <Button
+      variant="outline"
+      size="sm"
+      aria-pressed={hidden}
+      onClick={() => onChange(!hidden)}
+      className={cn("ml-auto gap-1.5", TOGGLE_BUTTON)}
+    >
+      {/* 圖示表示中譯目前看不看得到 */}
+      {hidden ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+      隱藏中譯
+    </Button>
   );
+}
+
+/** 文型/会話分頁頂端的工具列(隱藏中譯;会話另有全部播放與扮演) */
+function Toolbar({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap items-center gap-2 px-4 pt-2">{children}</div>;
 }
 
 /** 例句/会話的中譯:隱藏中譯時改為點擊揭示 */
@@ -893,14 +912,75 @@ function Translation({
   );
 }
 
+/** 句子的朗讀文字:ruby 表面串接後清理教材記號(同複習頁例句) */
+function sentenceSpeech(s: Sentence): string {
+  return speechText(s.ruby.map((seg) => seg.b).join(""));
+}
+
+/**
+ * 例句/台詞的發音鈕(T11.2):排在文字欄右側(li 為 flex、gap-4),圖示與句子第一行(leading-ruby 35.2px)垂直置中。
+ * 44px 點擊區左右各延伸 14px,gap-4(16px)讓它不蓋到文字欄內的揭示鈕(中譯、台詞佔位、下一句)。
+ * `belowSpeaker`:句子上方有說話者列(text-xs 16px + mb-0.5)時下移對齊句子。
+ */
+function SentenceSpeakButton({
+  text,
+  ariaLabel,
+  belowSpeaker = false,
+}: {
+  text: string;
+  ariaLabel: string;
+  belowSpeaker?: boolean;
+}) {
+  return (
+    <SpeakButton
+      text={text}
+      ariaLabel={ariaLabel}
+      className={belowSpeaker ? "mt-3.5" : "-mt-1"}
+    />
+  );
+}
+
+/**
+ * 全部播放中目前句的停止鈕(F7.2):取代該句的發音鈕,位置與點擊區相同(SpeakButton 的圖示鈕)。
+ * 目前句會自動捲入畫面:長会話中工具列的「停止」捲出畫面時,也不必捲回頂端才能停止。
+ */
+function LineStopButton({
+  onStop,
+  belowSpeaker,
+}: {
+  onStop: (button: HTMLButtonElement) => void;
+  belowSpeaker: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label="停止播放"
+      onClick={(e) => onStop(e.currentTarget)}
+      className={buttonVariants({
+        variant: "ghost",
+        size: "icon",
+        className: cn(
+          "relative -m-3.5 font-normal text-link hover:bg-transparent active:bg-transparent",
+          belowSpeaker ? "mt-3.5" : "-mt-1",
+        ),
+      })}
+    >
+      <Square className="size-4 fill-current" aria-hidden />
+    </button>
+  );
+}
+
 function GrammarList({
   lesson,
   furigana,
+  tts,
   hideTranslations,
   onHideTranslationsChange,
 }: {
   lesson: Lesson;
   furigana: FuriganaMode;
+  /** 設定「TTS 發音」;false 時不渲染發音鈕 */
+  tts: boolean;
   hideTranslations: boolean;
   onHideTranslationsChange: (hidden: boolean) => void;
 }) {
@@ -914,7 +994,9 @@ function GrammarList({
   }
   return (
     <div>
-      <HideTranslationsToggle hidden={hideTranslations} onChange={setHidden} />
+      <Toolbar>
+        <HideTranslationsToggle hidden={hideTranslations} onChange={setHidden} />
+      </Toolbar>
       {lesson.grammar.map((g) => (
         <section
           key={g.id}
@@ -926,22 +1008,31 @@ function GrammarList({
           </h2>
           <p className="mt-1 text-sm text-foreground/70">{g.explanation}</p>
           <ul className="mt-2 space-y-2">
-            {g.examples.map((s) => (
-              <li key={s.id}>
-                {/* 行高足以容納 furigana:有無讀音的行距一致 */}
-                <div className="leading-ruby">
-                  <RubyText segments={s.ruby} furigana={furigana} />
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  <Translation
-                    sentence={s}
-                    hidden={hideTranslations}
-                    open={revealed.has(s.id)}
-                    onToggle={() => toggleRevealed(s.id)}
-                  />
-                </div>
-              </li>
-            ))}
+            {g.examples.map((s) => {
+              const spoken = sentenceSpeech(s);
+              return (
+                <li key={s.id} className="flex items-start gap-4">
+                  <div className="min-w-0 flex-1">
+                    {/* 行高足以容納 furigana:有無讀音的行距一致 */}
+                    <div className="leading-ruby">
+                      <RubyText segments={s.ruby} furigana={furigana} />
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <Translation
+                        sentence={s}
+                        hidden={hideTranslations}
+                        open={revealed.has(s.id)}
+                        onToggle={() => toggleRevealed(s.id)}
+                      />
+                    </div>
+                  </div>
+                  {tts && (
+                    // 名稱帶句子(同單字的「顯示中文:あそびます」):一課數十顆鈕在輔助技術的清單中可分辨
+                    <SentenceSpeakButton text={spoken} ariaLabel={`播放例句發音:${spoken}`} />
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ))}
@@ -949,49 +1040,422 @@ function GrammarList({
   );
 }
 
+/** 会話全部播放中的狀態(F7.2) */
+interface Playback {
+  steps: PlaybackStep[];
+  /** 目前步驟(高亮的台詞) */
+  index: number;
+  /** 停在扮演的台詞,等使用者說完按「下一句」 */
+  waiting: boolean;
+}
+
+/** 目前句捲入畫面時讓出底部導覽列(4rem + safe-area;頂端的分頁列由 ANCHOR_SCROLL_MARGIN 讓出) */
+const BOTTOM_SCROLL_MARGIN = "scroll-mb-[calc(4rem_+_env(safe-area-inset-bottom))]";
+
+/** 元素在視窗中看得到的範圍(視窗座標):扣掉它的 scroll-margin(黏在頂端的分頁列、固定的底部導覽列) */
+function visibleBounds(el: HTMLElement): { top: number; bottom: number } {
+  const style = getComputedStyle(el);
+  return {
+    top: parseFloat(style.scrollMarginTop) || 0,
+    bottom: window.innerHeight - (parseFloat(style.scrollMarginBottom) || 0),
+  };
+}
+
+/** 元素完全在看得到的範圍外 */
+function isOutOfView(el: HTMLElement): boolean {
+  const { top, bottom } = visibleBounds(el);
+  const rect = el.getBoundingClientRect();
+  return rect.bottom <= top || rect.top >= bottom;
+}
+
+/**
+ * 把元素捲入畫面、讓出它的 scroll-margin(黏在頂端的分頁列、固定的底部導覽列);已完整可見則不捲。
+ * 回傳是否捲動。不用 scrollIntoView({ block: "nearest" }):Chromium 只看元素本身是否在視窗內,
+ * 被底部導覽列擋住(元素仍在視窗內)時不會捲動。
+ */
+function scrollIntoViewNearest(el: HTMLElement, behavior: ScrollBehavior): boolean {
+  const { top, bottom } = visibleBounds(el);
+  const rect = el.getBoundingClientRect();
+  let delta = 0;
+  if (rect.top < top) delta = rect.top - top;
+  // 比可見範圍高時對齊上緣(先看到說話者與句首)
+  else if (rect.bottom > bottom) delta = Math.min(rect.bottom - bottom, rect.top - top);
+  if (delta === 0) return false;
+  window.scrollTo({ top: window.scrollY + delta, behavior });
+  return true;
+}
+
+/** 自動捲動後的這段時間內(平滑捲動可能仍在進行),上一句還沒捲入不算使用者捲離 */
+const AUTO_SCROLL_SETTLE_MS = 1000;
+
+/**
+ * 会話分頁(F7.2):逐句發音、全部播放(目前句高亮、可停止)與角色扮演。
+ * - 標題行(dialogue.ts isTitleLine)顯示為台詞上方的小標,不列入播放與扮演
+ * - 扮演:所選說話者的台詞以「顯示台詞」佔位遮住(可點擊偷看);播放到時暫停並顯示「下一句」,
+ *   使用者說完再按,該句揭示後繼續。重新播放或換角色時再遮住
+ * - 被遮台詞的中譯是開口的提示:沒有隱藏中譯時照常顯示(純文字);隱藏中譯時不顯示
+ *   (與其他句一樣看不到中譯;不另設點擊揭示,以免與佔位鈕的點擊區重疊),揭示台詞後同其他句可點擊揭示
+ * - 播放中目前句捲入畫面,其發音鈕換成停止鈕(工具列捲出畫面時也按得到);使用者把上一句捲出畫面
+ *   (往回看)時不再把畫面拉回,輪到扮演的台詞(要按「下一句」)仍會捲入
+ * - 全部播放與扮演只靠語音運作:TTS 關閉或沒有日語 voice 時整個隱藏(`canPlay`)
+ * - 播放狀態只在本元件:換分頁或離開頁面(卸載)即停止;扮演的說話者由頁面保存(換分頁保留)
+ */
 function DialogueList({
   lesson,
   furigana,
+  tts,
+  canPlay,
   hideTranslations,
   onHideTranslationsChange,
+  roleChoice,
+  onRoleChange,
 }: {
   lesson: Lesson;
   furigana: FuriganaMode;
+  /** 設定「TTS 發音」;false 時不渲染發音鈕 */
+  tts: boolean;
+  /** TTS 開啟且有日語 voice:顯示全部播放與扮演 */
+  canPlay: boolean;
   hideTranslations: boolean;
   onHideTranslationsChange: (hidden: boolean) => void;
+  /** 扮演的說話者(null = 不扮演) */
+  roleChoice: string | null;
+  onRoleChange: (speaker: string | null) => void;
 }) {
   const { revealed, setRevealed, toggleRevealed } = useRevealed();
   const setHidden = (hidden: boolean) => {
     onHideTranslationsChange(hidden);
     setRevealed(new Set());
   };
-  if (lesson.dialogues.length === 0) {
+  const dialogues = lesson.dialogues;
+  const speakers = useMemo(() => speakersOf(dialogues), [dialogues]);
+  const speech = useMemo(
+    () => new Map(dialogues.map((d) => [d.id, sentenceSpeech(d)])),
+    [dialogues],
+  );
+  // 扮演的說話者:不能播放時一併失效,不留下無法解除的遮罩
+  const role = canPlay ? roleChoice : null;
+  // 扮演時已揭示的台詞(按「下一句」或點擊佔位)
+  const [roleRevealed, setRoleRevealed] = useState<ReadonlySet<string>>(new Set());
+  const [playback, setPlayback] = useState<Playback | null>(null);
+  // 進行中的 speakSequence 的取消函式;runRef 每次開始/停止遞增,舊一輪的回呼一律忽略
+  const cancelRef = useRef<(() => void) | null>(null);
+  const runRef = useRef(0);
+  const playRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  const lineRefs = useRef(new Map<string, HTMLLIElement>());
+  // 以鍵盤揭示台詞時,佔位鈕消失後焦點交給同一句的下一顆鈕
+  const refocusLine = useRef<string | null>(null);
+  const roleLabelId = useId();
+
+  const stop = useCallback(() => {
+    runRef.current++;
+    cancelRef.current?.();
+    cancelRef.current = null;
+    setPlayback(null);
+  }, []);
+  // 卸載(換分頁、離開頁面)時停止播放
+  useEffect(() => stop, [stop]);
+
+  const currentId = playback ? playback.steps[playback.index].lineId : null;
+  const waiting = playback?.waiting === true;
+  // 上一次的目前句:判斷使用者是否已把畫面捲離播放位置
+  const prevCurrentRef = useRef<string | null>(null);
+  // 上一次自動捲動的時間(performance.now)
+  const autoScrollAtRef = useRef(Number.NEGATIVE_INFINITY);
+  // 目前句(含「下一句」鈕)捲入畫面,已在畫面內不捲;減少動態效果時不平滑捲動。
+  // 使用者把上一句捲出畫面(往回看前文)時不拉回;開始播放與輪到扮演的台詞一律捲。
+  // 剛自動捲動過(短句讀完時平滑捲動可能還沒把上一句捲入)不算捲離,否則會從此不再跟隨
+  useEffect(() => {
+    const prevId = prevCurrentRef.current;
+    prevCurrentRef.current = currentId;
+    const el = currentId === null ? undefined : lineRefs.current.get(currentId);
+    if (!el) return;
+    const prev = prevId === null || prevId === currentId ? undefined : lineRefs.current.get(prevId);
+    const settling = performance.now() - autoScrollAtRef.current < AUTO_SCROLL_SETTLE_MS;
+    if (!waiting && !settling && prev && isOutOfView(prev)) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    if (scrollIntoViewNearest(el, reduce ? "auto" : "smooth")) {
+      autoScrollAtRef.current = performance.now();
+    }
+  }, [currentId, waiting]);
+  // 停在扮演的台詞:焦點在播放鈕、上一次按「下一句」後停放的台詞列(或無焦點)時移到「下一句」,
+  // 鍵盤可直接繼續
+  useEffect(() => {
+    if (!waiting) return;
+    const active = document.activeElement;
+    if (
+      active === null ||
+      active === document.body ||
+      active === playRef.current ||
+      (active instanceof HTMLLIElement && [...lineRefs.current.values()].includes(active))
+    ) {
+      nextRef.current?.focus({ preventScroll: true });
+    }
+  }, [waiting, currentId]);
+  useEffect(() => {
+    const id = refocusLine.current;
+    if (id === null) return;
+    refocusLine.current = null;
+    lineRefs.current.get(id)?.querySelector<HTMLElement>("button")?.focus();
+  }, [roleRevealed]);
+
+  if (dialogues.length === 0) {
     return <Empty>本課沒有会話</Empty>;
   }
+
+  const title = isTitleLine(dialogues[0], 0) ? dialogues[0] : null;
+  const lines = title ? dialogues.slice(1) : dialogues;
+
+  // 從第 start 步播放:連續的 speak 一次交給 speakSequence;遇到 wait(扮演的台詞)停下等「下一句」
+  const run = (steps: PlaybackStep[], start: number, runId: number) => {
+    if (runId !== runRef.current) return;
+    cancelRef.current = null;
+    if (start >= steps.length) {
+      setPlayback(null);
+      return;
+    }
+    if (steps[start].action === "wait") {
+      setPlayback({ steps, index: start, waiting: true });
+      return;
+    }
+    let end = start;
+    while (end < steps.length && steps[end].action === "speak") end++;
+    setPlayback({ steps, index: start, waiting: false });
+    cancelRef.current = speakSequence(
+      steps.slice(start, end).map((step) => speech.get(step.lineId) ?? ""),
+      {
+        onStart: (i) => {
+          if (runId === runRef.current) setPlayback({ steps, index: start + i, waiting: false });
+        },
+        onEnd: (finished) => {
+          if (runId !== runRef.current) return;
+          if (finished) {
+            run(steps, end, runId);
+          } else {
+            // 被單句發音鈕等其他朗讀中斷、或引擎出錯:回到待機
+            cancelRef.current = null;
+            setPlayback(null);
+          }
+        },
+      },
+    );
+  };
+
+  const play = () => {
+    stop();
+    setRoleRevealed(new Set()); // 重新遮住扮演的台詞
+    run(buildPlayback(dialogues, { role }), 0, runRef.current);
+  };
+
+  const next = (button: HTMLButtonElement) => {
+    if (!playback?.waiting) return;
+    const { steps, index } = playback;
+    // 焦點在「下一句」上(鍵盤操作):它將消失,先停放在這句台詞列(不在按鈕上:再按 Enter
+    // 不會誤觸停止;列就在畫面內),下次暫停再移回「下一句」
+    if (document.activeElement === button) {
+      lineRefs.current.get(steps[index].lineId)?.focus({ preventScroll: true });
+    }
+    setRoleRevealed((prev) => new Set(prev).add(steps[index].lineId));
+    run(steps, index + 1, runRef.current);
+  };
+
+  const stopAtLine = (id: string, button: HTMLButtonElement) => {
+    // 鍵盤操作:停止鈕將換回發音鈕,焦點先停放在這句台詞列(不掉到 body)
+    if (document.activeElement === button) lineRefs.current.get(id)?.focus({ preventScroll: true });
+    stop();
+  };
+
+  const changeRole = (speaker: string) => {
+    stop();
+    onRoleChange(role === speaker ? null : speaker);
+    setRoleRevealed(new Set());
+  };
+
+  const revealLine = (id: string) => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && lineRefs.current.get(id)?.contains(active)) {
+      refocusLine.current = id;
+    }
+    setRoleRevealed((prev) => new Set(prev).add(id));
+  };
+
+  const playing = playback !== null;
+  const lastStep = playback !== null && playback.index === playback.steps.length - 1;
+
   return (
     <div>
-      <HideTranslationsToggle hidden={hideTranslations} onChange={setHidden} />
-      <ul className="px-4 py-2">
-        {lesson.dialogues.map((d) => (
-          <li key={d.id} className="py-2">
-            {d.speaker && (
-              <div lang="ja" className="mb-0.5 text-xs text-muted-foreground">
-                {d.speaker}
-              </div>
+      <Toolbar>
+        {canPlay && (
+          // 同一顆鈕切換播放/停止:按下後焦點留在原處
+          <Button
+            ref={playRef}
+            variant="outline"
+            size="sm"
+            onClick={playing ? stop : play}
+            className="gap-1.5 font-normal"
+          >
+            {playing ? (
+              <Square className="size-4" aria-hidden />
+            ) : (
+              <Play className="size-4" aria-hidden />
             )}
-            <div className="leading-ruby">
-              <RubyText segments={d.ruby} furigana={furigana} />
+            {playing ? "停止" : "全部播放"}
+          </Button>
+        )}
+        <HideTranslationsToggle hidden={hideTranslations} onChange={setHidden} />
+        {/* 扮演:aria-pressed 開關,再按一次取消(同一時間只扮演一位);w-full 排在播放列下方 */}
+        {canPlay && speakers.length > 0 && (
+          // 標籤與 chips 分欄:chips 換行時對齊第一顆,不縮到「扮演」下方;標籤行高同按鈕(44px)對齊第一列
+          <div role="group" aria-labelledby={roleLabelId} className="flex w-full items-start gap-1">
+            <span
+              id={roleLabelId}
+              className="mr-1 shrink-0 text-sm leading-11 text-muted-foreground"
+            >
+              扮演
+            </span>
+            <div className="flex min-w-0 flex-1 flex-wrap gap-1">
+              {speakers.map((speaker) => (
+                <button
+                  key={speaker}
+                  type="button"
+                  lang="ja"
+                  aria-pressed={role === speaker}
+                  onClick={() => changeRole(speaker)}
+                  className={buttonVariants({
+                    variant: "outline",
+                    size: "sm",
+                    className: cn("min-w-11", TOGGLE_BUTTON),
+                  })}
+                >
+                  {speaker}
+                </button>
+              ))}
             </div>
-            <div className="text-xs text-muted-foreground">
-              <Translation
-                sentence={d}
-                hidden={hideTranslations}
-                open={revealed.has(d.id)}
-                onToggle={() => toggleRevealed(d.id)}
-              />
-            </div>
-          </li>
-        ))}
+          </div>
+        )}
+      </Toolbar>
+      {/* 会話標題(L15/L23/L24/L41):台詞上方的小標,不是說話者的台詞 */}
+      {title && (
+        <div className="px-4 pt-3">
+          <h2 className="leading-ruby font-bold">
+            <RubyText segments={title.ruby} furigana={furigana} />
+          </h2>
+          <div className="text-xs text-muted-foreground">
+            <Translation
+              sentence={title}
+              hidden={hideTranslations}
+              open={revealed.has(title.id)}
+              onToggle={() => toggleRevealed(title.id)}
+            />
+          </div>
+        </div>
+      )}
+      <ul className="py-2">
+        {lines.map((d) => {
+          const isRole = role !== null && d.speaker?.trim() === role;
+          const masked = isRole && !roleRevealed.has(d.id);
+          const current = d.id === currentId;
+          return (
+            <li
+              key={d.id}
+              ref={(el) => {
+                if (el) lineRefs.current.set(d.id, el);
+                else lineRefs.current.delete(d.id);
+              }}
+              aria-current={current ? "step" : undefined}
+              // 按「下一句」後鍵盤焦點停放處(見 next);不在 Tab 順序內
+              tabIndex={-1}
+              className={cn(
+                ANCHOR_SCROLL_MARGIN,
+                BOTTOM_SCROLL_MARGIN,
+                "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                // 目前句高亮(同單字錨點):淡底 + 左側色條;減少動態效果時直接切換
+                "flex items-start gap-4 px-4 py-2 motion-safe:transition-[background-color,box-shadow] motion-safe:duration-300",
+                current && ANCHOR_HIGHLIGHT,
+              )}
+            >
+              <div className="min-w-0 flex-1">
+                {d.speaker && (
+                  <div className="mb-0.5 text-xs text-muted-foreground">
+                    <span lang="ja">{d.speaker}</span>
+                    {isRole && (
+                      <span className="ml-1.5 inline-block rounded bg-link/10 px-1.5 align-[0.0625em] text-[11px] leading-4 text-link">
+                        你
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="leading-ruby">
+                  {masked ? (
+                    // 點擊區往上延伸 16px 到說話者列(非互動文字),下方不延伸:不蓋到中譯與「下一句」
+                    <RevealButton
+                      open={false}
+                      onToggle={() => revealLine(d.id)}
+                      placeholder="顯示台詞"
+                      // 名稱帶看得到的中譯(「顯示台詞:謝謝你。」)以分辨各句;隱藏中譯時不帶(不從名稱洩漏)
+                      context={hideTranslations ? undefined : d.translation}
+                      className="-mt-4 pt-4"
+                      pillClassName="px-3 text-sm leading-7"
+                    >
+                      {null}
+                    </RevealButton>
+                  ) : (
+                    <RubyText segments={d.ruby} furigana={furigana} />
+                  )}
+                </div>
+                {masked ? (
+                  !hideTranslations && (
+                    <div className="text-xs text-muted-foreground">{d.translation}</div>
+                  )
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    <Translation
+                      sentence={d}
+                      hidden={hideTranslations}
+                      open={revealed.has(d.id)}
+                      onToggle={() => toggleRevealed(d.id)}
+                    />
+                  </div>
+                )}
+                {current && waiting && (
+                  // pt-2:與上方中譯(遮住時往下延伸 8px 的點擊區)不重疊
+                  <div className="pt-2">
+                    <Button
+                      ref={nextRef}
+                      size="sm"
+                      onClick={(e) => next(e.currentTarget)}
+                      className="gap-1.5"
+                    >
+                      {lastStep ? "完成" : "下一句"}
+                      {lastStep ? (
+                        <Check className="size-4" aria-hidden />
+                      ) : (
+                        <Play className="size-4" aria-hidden />
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {current ? (
+                <LineStopButton
+                  onStop={(button) => stopAtLine(d.id, button)}
+                  belowSpeaker={Boolean(d.speaker)}
+                />
+              ) : (
+                // 被遮的台詞不給發音鈕(會洩漏答案);揭示後可聽範讀
+                tts &&
+                !masked && (
+                  <SentenceSpeakButton
+                    text={speech.get(d.id) ?? ""}
+                    ariaLabel={d.speaker ? `播放 ${d.speaker} 的台詞` : "播放台詞發音"}
+                    belowSpeaker={Boolean(d.speaker)}
+                  />
+                )
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
