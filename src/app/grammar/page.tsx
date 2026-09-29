@@ -46,9 +46,9 @@ function load(): Promise<Loaded> {
 
 /** 徽章沿用課程頁分頁名(単語/文型 為日文用語,標 lang=ja;例句為中文) */
 const KIND_META: Record<SearchKind, { label: string; lang?: "ja"; cls: string }> = {
-  grammar: { label: "文型", lang: "ja", cls: "bg-sky-600/10 text-sky-700 dark:text-sky-400" },
-  example: { label: "例句", cls: "bg-violet-600/10 text-violet-700 dark:text-violet-400" },
-  vocab: { label: "単語", lang: "ja", cls: "bg-green-600/10 text-green-700 dark:text-green-400" },
+  grammar: { label: "文型", lang: "ja", cls: "bg-tag-grammar/10 text-tag-grammar" },
+  example: { label: "例句", cls: "bg-tag-example/10 text-tag-example" },
+  vocab: { label: "単語", lang: "ja", cls: "bg-tag-vocab/10 text-tag-vocab" },
 };
 
 function hitHref(h: SearchHit): string {
@@ -91,15 +91,15 @@ export default function GrammarPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           disabled={!data}
-          className="w-full rounded-lg border border-foreground/20 bg-background px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
         />
       </div>
 
       {error && (
-        <p className="px-4 py-8 text-center text-sm text-red-600">載入失敗:{error}</p>
+        <p className="px-4 py-8 text-center text-sm text-destructive">載入失敗:{error}</p>
       )}
       {!error && !data && (
-        <p className="px-4 py-8 text-center text-sm text-foreground/60">
+        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
           載入全部課程資料中…
         </p>
       )}
@@ -108,7 +108,7 @@ export default function GrammarPage() {
       {data && hits && (
         <ul aria-label="搜尋結果">
           {hits.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-foreground/60">
+            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
               找不到「{query}」的結果
             </p>
           )}
@@ -118,7 +118,7 @@ export default function GrammarPage() {
               <li key={`${h.kind}-${h.id}`}>
                 <Link
                   href={hitHref(h)}
-                  className="flex items-start gap-2 border-b border-foreground/10 px-4 py-3 transition-colors active:bg-foreground/5"
+                  className="flex items-start gap-2 border-b border-border px-4 py-3 transition-colors active:bg-muted"
                 >
                   <span
                     lang={meta.lang}
@@ -135,12 +135,12 @@ export default function GrammarPage() {
                       {h.title}
                     </span>
                     {h.snippet && (
-                      <span className="block truncate text-xs text-foreground/60">
+                      <span className="block truncate text-xs text-muted-foreground">
                         {h.snippet}
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 text-xs text-foreground/50">
+                  <span className="shrink-0 text-xs text-muted-foreground">
                     第 {h.lessonId} 課
                   </span>
                 </Link>
@@ -157,12 +157,12 @@ export default function GrammarPage() {
             <li key={g.id}>
               <Link
                 href={`/lessons/${g.lessonId}#${g.id}`}
-                className="flex items-center justify-between border-b border-foreground/10 px-4 py-3 transition-colors active:bg-foreground/5"
+                className="flex items-center justify-between border-b border-border px-4 py-3 transition-colors active:bg-muted"
               >
                 <span lang={jaLang(g.pattern)} className="min-w-0 truncate font-medium">
                   {g.pattern}
                 </span>
-                <span className="ml-3 shrink-0 text-xs text-foreground/50">
+                <span className="ml-3 shrink-0 text-xs text-muted-foreground">
                   第 {g.lessonId} 課
                 </span>
               </Link>

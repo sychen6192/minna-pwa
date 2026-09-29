@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PitchAccent } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { SpeakButton } from "@/components/SpeakButton";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { getLesson } from "@/lib/content";
 import { findExampleSentence } from "@/lib/examples";
 import { getSetting } from "@/lib/db";
@@ -105,7 +106,7 @@ export default function PracticePage() {
   if (phase === "error") {
     return (
       <Centered>
-        <span className="text-red-600">載入頑固卡失敗:{error}</span>
+        <span className="text-destructive">載入頑固卡失敗:{error}</span>
       </Centered>
     );
   }
@@ -113,11 +114,14 @@ export default function PracticePage() {
     return (
       <Centered>
         <p className="text-lg font-medium">目前沒有頑固卡 🎉</p>
-        <p className="mt-2 text-sm text-foreground/60">
+        <p className="mt-2 text-sm text-muted-foreground">
           複習中一再答錯(達 {LEECH_THRESHOLD} 次)的字會列為頑固卡,集中在這裡加強;記牢(穩定度達{" "}
           {MATURE_STABILITY} 天)後自動解除。
         </p>
-        <Link href="/" className="mt-4 text-sm text-sky-700 underline">
+        <Link
+          href="/"
+          className={buttonVariants({ variant: "link", className: "mt-1 px-3 text-sm" })}
+        >
           回首頁
         </Link>
       </Centered>
@@ -127,10 +131,13 @@ export default function PracticePage() {
     return (
       <Centered>
         <p className="text-lg font-medium">頑固卡練習完成 🎉</p>
-        <p className="mt-2 text-sm text-foreground/60">
+        <p className="mt-2 text-sm text-muted-foreground">
           本次過了 {items.length} 張;練習不影響複習排程,到期時仍會照常出現。
         </p>
-        <Link href="/" className="mt-4 text-sm text-sky-700 underline">
+        <Link
+          href="/"
+          className={buttonVariants({ variant: "link", className: "mt-1 px-3 text-sm" })}
+        >
           回首頁
         </Link>
       </Centered>
@@ -152,7 +159,7 @@ export default function PracticePage() {
     );
   return (
     <div className="flex min-h-[80vh] flex-col">
-      <div className="flex items-center justify-between px-4 py-2 text-xs text-foreground/60">
+      <div className="flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
         <span>頑固卡練習 · {isRev ? "中 → 日" : "日 → 中"}</span>
         <span>
           {index + 1} / {items.length}
@@ -169,7 +176,7 @@ export default function PracticePage() {
         {isRev ? (
           <div>
             <div className="text-2xl font-medium">{item.vocab.meaning}</div>
-            <div className="mt-1 text-xs text-foreground/60">
+            <div className="mt-1 text-xs text-muted-foreground">
               {item.vocab.pos}・第 {item.lessonId} 課
             </div>
           </div>
@@ -201,7 +208,7 @@ export default function PracticePage() {
             )}
             {/* 搭配提示;回想卡只在翻面後顯示 */}
             {note && <div className="text-sm text-foreground/70">{note}</div>}
-            <div className="text-xs text-foreground/60">
+            <div className="text-xs text-muted-foreground">
               {/* 回想卡題面已有詞性 */}
               {!isRev && `${item.vocab.pos}・`}
               <span lang={jaLang(item.lessonTitle)}>{item.lessonTitle}</span>・答錯 {item.lapses} 次
@@ -218,14 +225,14 @@ export default function PracticePage() {
             </div>
           )}
           {item.example && (
-            <div className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
+            <div className="rounded-lg border border-border bg-card p-3">
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1 text-sm">
                   {/* 行高足以容納 furigana:有無讀音的行距一致 */}
                   <div className="text-base leading-ruby">
                     <RubyText segments={item.example.ruby} furigana={furigana} />
                   </div>
-                  <p className="mt-1 text-xs text-foreground/60">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {item.example.translation}
                   </p>
                 </div>
@@ -243,15 +250,11 @@ export default function PracticePage() {
 
       <div className="px-4 pb-4">
         {flipped ? (
-          <button
-            type="button"
-            onClick={next}
-            className="w-full rounded-lg bg-sky-600 py-3 font-medium text-white transition-colors active:bg-sky-700"
-          >
+          <Button onClick={next} className="h-12 w-full">
             {index + 1 >= items.length ? "完成" : "下一張"}
-          </button>
+          </Button>
         ) : (
-          <p className="text-center text-sm text-foreground/60">點擊卡片顯示答案</p>
+          <p className="text-center text-sm text-muted-foreground">點擊卡片顯示答案</p>
         )}
       </div>
     </div>

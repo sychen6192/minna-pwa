@@ -230,7 +230,7 @@
   做什麼:`RubyText` 根元素 `lang="ja"`;PitchAccent 視覺層與降級文字加 `lang="ja"`,中文說明改 sr-only(不把 ja 掛在中文標籤上);課名、文型 pattern、会話說話者、分頁標籤等日文加 `lang="ja"`。globals.css 移除 Arial,定義 `--font-sans`(繁中系統字)與 `--font-jp`(Hiragino / Noto Sans JP / Yu Gothic 等系統字,不下載 web font),`:lang(ja)` 套用。`rt` 至少 10px;日文 `word-break: keep-all` + `overflow-wrap: anywhere`(依教材空格斷行);例句/会話行距一致。純假名字的單字列不重複顯示讀音(以 PitchAccent 取代標題)。pitch.ts 對 kana 內非假名字元(…、、)不計拍、原樣顯示。
   驗收:RubyText/PitchAccent 測試(lang、sr-only 文字)、pitchPattern('…ばい',0) 拍型、LessonDetail 純假名字只渲染一次;light/dark 截圖回歸;`pnpm verify` 全綠。
 
-- [ ] **T10.9 Design tokens、深色模式與對比**
+- [x] **T10.9 Design tokens、深色模式與對比**
   做什麼:globals.css 以 shadcn 命名建立語意 token(background/foreground/card/muted/muted-foreground/border/input/primary/link/success/warning/destructive/rating-*/pitch/heat-0..4),深色值放在 `@media (prefers-color-scheme: dark)`(不用 `.dark` class、不跑 `shadcn init`),`@theme inline` 映射為 Tailwind 色彩;`color-scheme: light dark`;themeColor 依配色。全站替換寫死的 bg-white/neutral-*/sky-*/text-foreground/50 等(stats、settings、PwaSetup、UpdatePrompt、Heatmap、Recharts 顏色與 Tooltip)。新增 shadcn 樣式 `src/components/ui/button.tsx`(`buttonVariants`,不含 asChild/radix)統一主/次/ghost 按鈕與 Link 按鈕。BottomNav active 態加顏色與指示條。所有文字對比 ≥ 4.5:1(兩種配色)。
   驗收:Button 測試;既有測試全綠;light/dark 截圖回歸(統計/設定無白塊);首頁 gzip JS 仍 < 200 KB;`pnpm verify` 全綠。
 

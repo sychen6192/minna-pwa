@@ -6,6 +6,7 @@ import { PitchAccent } from "@/components/PitchAccent";
 import { RatingButtons } from "@/components/RatingButtons";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { SpeakButton } from "@/components/SpeakButton";
+import { buttonVariants } from "@/components/ui/button";
 import { getLesson } from "@/lib/content";
 import { findExampleSentence } from "@/lib/examples";
 import { db, getSetting, type CardRow } from "@/lib/db";
@@ -66,9 +67,9 @@ async function loadEmptyInfo(now: number): Promise<EmptyInfo> {
 /** 「可在設定調整」:連到設定頁的每日新卡上限 */
 function SettingsHint({ prefix }: { prefix: string }) {
   return (
-    <p className="mt-2 text-sm text-foreground/60">
+    <p className="mt-2 text-sm text-muted-foreground">
       {prefix}可在
-      <Link href="/settings" className="text-sky-700 underline">
+      <Link href="/settings" className="text-link underline">
         設定
       </Link>
       調整
@@ -97,7 +98,7 @@ function NewCapMessage({ counts }: { counts: QueueCounts }) {
       {counts.newCapped > 0 ? (
         <SettingsHint prefix="明天繼續;" />
       ) : (
-        <p className="mt-2 text-sm text-foreground/60">明天繼續</p>
+        <p className="mt-2 text-sm text-muted-foreground">明天繼續</p>
       )}
     </>
   );
@@ -472,7 +473,7 @@ export default function ReviewPage() {
   if (phase === "error") {
     return (
       <Centered>
-        <span className="text-red-600">載入複習失敗:{error}</span>
+        <span className="text-destructive">載入複習失敗:{error}</span>
       </Centered>
     );
   }
@@ -482,8 +483,8 @@ export default function ReviewPage() {
       return (
         <Centered>
           <p className="text-lg font-medium">還沒有加入任何單字</p>
-          <p className="mt-2 text-sm text-foreground/60">從課程挑一課,把單字加入複習吧。</p>
-          <Link href="/lessons" className="mt-4 text-sm text-sky-700 underline">
+          <p className="mt-2 text-sm text-muted-foreground">從課程挑一課,把單字加入複習吧。</p>
+          <Link href="/lessons" className={buttonVariants({ className: "mt-4" })}>
             瀏覽課程
           </Link>
         </Centered>
@@ -496,10 +497,13 @@ export default function ReviewPage() {
         ) : (
           <p className="text-lg font-medium">今日複習完成 🎉</p>
         )}
-        <p className="mt-2 text-sm text-foreground/60">
+        <p className="mt-2 text-sm text-muted-foreground">
           明日到期:{tomorrowDue} 張
         </p>
-        <Link href="/" className="mt-4 text-sm text-sky-700 underline">
+        <Link
+          href="/"
+          className={buttonVariants({ variant: "link", className: "mt-1 px-3 text-sm" })}
+        >
           回首頁
         </Link>
       </Centered>
@@ -516,7 +520,7 @@ export default function ReviewPage() {
         </div>
         <h1 className="mt-2 text-center text-lg font-bold">本次複習結算</h1>
         <p className="mt-4 text-center text-3xl font-bold">{total}</p>
-        <p className="text-center text-sm text-foreground/60">張卡片</p>
+        <p className="text-center text-sm text-muted-foreground">張卡片</p>
         <dl className="mx-auto mt-6 max-w-xs space-y-1 text-sm">
           <Row label="重來" value={stats.again} />
           <Row label="困難" value={stats.hard} />
@@ -529,7 +533,7 @@ export default function ReviewPage() {
           <section className="mx-auto mt-6 max-w-xs">
             <h2 className="flex items-baseline justify-between text-sm font-medium">
               <span>本次答錯</span>
-              <span className="text-xs font-normal text-foreground/60">
+              <span className="text-xs font-normal text-muted-foreground">
                 重看 {session.relearnViews} 次
               </span>
             </h2>
@@ -537,7 +541,7 @@ export default function ReviewPage() {
               {missed.map((it) => (
                 <li
                   key={it.card.cardId}
-                  className="flex items-baseline justify-between gap-3 border-b border-foreground/10 py-1.5"
+                  className="flex items-baseline justify-between gap-3 border-b border-border py-1.5"
                 >
                   <RubyText segments={it.vocab.ruby} furigana={furigana} />
                   <span className="text-right text-foreground/70">{it.vocab.meaning}</span>
@@ -552,15 +556,12 @@ export default function ReviewPage() {
           </p>
         )}
         <div className="mt-6 flex flex-col items-center gap-1">
-          <Link
-            href="/"
-            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-sky-600 px-8 font-medium text-white transition-colors active:bg-sky-700"
-          >
+          <Link href="/" className={buttonVariants({ className: "px-8" })}>
             回首頁
           </Link>
           <Link
             href="/lessons"
-            className="inline-flex min-h-11 items-center px-3 text-sm text-sky-700 underline dark:text-sky-400"
+            className={buttonVariants({ variant: "link", className: "px-3 text-sm" })}
           >
             課程列表
           </Link>
@@ -585,13 +586,13 @@ export default function ReviewPage() {
     );
   return (
     <div className="flex min-h-[80vh] flex-col">
-      <div className="flex items-center justify-between px-4 py-2 text-xs text-foreground/60">
+      <div className="flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
-          <span className="rounded bg-foreground/5 px-1.5 py-0.5">
+          <span className="rounded bg-muted px-1.5 py-0.5">
             {isRev ? "中 → 日" : "日 → 中"}
           </span>
           {isRelearn && (
-            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-800 dark:text-amber-300">
+            <span className="rounded bg-warning-accent/15 px-1.5 py-0.5 font-medium text-warning">
               重看
             </span>
           )}
@@ -614,7 +615,7 @@ export default function ReviewPage() {
         {isRev ? (
           <div>
             <div className="text-2xl font-medium">{item.vocab.meaning}</div>
-            <div className="mt-1 text-xs text-foreground/60">
+            <div className="mt-1 text-xs text-muted-foreground">
               {item.vocab.pos}・第 {item.card.lessonId} 課
             </div>
           </div>
@@ -647,7 +648,7 @@ export default function ReviewPage() {
             {/* 搭配提示(〔電車に〜〕等);回想卡只在翻面後顯示,以免洩題 */}
             {note && <div className="text-sm text-foreground/70">{note}</div>}
             {!isRev && (
-              <div className="text-xs text-foreground/60">
+              <div className="text-xs text-muted-foreground">
                 {item.vocab.pos}・<span lang={jaLang(item.lessonTitle)}>{item.lessonTitle}</span>
               </div>
             )}
@@ -664,14 +665,14 @@ export default function ReviewPage() {
             </div>
           )}
           {item.example && (
-            <div className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
+            <div className="rounded-lg border border-border bg-card p-3">
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1 text-sm">
                   {/* 行高足以容納 furigana:有無讀音的行距一致 */}
                   <div className="text-base leading-ruby">
                     <RubyText segments={item.example.ruby} furigana={furigana} />
                   </div>
-                  <p className="mt-1 text-xs text-foreground/60">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {item.example.translation}
                   </p>
                 </div>
@@ -689,7 +690,7 @@ export default function ReviewPage() {
 
       <div className="pb-4">
         {!flipped ? (
-          <p className="text-center text-sm text-foreground/60">
+          <p className="text-center text-sm text-muted-foreground">
             點擊卡片或按空白鍵顯示答案
           </p>
         ) : isRelearn ? (
@@ -700,7 +701,7 @@ export default function ReviewPage() {
               onDone={() => void handleRelearn(false)}
               disabled={busy}
             />
-            <p className="mt-2 text-center text-xs text-foreground/60">
+            <p className="mt-2 text-center text-xs text-muted-foreground">
               重看只為加深印象,不計分、不影響排程
             </p>
           </>
@@ -717,7 +718,7 @@ export default function ReviewPage() {
                 type="button"
                 onClick={() => void handleSkip()}
                 disabled={busy}
-                className="min-h-11 px-4 text-sm text-foreground/60 underline disabled:opacity-40"
+                className="min-h-11 px-4 text-sm text-muted-foreground underline disabled:opacity-40"
               >
                 已會·略過
               </button>
@@ -736,7 +737,7 @@ function UndoButton({ onClick, disabled }: { onClick: () => void; disabled: bool
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="-my-3 inline-flex min-h-11 items-center gap-1 rounded px-2 text-sm text-sky-700 disabled:opacity-40 dark:text-sky-400"
+      className="-my-3 inline-flex min-h-11 items-center gap-1 rounded px-2 text-sm text-link disabled:opacity-40"
     >
       <span aria-hidden="true">↶</span>復原
     </button>
@@ -756,17 +757,17 @@ function RelearnButtons({
   disabled: boolean;
 }) {
   const base =
-    "flex flex-col items-center gap-0.5 rounded border border-foreground/15 py-3 disabled:opacity-40";
+    "flex flex-col items-center gap-0.5 rounded border border-input py-3 disabled:opacity-40";
   return (
     <div className="grid grid-cols-2 gap-2 px-4">
       <button
         type="button"
         onClick={onAgain}
         disabled={disabled}
-        className={cn(base, "text-red-600 dark:text-red-400")}
+        className={cn(base, "text-rating-again")}
       >
         <span className="text-sm font-medium">{last ? "還不熟,明天再練" : "還不熟,再一次"}</span>
-        <span aria-hidden="true" className="text-[10px] text-foreground/60">
+        <span aria-hidden="true" className="text-[10px] text-muted-foreground">
           1
         </span>
       </button>
@@ -774,10 +775,10 @@ function RelearnButtons({
         type="button"
         onClick={onDone}
         disabled={disabled}
-        className={cn(base, "text-green-700 dark:text-green-400")}
+        className={cn(base, "text-rating-good")}
       >
         <span className="text-sm font-medium">記住了</span>
-        <span aria-hidden="true" className="text-[10px] text-foreground/60">
+        <span aria-hidden="true" className="text-[10px] text-muted-foreground">
           3
         </span>
       </button>
@@ -795,8 +796,8 @@ function Centered({ children }: { children: React.ReactNode }) {
 
 function Row({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="flex justify-between border-b border-foreground/10 py-1">
-      <dt className="text-foreground/60">{label}</dt>
+    <div className="flex justify-between border-b border-border py-1">
+      <dt className="text-muted-foreground">{label}</dt>
       <dd>{value}</dd>
     </div>
   );

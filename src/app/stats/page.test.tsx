@@ -133,4 +133,23 @@ describe("StatsPage", () => {
     // L1:已加入 2、已學會 1
     expect(screen.getByTitle("已加入 2/10,已學會 1")).toBeInTheDocument();
   });
+
+  it("各課進度圖例以色塊對應兩段進度條,不以「淺色/深色」描述(深色模式明暗相反)", async () => {
+    await db.cards.add(card());
+    await db.logs.add(log());
+
+    render(<StatsPage />);
+
+    const caption = await screen.findByText(/已加入複習/);
+    expect(caption).not.toHaveTextContent(/淺色|深色/);
+    const swatches = Array.from(caption.querySelectorAll("[aria-hidden] > span"));
+    const segments = Array.from(
+      screen.getByTitle("已加入 1/10,已學會 1").children,
+    );
+    // 色塊與進度條兩段(已加入、已學會)使用同一色彩 class
+    const colour = (el: Element) =>
+      Array.from(el.classList).find((c) => c.startsWith("bg-"));
+    expect(swatches.map(colour)).toEqual(segments.map(colour));
+    expect(swatches.map(colour)).toEqual(["bg-chart-1/30", "bg-chart-1"]);
+  });
 });

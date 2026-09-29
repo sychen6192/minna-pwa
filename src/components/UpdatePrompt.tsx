@@ -2,6 +2,7 @@
 
 import type { Serwist } from "@serwist/window";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 declare global {
   interface Window {
@@ -63,23 +64,20 @@ export function UpdatePrompt({
       aria-label="更新提示"
       className="fixed inset-x-0 bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-50 mx-auto max-w-screen-sm px-4 pb-2"
     >
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
-        <p className="text-sm text-neutral-800">新版本已就緒。</p>
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-lg">
+        <p className="text-sm">新版本已就緒。</p>
         <div className="flex shrink-0 gap-1">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setUpdateReady(false)}
-            className="rounded px-3 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
+            className="font-normal text-muted-foreground"
           >
             稍後
-          </button>
-          <button
-            type="button"
-            onClick={applyUpdate}
-            className="rounded bg-sky-700 px-3 py-1 text-sm font-medium text-white hover:bg-sky-800"
-          >
+          </Button>
+          <Button size="sm" onClick={applyUpdate}>
             立即更新
-          </button>
+          </Button>
         </div>
       </div>
     </section>

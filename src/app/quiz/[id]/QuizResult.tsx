@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { requeueWrong, type RequeueResult } from "@/lib/srs";
 import type { QuizCandidate } from "@/lib/quiz";
 
@@ -72,24 +73,25 @@ export function QuizResult({
       </p>
 
       {wrong.length === 0 ? (
-        <p className="mt-6 text-center text-sm text-green-700">全部答對 🎉</p>
+        <p className="mt-6 text-center text-sm text-success">全部答對 🎉</p>
       ) : (
         <>
           <div className="mt-6">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-medium">錯題({wrong.length})</h2>
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => void addWrongToReview()}
                 disabled={busy || outcome !== null}
-                className="rounded border border-foreground/20 px-3 py-1 text-xs disabled:opacity-40"
+                className="font-normal"
               >
                 {outcome === null
                   ? "錯題加入複習"
                   : requeueChanged(outcome)
                     ? "已加入複習"
                     : "已在複習中"}
-              </button>
+              </Button>
             </div>
             {/* live region 先掛載、結果出來再填入,螢幕閱讀器才會播報 */}
             <div
@@ -100,19 +102,19 @@ export function QuizResult({
                 <div className="mb-2">
                   <p>{describeRequeue(outcome)}</p>
                   {outcome.tomorrow > 0 && (
-                    <p className="mt-0.5 text-foreground/60">
+                    <p className="mt-0.5 text-muted-foreground">
                       今天已複習過的字,明天再出現
                     </p>
                   )}
                   {outcome.created + outcome.pendingNew > 0 && (
-                    <p className="mt-0.5 text-foreground/60">
+                    <p className="mt-0.5 text-muted-foreground">
                       新卡依每日新卡上限陸續出現
                     </p>
                   )}
                 </div>
               )}
             </div>
-            <ul className="divide-y divide-foreground/10 border-y border-foreground/10">
+            <ul className="divide-y divide-border border-y border-border">
               {wrong.map((r) => (
                 <li
                   key={r.card.id}
@@ -121,7 +123,7 @@ export function QuizResult({
                   <span className="text-lg">
                     <RubyText segments={r.card.ruby} furigana={furigana} />
                   </span>
-                  <span className="text-sm text-foreground/60">
+                  <span className="text-sm text-muted-foreground">
                     {r.card.meaning}
                   </span>
                 </li>
@@ -134,18 +136,14 @@ export function QuizResult({
       <div className="mt-8 flex flex-col items-center gap-1">
         <div className="flex w-full max-w-xs gap-2">
           {onRestart && (
-            <button
-              type="button"
-              onClick={onRestart}
-              className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-foreground/20 px-4 font-medium"
-            >
+            <Button variant="outline" onClick={onRestart} className="flex-1 px-4">
               再測一次
-            </button>
+            </Button>
           )}
           {lessonId < LAST_LESSON && (
             <Link
               href={`/quiz/${lessonId + 1}`}
-              className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-sky-600 px-4 font-medium text-white transition-colors active:bg-sky-700"
+              className={buttonVariants({ className: "flex-1 px-4" })}
             >
               下一課測驗 →
             </Link>
@@ -153,7 +151,7 @@ export function QuizResult({
         </div>
         <Link
           href={`/lessons/${lessonId}`}
-          className="inline-flex min-h-11 items-center px-3 text-sm text-sky-700 underline dark:text-sky-400"
+          className={buttonVariants({ variant: "link", className: "px-3 text-sm" })}
         >
           回課程
         </Link>

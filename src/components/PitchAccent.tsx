@@ -110,8 +110,8 @@ export function PitchAccent({
                         data-drop={m.dropAfter ? "" : undefined}
                         className={cn(
                           "border-t-2 border-t-transparent",
-                          m.high && "border-t-red-600",
-                          m.dropAfter && "border-r-2 border-r-red-600",
+                          m.high && "border-t-pitch",
+                          m.dropAfter && "border-r-2 border-r-pitch",
                         )}
                       >
                         {m.text}
@@ -119,7 +119,7 @@ export function PitchAccent({
                     )}
                     {/* 平板型:尾端延伸線表示「後接助詞仍為高」,與尾高型視覺區隔 */}
                     {accent === 0 && i === lastMora && (
-                      <span data-tail className="w-1.5 self-stretch border-t-2 border-t-red-600" />
+                      <span data-tail className="w-1.5 self-stretch border-t-2 border-t-pitch" />
                     )}
                   </Fragment>
                 ));
@@ -135,7 +135,7 @@ export function PitchAccent({
               {w === words.length - 1 && (
                 <span
                   data-badge
-                  className="ml-1 self-center text-[0.7em] tabular-nums text-foreground/50"
+                  className="ml-1 self-center text-[0.7em] tabular-nums text-muted-foreground"
                 >
                   [{accent}]
                 </span>

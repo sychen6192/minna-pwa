@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { getSetting, setSetting } from "@/lib/db";
 import { ensurePersistentStorage, getDisplayMode, isIOS } from "@/lib/pwa";
 
@@ -37,8 +38,8 @@ export function PwaSetup() {
       aria-label="安裝提示"
       className="fixed inset-x-0 bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-50 mx-auto max-w-screen-sm px-4 pb-2"
     >
-      <div className="rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
-        <p className="text-sm leading-relaxed text-neutral-800">
+      <div className="rounded-lg border border-border bg-card p-3 shadow-lg">
+        <p className="text-sm leading-relaxed">
           {prompt === "ios" ? (
             <>
               安裝到主畫面:點 Safari 的<strong>分享</strong>按鈕,選「
@@ -52,13 +53,9 @@ export function PwaSetup() {
           )}
         </p>
         <div className="mt-2 text-right">
-          <button
-            type="button"
-            onClick={dismiss}
-            className="rounded px-3 py-1 text-sm font-medium text-sky-700 hover:bg-sky-50"
-          >
+          <Button variant="ghost" size="sm" onClick={dismiss} className="text-link">
             知道了
-          </button>
+          </Button>
         </div>
       </div>
     </section>

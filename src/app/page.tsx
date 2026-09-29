@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button";
 import type { QueueCounts } from "@/lib/srs";
 import type { GoalProgress, StudySummary } from "@/lib/stats";
 
@@ -64,30 +65,30 @@ function StreakGoalCard({
 }) {
   const pct = goal > 0 ? Math.min(100, Math.round((todayCount / goal) * 100)) : 100;
   return (
-    <section className="rounded-xl border border-foreground/10 p-4">
+    <section className="rounded-xl border border-border bg-card p-4">
       <div className="flex items-end justify-between">
         <div>
           <div className="text-2xl font-bold tabular-nums">🔥 {streak}</div>
-          <div className="text-xs text-foreground/60">連續學習天數</div>
+          <div className="text-xs text-muted-foreground">連續學習天數</div>
         </div>
         <div className="text-right">
           <div className="text-sm tabular-nums">
             <span className="font-bold">{todayCount}</span>
-            <span className="text-foreground/60"> / {goal}</span>
+            <span className="text-muted-foreground"> / {goal}</span>
           </div>
-          <div className="text-xs text-foreground/60">
+          <div className="text-xs text-muted-foreground">
             今日目標{goal < dailyGoal && `(依今日佇列調整,原設定 ${dailyGoal})`}
           </div>
         </div>
       </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-foreground/10">
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
         <div
-          className={met ? "h-full rounded-full bg-green-600" : "h-full rounded-full bg-sky-600"}
+          className={met ? "h-full rounded-full bg-success" : "h-full rounded-full bg-primary"}
           style={{ width: `${pct}%` }}
         />
       </div>
       {met && (
-        <p className="mt-2 text-xs text-green-700 dark:text-green-400">
+        <p className="mt-2 text-xs text-success">
           {cleared ? "今日佇列已清空 ✓" : "今日目標已達成 🎉"}
         </p>
       )}
@@ -109,13 +110,10 @@ function capNote(queue: QueueCounts): string | null {
 function HeroCard({ queue, hasCards }: { queue: QueueCounts; hasCards: boolean }) {
   if (!hasCards) {
     return (
-      <section className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-6 text-center">
+      <section className="rounded-xl border border-border bg-card p-6 text-center">
         <p className="text-base font-medium">還沒有加入任何單字</p>
-        <p className="mt-1 text-sm text-foreground/60">從課程挑一課,把單字加入複習吧。</p>
-        <Link
-          href="/lessons"
-          className="mt-4 inline-flex items-center justify-center rounded-lg bg-sky-600 px-5 py-2.5 font-medium text-white transition-colors active:bg-sky-700"
-        >
+        <p className="mt-1 text-sm text-muted-foreground">從課程挑一課,把單字加入複習吧。</p>
+        <Link href="/lessons" className={buttonVariants({ className: "mt-4" })}>
           瀏覽課程
         </Link>
       </section>
@@ -126,14 +124,17 @@ function HeroCard({ queue, hasCards }: { queue: QueueCounts; hasCards: boolean }
   if (total === 0) {
     const note = capNote(queue);
     return (
-      <section className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-6 text-center">
+      <section className="rounded-xl border border-border bg-card p-6 text-center">
         <p className="text-lg font-medium">今日任務完成 🎉</p>
         {note ? (
-          <p className="mt-1 text-sm text-foreground/60">{note}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{note}</p>
         ) : (
           <>
-            <p className="mt-1 text-sm text-foreground/60">要不要去課程加入新單字?</p>
-            <Link href="/lessons" className="mt-4 inline-block text-sm text-sky-700 underline">
+            <p className="mt-1 text-sm text-muted-foreground">要不要去課程加入新單字?</p>
+            <Link
+              href="/lessons"
+              className={buttonVariants({ variant: "link", className: "mt-1 px-3 text-sm" })}
+            >
               瀏覽課程
             </Link>
           </>
@@ -143,16 +144,13 @@ function HeroCard({ queue, hasCards }: { queue: QueueCounts; hasCards: boolean }
   }
 
   return (
-    <section className="rounded-xl border border-sky-600/20 bg-sky-600/[0.06] p-6 text-center">
-      <p className="text-sm text-foreground/60">今日待複習</p>
-      <p className="mt-1 text-5xl font-bold tabular-nums text-sky-700">{total}</p>
-      <p className="mt-1 text-sm text-foreground/60">
+    <section className="rounded-xl border border-primary/20 bg-primary/[0.06] p-6 text-center">
+      <p className="text-sm text-muted-foreground">今日待複習</p>
+      <p className="mt-1 text-5xl font-bold tabular-nums text-link">{total}</p>
+      <p className="mt-1 text-sm text-muted-foreground">
         複習 {queue.due} · 新卡 {queue.fresh}
       </p>
-      <Link
-        href="/review"
-        className="mt-4 inline-flex items-center justify-center rounded-lg bg-sky-600 px-6 py-2.5 font-medium text-white transition-colors active:bg-sky-700"
-      >
+      <Link href="/review" className={buttonVariants({ className: "mt-4 px-6" })}>
         開始複習
       </Link>
     </section>
@@ -163,7 +161,7 @@ function QuickLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="flex items-center justify-center rounded-lg border border-foreground/10 py-3 text-sm font-medium transition-colors active:bg-foreground/5"
+      className="flex items-center justify-center rounded-lg border border-border bg-card py-3 text-sm font-medium transition-colors active:bg-muted"
     >
       {label}
     </Link>
@@ -220,15 +218,15 @@ export default function Home() {
         <h1 lang="ja" className="text-2xl font-bold">
           みんなの日本語
         </h1>
-        <p className="mt-1 text-sm text-foreground/60">《大家的日本語》初級 I・II</p>
+        <p className="mt-1 text-sm text-muted-foreground">《大家的日本語》初級 I・II</p>
       </header>
 
       {phase === "error" && (
-        <p className="py-8 text-center text-sm text-red-600">載入失敗:{error}</p>
+        <p className="py-8 text-center text-sm text-destructive">載入失敗:{error}</p>
       )}
 
       {phase === "loading" && (
-        <p className="py-8 text-center text-sm text-foreground/60">載入中…</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">載入中…</p>
       )}
 
       {phase === "ready" && data && (
@@ -247,29 +245,29 @@ export default function Home() {
           {data.leeches > 0 && (
             <Link
               href="/practice"
-              className="flex items-center justify-between rounded-xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 transition-colors active:bg-amber-500/[0.15]"
+              className="flex items-center justify-between rounded-xl border border-warning-accent/30 bg-warning-accent/[0.08] px-4 py-3 transition-colors active:bg-warning-accent/15"
             >
               <div>
-                <div className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                <div className="text-sm font-medium text-warning">
                   {data.leeches} 張頑固卡需要加強
                 </div>
-                <div className="text-xs text-foreground/60">一再答錯的字,點此集中練習</div>
+                <div className="text-xs text-muted-foreground">一再答錯的字,點此集中練習</div>
               </div>
-              <span aria-hidden className="text-amber-700 dark:text-amber-400">
+              <span aria-hidden className="text-warning">
                 →
               </span>
             </Link>
           )}
 
-          <section className="rounded-xl border border-foreground/10 p-4">
+          <section className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-foreground/60">已開始課程</span>
+              <span className="text-muted-foreground">已開始課程</span>
               <span className="font-medium tabular-nums">
                 {data.summary.startedLessons} / {data.summary.totalLessons} 課
               </span>
             </div>
             <div className="mt-2 flex items-center justify-between text-sm">
-              <span className="text-foreground/60">累計單字</span>
+              <span className="text-muted-foreground">累計單字</span>
               <span className="font-medium tabular-nums">{data.summary.totalWords} 字</span>
             </div>
           </section>

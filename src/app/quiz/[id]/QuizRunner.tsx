@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
+import { Button } from "@/components/ui/button";
 import { getLesson } from "@/lib/content";
 import { getSetting } from "@/lib/db";
 import { displayNote } from "@/lib/notes";
@@ -74,7 +75,7 @@ export function QuizRunner({ id }: { id: number }) {
   if (phase === "error")
     return (
       <Centered>
-        <span className="text-red-600">載入測驗失敗:{error}</span>
+        <span className="text-destructive">載入測驗失敗:{error}</span>
       </Centered>
     );
 
@@ -139,12 +140,12 @@ export function QuizRunner({ id }: { id: number }) {
     <div className="flex min-h-[80vh] flex-col">
       {/* 進度 */}
       <div className="px-4 py-2">
-        <div className="text-center text-xs text-foreground/60">
+        <div className="text-center text-xs text-muted-foreground">
           第 {index + 1} / {questions.length} 題
         </div>
-        <div className="mt-1 h-1 w-full rounded bg-foreground/10">
+        <div className="mt-1 h-1 w-full rounded bg-muted">
           <div
-            className="h-1 rounded bg-foreground/60 transition-all"
+            className="h-1 rounded bg-muted-foreground transition-all"
             style={{ width: `${(index / questions.length) * 100}%` }}
           />
         </div>
@@ -190,8 +191,8 @@ export function QuizRunner({ id }: { id: number }) {
             <p
               className={
                 lastCorrect
-                  ? "font-medium text-green-700"
-                  : "font-medium text-red-600"
+                  ? "font-medium text-success"
+                  : "font-medium text-destructive"
               }
             >
               {lastCorrect ? (
@@ -208,14 +209,9 @@ export function QuizRunner({ id }: { id: number }) {
       </div>
 
       <div className="px-4 pb-4">
-        <button
-          type="button"
-          onClick={next}
-          disabled={!answered}
-          className="w-full rounded bg-foreground py-3 text-background disabled:opacity-30"
-        >
+        <Button onClick={next} disabled={!answered} className="h-12 w-full">
           {index + 1 >= questions.length ? "看結果" : "下一題"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -252,10 +248,10 @@ function McqOptions({
               className={
                 "w-full rounded border px-4 py-3 text-left disabled:opacity-100 " +
                 (state === "correct"
-                  ? "border-green-500 bg-green-500/10"
+                  ? "border-success bg-success/10"
                   : state === "wrong"
-                    ? "border-red-500 bg-red-500/10"
-                    : "border-foreground/15")
+                    ? "border-destructive bg-destructive/10"
+                    : "border-input")
               }
             >
               {question.type === "jp-to-zh" ? (
@@ -296,20 +292,21 @@ function InputArea({
         value={value}
         disabled={checked}
         onChange={(e) => onChange(e.target.value)}
-        className="flex-1 rounded border border-foreground/20 px-3 py-2"
+        className="flex-1 rounded border border-input bg-transparent px-3 py-2"
         autoComplete="off"
         // 羅馬字作答:避免行動鍵盤自動大寫/自動校正把 koohii 改成別的字
         autoCapitalize="none"
         autoCorrect="off"
         spellCheck={false}
       />
-      <button
+      <Button
         type="submit"
+        variant="outline"
         disabled={checked || value.trim() === ""}
-        className="rounded border border-foreground/20 px-4 disabled:opacity-30"
+        className="h-auto px-4 font-normal"
       >
         作答
-      </button>
+      </Button>
     </form>
   );
 }

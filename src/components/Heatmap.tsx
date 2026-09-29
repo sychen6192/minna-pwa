@@ -1,16 +1,11 @@
 import type { DayCount } from "@/lib/stats";
 
-// 順序色階:單一色相(sky)由淺到深;層級 0 為中性底(無活動)。
+// 順序色階:單一色相(sky),活動越多越顯眼;層級 0 為中性底(無活動)。
+// 色值為 globals.css 的 --heat-0..4 token:淺色 sky-200→800,深色反轉為 sky-800→200。
 // 淺步對白底對比不足屬熱力圖天性,以每格 title tooltip 補救(dataviz 規範)。
 // 注意:此為「圖形」色階(非文字),維持 validator 驗過的等距 ramp,
 // 不隨文字對比度修正調整(文字級 sky-600→700 的批次替換不適用於此)
-const LEVEL_CLASSES = [
-  "bg-neutral-100",
-  "bg-sky-200",
-  "bg-sky-400",
-  "bg-sky-600",
-  "bg-sky-800",
-] as const;
+const LEVEL_CLASSES = ["bg-heat-0", "bg-heat-1", "bg-heat-2", "bg-heat-3", "bg-heat-4"] as const;
 
 /** 固定分級:0 / 1–4 / 5–9 / 10–19 / 20+ */
 export function heatLevel(count: number): 0 | 1 | 2 | 3 | 4 {

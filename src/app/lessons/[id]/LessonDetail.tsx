@@ -110,7 +110,7 @@ export function LessonDetail({ id }: { id: number }) {
 
   if (error) {
     return (
-      <p className="px-4 py-8 text-center text-sm text-red-600">
+      <p className="px-4 py-8 text-center text-sm text-destructive">
         載入課程失敗:{error}
       </p>
     );
@@ -118,7 +118,7 @@ export function LessonDetail({ id }: { id: number }) {
 
   if (!lesson || !ready) {
     return (
-      <p className="px-4 py-8 text-center text-sm text-foreground/60">
+      <p className="px-4 py-8 text-center text-sm text-muted-foreground">
         載入中…
       </p>
     );
@@ -128,7 +128,7 @@ export function LessonDetail({ id }: { id: number }) {
     <div>
       <header className="flex items-start justify-between px-4 py-3">
         <div className="min-w-0">
-          <div className="text-xs text-foreground/60">第 {lesson.id} 課</div>
+          <div className="text-xs text-muted-foreground">第 {lesson.id} 課</div>
           <h1 lang={jaLang(lesson.title)} className="text-lg font-bold">
             {lesson.title}
           </h1>
@@ -137,13 +137,13 @@ export function LessonDetail({ id }: { id: number }) {
           type="button"
           aria-pressed={furigana === "show"}
           onClick={() => setFuriganaOverride(furigana === "show" ? "hide" : "show")}
-          className="ml-3 shrink-0 rounded border border-foreground/20 px-2 py-1 text-xs"
+          className="ml-3 shrink-0 rounded border border-input px-2 py-1 text-xs"
         >
           {furigana === "show" ? "隱藏假名" : "顯示假名"}
         </button>
       </header>
 
-      <div role="tablist" className="flex border-b border-foreground/10">
+      <div role="tablist" className="flex border-b border-border">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
@@ -156,7 +156,7 @@ export function LessonDetail({ id }: { id: number }) {
               "flex-1 py-2 text-sm transition-colors",
               tab === key
                 ? "border-b-2 border-foreground font-medium"
-                : "text-foreground/60",
+                : "text-muted-foreground",
             )}
           >
             {label}
@@ -212,7 +212,7 @@ function VocabList({
           type="button"
           onClick={onAddAll}
           disabled={allAdded}
-          className="rounded border border-foreground/20 px-3 py-1 text-xs disabled:opacity-40"
+          className="rounded border border-input px-3 py-1 text-xs disabled:opacity-40"
         >
           {allAdded ? "整課已加入" : "整課加入複習"}
         </button>
@@ -226,7 +226,7 @@ function VocabList({
           // 純假名字:重音標記本身就是標題,不再重複列一份相同的假名
           const pitchHead = kanaHeadword(v);
           return (
-            <li key={v.id} className="border-b border-foreground/10 px-4 py-3">
+            <li key={v.id} className="border-b border-border px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="flex flex-wrap items-center gap-2 text-lg">
                   {pitchHead !== null ? (
@@ -239,7 +239,7 @@ function VocabList({
                       type="button"
                       aria-label={`播放 ${spoken} 的發音`}
                       onClick={() => speak(spoken)}
-                      className="shrink-0 text-foreground/60 transition-colors active:text-foreground"
+                      className="shrink-0 text-muted-foreground transition-colors active:text-foreground"
                     >
                       <Volume2 className="size-4" aria-hidden />
                     </button>
@@ -253,13 +253,13 @@ function VocabList({
                   )}
                 </span>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="text-xs text-foreground/60">{v.pos}</span>
+                  <span className="text-xs text-muted-foreground">{v.pos}</span>
                   {!isAdded ? (
                     <button
                       type="button"
                       aria-label={`加入複習:${v.kana}`}
                       onClick={() => onAddOne(v.id)}
-                      className="text-foreground/60 transition-colors active:text-foreground"
+                      className="text-muted-foreground transition-colors active:text-foreground"
                     >
                       <Plus className="size-4" aria-hidden />
                     </button>
@@ -268,20 +268,20 @@ function VocabList({
                       type="button"
                       aria-label={`恢復複習:${v.kana}`}
                       onClick={() => onToggleSuspend(v.id, false)}
-                      className="text-xs text-amber-700 underline dark:text-amber-500"
+                      className="text-xs text-warning underline"
                     >
                       已會·恢復
                     </button>
                   ) : (
                     <span className="flex items-center gap-2">
-                      <span aria-label={`${v.kana} 已加入複習`} className="text-green-700">
+                      <span aria-label={`${v.kana} 已加入複習`} className="text-success">
                         <Check className="size-4" aria-hidden />
                       </span>
                       <button
                         type="button"
                         aria-label={`標記已會:${v.kana}`}
                         onClick={() => onToggleSuspend(v.id, true)}
-                        className="text-xs text-foreground/50 underline transition-colors active:text-foreground"
+                        className="text-xs text-muted-foreground underline transition-colors active:text-foreground"
                       >
                         已會
                       </button>
@@ -291,7 +291,7 @@ function VocabList({
               </div>
               <div className="text-sm text-foreground/70">{v.meaning}</div>
               {v.note && (
-                <div className="text-xs text-foreground/60">{v.note}</div>
+                <div className="text-xs text-muted-foreground">{v.note}</div>
               )}
             </li>
           );
@@ -317,7 +317,7 @@ function GrammarList({
         <section
           key={g.id}
           id={g.id}
-          className="scroll-mt-4 border-b border-foreground/10 px-4 py-3"
+          className="scroll-mt-4 border-b border-border px-4 py-3"
         >
           <h2 lang={jaLang(g.pattern)} className="font-medium">
             {g.pattern}
@@ -330,7 +330,7 @@ function GrammarList({
                 <div className="leading-ruby">
                   <RubyText segments={s.ruby} furigana={furigana} />
                 </div>
-                <div className="text-xs text-foreground/60">
+                <div className="text-xs text-muted-foreground">
                   {s.translation}
                 </div>
               </li>
@@ -357,14 +357,14 @@ function DialogueList({
       {lesson.dialogues.map((d) => (
         <li key={d.id} className="py-2">
           {d.speaker && (
-            <div lang="ja" className="mb-0.5 text-xs text-foreground/60">
+            <div lang="ja" className="mb-0.5 text-xs text-muted-foreground">
               {d.speaker}
             </div>
           )}
           <div className="leading-ruby">
             <RubyText segments={d.ruby} furigana={furigana} />
           </div>
-          <div className="text-xs text-foreground/60">{d.translation}</div>
+          <div className="text-xs text-muted-foreground">{d.translation}</div>
         </li>
       ))}
     </ul>
@@ -373,7 +373,7 @@ function DialogueList({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-4 py-8 text-center text-sm text-foreground/60">
+    <p className="px-4 py-8 text-center text-sm text-muted-foreground">
       {children}
     </p>
   );
