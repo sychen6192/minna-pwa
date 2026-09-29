@@ -9,7 +9,7 @@
   "orientation": "portrait",
   "lang": "zh-Hant",
   "theme_color": "#0069a8",
-  "background_color": "#ffffff",
+  "background_color": "#fdfaf4",
   "icons": [
     {
       "src": "/icons/icon-192.png",
