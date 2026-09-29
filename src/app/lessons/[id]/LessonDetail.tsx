@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Eye, EyeOff, Plus } from "lucide-react";
 import { Loading } from "@/components/Loading";
@@ -24,7 +24,8 @@ import {
 import { speechText } from "@/lib/tts";
 import { useSetting, useTtsEnabled } from "@/lib/useSetting";
 import { cn } from "@/lib/utils";
-import type { Lesson } from "@/schemas/lesson";
+import { countByPosGroup, filterByPosGroup, POS_FILTERS, type PosFilter } from "@/lib/vocabFilter";
+import type { Lesson, Sentence } from "@/schemas/lesson";
 
 type Tab = LessonTab;
 
@@ -35,6 +36,23 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 const LAST_LESSON = 50;
+
+/** 単語分頁的自我測驗遮罩(F7.1):遮住中文(釋義)或日文(標題字、讀音) */
+type VocabMask = "none" | "meaning" | "japanese";
+
+const MASKS: { key: VocabMask; label: string }[] = [
+  { key: "none", label: "無" },
+  { key: "meaning", label: "中文" },
+  { key: "japanese", label: "日文" },
+];
+
+/** 開關鈕與分段鈕:按下時的樣子(假名、遮住、詞性、隱藏中譯共用) */
+const TOGGLE_BUTTON =
+  "font-normal text-muted-foreground aria-pressed:border-link aria-pressed:bg-link/10 aria-pressed:text-link";
+
+/** 揭示鈕(RevealButton)的焦點外框:畫在按鈕內的色塊/內容上 */
+const REVEAL_FOCUS_RING =
+  "group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-ring";
 
 /** 單字錨點(搜尋結果)捲到後的高亮時間 */
 const HIGHLIGHT_MS = 2000;
@@ -77,6 +95,10 @@ export function LessonDetail({ id }: { id: number }) {
   const [cardStateLoaded, setCardStateLoaded] = useState(false);
   // 整課加入的結果(「已加入 N 字 · 開始複習 →」);未整課加入為 null
   const [addAllResult, setAddAllResult] = useState<AddAllResult | null>(null);
+  // 自我測驗(F7.1):遮罩、詞性篩選、隱藏中譯只存於本頁 state(不寫設定);切換分頁時保留
+  const [mask, setMask] = useState<VocabMask>("none");
+  const [posFilter, setPosFilter] = useState<PosFilter>("all");
+  const [hideTranslations, setHideTranslations] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -144,6 +166,8 @@ export function LessonDetail({ id }: { id: number }) {
       if (!target) return;
       setTab(target.tab);
       if (target.anchor) {
+        // 單字錨點:目標字可能被詞性篩選掉(不在 DOM),先回到「全部」
+        if (target.tab === "vocab") setPosFilter("all");
         setPendingAnchor({ id: target.anchor, tab: target.tab, highlight: target.highlight });
       } else if (fromHashChange) {
         scrollToContentTop(); // 初次套用不捲:返回本頁時交給瀏覽器還原捲動位置
@@ -244,7 +268,7 @@ export function LessonDetail({ id }: { id: number }) {
             size="sm"
             aria-pressed={furigana === "show"}
             onClick={() => setFuriganaOverride(furigana === "show" ? "hide" : "show")}
-            className="ml-3 gap-1.5 font-normal text-muted-foreground aria-pressed:border-link aria-pressed:bg-link/10 aria-pressed:text-link"
+            className={cn("ml-3 gap-1.5", TOGGLE_BUTTON)}
           >
             {furigana === "show" ? (
               <Eye className="size-4" aria-hidden />
@@ -312,14 +336,30 @@ export function LessonDetail({ id }: { id: number }) {
           suspended={suspended}
           addAllResult={addAllResult}
           highlighted={highlighted}
+          mask={mask}
+          posFilter={posFilter}
+          onMaskChange={setMask}
+          onPosFilterChange={setPosFilter}
           onAddOne={addOne}
           onAddAll={addAll}
           onToggleSuspend={toggleSuspend}
         />
       )}
-      {tab === "grammar" && <GrammarList lesson={lesson} furigana={furigana} />}
+      {tab === "grammar" && (
+        <GrammarList
+          lesson={lesson}
+          furigana={furigana}
+          hideTranslations={hideTranslations}
+          onHideTranslationsChange={setHideTranslations}
+        />
+      )}
       {tab === "dialogue" && (
-        <DialogueList lesson={lesson} furigana={furigana} />
+        <DialogueList
+          lesson={lesson}
+          furigana={furigana}
+          hideTranslations={hideTranslations}
+          onHideTranslationsChange={setHideTranslations}
+        />
       )}
     </div>
   );
@@ -361,6 +401,78 @@ function SectionBadge({ section }: { section: VocabSection }) {
   );
 }
 
+/**
+ * 自我測驗(F7.1)已揭示的項目 id(單字、例句、会話):只存在所在分頁的元件 state,
+ * 換分頁回來即重新遮住;遮罩或「隱藏中譯」改變時由呼叫端清空。
+ */
+function useRevealed() {
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
+  const toggleRevealed = useCallback((id: string) => {
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }, []);
+  return { revealed, setRevealed, toggleRevealed };
+}
+
+/**
+ * 自我測驗遮住的欄位(F7.1):遮住時是「顯示中文」等佔位,點擊(或 Enter/Space)揭示、再點一次遮回。
+ * 狀態以 aria-expanded 表示;遮住時答案不渲染(輔助技術也讀不到),名稱帶上看得到的另一欄
+ * (「顯示中文:あそびます」)以便在列表中區分。揭示後按鈕仍在原處,焦點不會掉到 body。
+ * 觸控區 ≥ 44px 由呼叫端以 padding + 負 margin 延伸(`className`),揭示前後列高不變。
+ * 焦點外框畫在佔位色塊/揭示的內容上(group-focus-visible),不畫在延伸的點擊區外圍(會劃過上下行的字)。
+ */
+function RevealButton({
+  open,
+  onToggle,
+  placeholder,
+  context,
+  className,
+  pillClassName,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  /** 遮住時的佔位文字(也是按鈕名稱的開頭) */
+  placeholder: string;
+  /** 遮住時接在名稱後的辨識文字(只給輔助技術;同列內鈕的「加入複習:あそびます」) */
+  context?: string;
+  className?: string;
+  /** 佔位色塊的字級與行高:與被遮的文字同高 */
+  pillClassName?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      // 揭示後名稱 = 內容本身(答案);遮住時為「顯示中文:あそびます」(含看得到的佔位文字)
+      aria-label={open || context === undefined ? undefined : `${placeholder}:${context}`}
+      onClick={onToggle}
+      className={cn(
+        "group inline-block min-w-11 cursor-pointer text-left focus-visible:outline-hidden",
+        className,
+      )}
+    >
+      {open ? (
+        <span className={cn("rounded-sm", REVEAL_FOCUS_RING)}>{children}</span>
+      ) : (
+        <span
+          className={cn(
+            "inline-block rounded-md bg-muted px-2 align-middle text-muted-foreground",
+            REVEAL_FOCUS_RING,
+            pillClassName,
+          )}
+        >
+          {placeholder}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function VocabList({
   lesson,
   furigana,
@@ -369,6 +481,10 @@ function VocabList({
   suspended,
   addAllResult,
   highlighted,
+  mask,
+  posFilter,
+  onMaskChange,
+  onPosFilterChange,
   onAddOne,
   onAddAll,
   onToggleSuspend,
@@ -383,6 +499,10 @@ function VocabList({
   addAllResult: AddAllResult | null;
   /** 單字錨點捲到後短暫高亮的字 */
   highlighted: string | null;
+  mask: VocabMask;
+  posFilter: PosFilter;
+  onMaskChange: (mask: VocabMask) => void;
+  onPosFilterChange: (filter: PosFilter) => void;
   onAddOne: (cardId: string) => Promise<void>;
   onAddAll: () => Promise<void>;
   onToggleSuspend: (cardId: string, next: boolean) => Promise<void>;
@@ -430,9 +550,34 @@ function VocabList({
     }
   }
 
+  // 自我測驗:已揭示的字(切換遮罩時清空;換分頁回來也重新遮住)
+  const { revealed, setRevealed, toggleRevealed } = useRevealed();
+  const maskLabelId = useId();
+  const changeMask = (next: VocabMask) => {
+    if (next === mask) return;
+    onMaskChange(next);
+    setRevealed(new Set());
+  };
+  // 詞性篩選:沒有字的組不顯示 chip;目前的組沒有字時回到全部
+  const counts = countByPosGroup(lesson.vocab);
+  const filter = counts[posFilter] > 0 ? posFilter : "all";
+  const shown = filterByPosGroup(lesson.vocab, filter);
+  const allRevealed = shown.every((v) => revealed.has(v.id));
+  // 全部顯示/重新遮住只作用於目前篩出的字(與按鈕文字的判定一致):
+  // 還沒測的組不會先被揭示,其他組逐字揭示的也不會被遮回
+  const toggleShown = () =>
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      for (const v of shown) {
+        if (allRevealed) next.delete(v.id);
+        else next.add(v.id);
+      }
+      return next;
+    });
+
   return (
     <div>
-      <div className="flex items-center justify-end gap-3 px-4 py-2">
+      <div className="flex items-center justify-end gap-3 px-4 pt-2">
         {/* live region 先掛載、加入後再填入,螢幕閱讀器才會播報。
             鍵盤操作移入焦點時顯示外框(focus-visible;滑鼠點擊不顯示) */}
         <p
@@ -477,8 +622,77 @@ function VocabList({
               : "整課加入複習"}
         </Button>
       </div>
+      {/* 自我測驗與詞性篩選(F7.1):aria-pressed 分段鈕(同分頁列,不宣告 radiogroup) */}
+      <div className="space-y-2 border-b border-border px-4 pt-2 pb-3">
+        {/* flex-wrap:約 340px 以下「全部顯示」排到下一行 */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-labelledby={maskLabelId} className="flex items-center gap-1">
+            <span
+              id={maskLabelId}
+              className="mr-1 shrink-0 text-sm whitespace-nowrap text-muted-foreground"
+            >
+              遮住
+            </span>
+            {MASKS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={mask === key}
+                onClick={() => changeMask(key)}
+                className={buttonVariants({
+                  variant: "outline",
+                  size: "sm",
+                  className: cn("min-w-11", TOGGLE_BUTTON), // 「無」單字寬 40px
+                })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {mask !== "none" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleShown}
+              className="ml-auto gap-1.5 font-normal text-link"
+            >
+              {allRevealed ? (
+                <EyeOff className="size-4" aria-hidden />
+              ) : (
+                <Eye className="size-4" aria-hidden />
+              )}
+              {allRevealed ? "重新遮住" : "全部顯示"}
+            </Button>
+          )}
+        </div>
+        {/* 等寬欄、字數排在名稱下方:五組都在時 320px 寬也排得進一列 */}
+        <div
+          role="group"
+          aria-label="詞性篩選"
+          className="grid auto-cols-fr grid-flow-col gap-1"
+        >
+          {POS_FILTERS.filter(({ key }) => key === "all" || counts[key] > 0).map(
+            ({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={filter === key}
+                onClick={() => onPosFilterChange(key)}
+                className={buttonVariants({
+                  variant: "outline",
+                  size: "sm",
+                  className: cn("flex-col gap-0 px-1 leading-5", TOGGLE_BUTTON),
+                })}
+              >
+                {label}{" "}
+                <span className="text-[11px] leading-3.5 tabular-nums">{counts[key]}</span>
+              </button>
+            ),
+          )}
+        </div>
+      </div>
       <ul ref={listRef}>
-        {lesson.vocab.map((v) => {
+        {shown.map((v) => {
           const isAdded = added.has(v.id);
           // 隱藏假名時,含漢字讀音的字不顯示重音列(它寫出完整讀音);純假名字照常顯示
           const readingHidden = furigana === "hide" && v.ruby.some((s) => s.r !== undefined);
@@ -488,6 +702,17 @@ function VocabList({
           // 段落標記(読み物/会話/補充單字)改徽章;其餘 note(搭配、說明)照常顯示
           const section = noteSection(v.note);
           const note = displayNote(v.note);
+          // 自我測驗:被遮的欄位未揭示前不渲染;note 常含日文搭配或中文釋義,遮住任一邊時一併隱藏
+          const masked = mask !== "none" && !revealed.has(v.id);
+          const hideJa = masked && mask === "japanese";
+          // 列內鈕的名稱:遮日文時改以釋義辨識(kana 會把答案讀給螢幕閱讀器)
+          const who = hideJa ? v.meaning : v.kana;
+          const headword =
+            pitchHead !== null ? (
+              <PitchAccent kana={pitchHead} accent={v.accent} />
+            ) : (
+              <RubyText segments={v.ruby} furigana={furigana} />
+            );
           return (
             <li
               key={v.id}
@@ -501,13 +726,30 @@ function VocabList({
             >
               <div className="flex items-baseline justify-between gap-3">
                 <span className="flex flex-wrap items-center gap-2 text-lg">
-                  {pitchHead !== null ? (
-                    <PitchAccent kana={pitchHead} accent={v.accent} />
+                  {mask === "japanese" ? (
+                    // relative:往下延伸的點擊區疊在釋義那一行之上;
+                    // mr-1.5:發音鈕往左延伸 14px(gap-2 只有 8px),避免蓋到色塊右端
+                    <RevealButton
+                      open={!hideJa}
+                      onToggle={() => toggleRevealed(v.id)}
+                      placeholder="顯示日文"
+                      context={v.meaning}
+                      className="relative -my-2 mr-1.5 py-2"
+                      pillClassName="px-3 text-sm leading-7"
+                    >
+                      {headword}
+                    </RevealButton>
                   ) : (
-                    <RubyText segments={v.ruby} furigana={furigana} />
+                    headword
                   )}
-                  {tts && <SpeakButton text={spoken} />}
-                  {pitchHead === null && hasPitch(v.kana, v.accent) && !readingHidden && (
+                  {/* 遮日文時仍可發音:聽音回想 */}
+                  {tts && (
+                    <SpeakButton
+                      text={spoken}
+                      ariaLabel={hideJa ? `播放發音:${v.meaning}` : undefined}
+                    />
+                  )}
+                  {pitchHead === null && hasPitch(v.kana, v.accent) && !readingHidden && !hideJa && (
                     <PitchAccent
                       kana={v.kana}
                       accent={v.accent}
@@ -521,7 +763,7 @@ function VocabList({
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label={`加入複習:${v.kana}`}
+                      aria-label={`加入複習:${who}`}
                       data-row-action={v.id}
                       onClick={(e) => void rowAction(v.id, e.currentTarget, () => onAddOne(v.id))}
                       className={cn(
@@ -535,7 +777,7 @@ function VocabList({
                     <Button
                       variant="ghost"
                       size="sm"
-                      aria-label={`恢復複習:${v.kana}`}
+                      aria-label={`恢復複習:${who}`}
                       data-row-action={v.id}
                       onClick={(e) =>
                         void rowAction(v.id, e.currentTarget, () => onToggleSuspend(v.id, false))
@@ -553,7 +795,7 @@ function VocabList({
                       <Button
                         variant="ghost"
                         size="sm"
-                        aria-label={`標記已會:${v.kana}`}
+                        aria-label={`標記已會:${who}`}
                         data-row-action={v.id}
                         onClick={(e) =>
                           void rowAction(v.id, e.currentTarget, () => onToggleSuspend(v.id, true))
@@ -570,10 +812,24 @@ function VocabList({
                 </div>
               </div>
               <div className="text-sm text-foreground/70">
-                {v.meaning}
+                {mask === "meaning" ? (
+                  // 不設 relative:列右上 +/已會 鈕往下延伸的點擊區仍疊在它上面
+                  <RevealButton
+                    open={!masked}
+                    onToggle={() => toggleRevealed(v.id)}
+                    placeholder="顯示中文"
+                    context={v.kana}
+                    className="-my-3 py-3"
+                    pillClassName="text-xs leading-5"
+                  >
+                    {v.meaning}
+                  </RevealButton>
+                ) : (
+                  v.meaning
+                )}
                 {section && <SectionBadge section={section} />}
               </div>
-              {note && <div className="text-xs text-muted-foreground">{note}</div>}
+              {note && !masked && <div className="text-xs text-muted-foreground">{note}</div>}
             </li>
           );
         })}
@@ -582,18 +838,83 @@ function VocabList({
   );
 }
 
+/** 「隱藏中譯」開關(文型、会話共用;F7.1):名稱固定,狀態由 aria-pressed 表示(同「假名」) */
+function HideTranslationsToggle({
+  hidden,
+  onChange,
+}: {
+  hidden: boolean;
+  onChange: (hidden: boolean) => void;
+}) {
+  return (
+    <div className="flex justify-end px-4 pt-2">
+      <Button
+        variant="outline"
+        size="sm"
+        aria-pressed={hidden}
+        onClick={() => onChange(!hidden)}
+        className={cn("gap-1.5", TOGGLE_BUTTON)}
+      >
+        {/* 圖示表示中譯目前看不看得到 */}
+        {hidden ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+        隱藏中譯
+      </Button>
+    </div>
+  );
+}
+
+/** 例句/会話的中譯:隱藏中譯時改為點擊揭示 */
+function Translation({
+  sentence,
+  hidden,
+  open,
+  onToggle,
+}: {
+  sentence: Sentence;
+  hidden: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  if (!hidden) return sentence.translation;
+  return (
+    // 往下延伸 8px(不超過與下一句的間距,文型例句 space-y-2)。往上:
+    // - 遮住時延伸 20px 到句子本身(點句揭示),點擊區 44px
+    // - 揭示後只延伸 8px,留在例句行(leading-ruby)字下的半行距(約 9px)內,不蓋到日文字
+    //   (長按查字、選字不受影響);再點遮回是次要操作,點擊區 32px
+    <RevealButton
+      open={open}
+      onToggle={onToggle}
+      placeholder="顯示中譯"
+      className={cn("-mb-2 pb-2", open ? "-mt-2 pt-2" : "-mt-5 pt-5")}
+      pillClassName="text-xs leading-4"
+    >
+      {sentence.translation}
+    </RevealButton>
+  );
+}
+
 function GrammarList({
   lesson,
   furigana,
+  hideTranslations,
+  onHideTranslationsChange,
 }: {
   lesson: Lesson;
   furigana: FuriganaMode;
+  hideTranslations: boolean;
+  onHideTranslationsChange: (hidden: boolean) => void;
 }) {
+  const { revealed, setRevealed, toggleRevealed } = useRevealed();
+  const setHidden = (hidden: boolean) => {
+    onHideTranslationsChange(hidden);
+    setRevealed(new Set());
+  };
   if (lesson.grammar.length === 0) {
     return <Empty>本課沒有文型</Empty>;
   }
   return (
     <div>
+      <HideTranslationsToggle hidden={hideTranslations} onChange={setHidden} />
       {lesson.grammar.map((g) => (
         <section
           key={g.id}
@@ -612,7 +933,12 @@ function GrammarList({
                   <RubyText segments={s.ruby} furigana={furigana} />
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {s.translation}
+                  <Translation
+                    sentence={s}
+                    hidden={hideTranslations}
+                    open={revealed.has(s.id)}
+                    onToggle={() => toggleRevealed(s.id)}
+                  />
                 </div>
               </li>
             ))}
@@ -626,29 +952,48 @@ function GrammarList({
 function DialogueList({
   lesson,
   furigana,
+  hideTranslations,
+  onHideTranslationsChange,
 }: {
   lesson: Lesson;
   furigana: FuriganaMode;
+  hideTranslations: boolean;
+  onHideTranslationsChange: (hidden: boolean) => void;
 }) {
+  const { revealed, setRevealed, toggleRevealed } = useRevealed();
+  const setHidden = (hidden: boolean) => {
+    onHideTranslationsChange(hidden);
+    setRevealed(new Set());
+  };
   if (lesson.dialogues.length === 0) {
     return <Empty>本課沒有会話</Empty>;
   }
   return (
-    <ul className="px-4 py-2">
-      {lesson.dialogues.map((d) => (
-        <li key={d.id} className="py-2">
-          {d.speaker && (
-            <div lang="ja" className="mb-0.5 text-xs text-muted-foreground">
-              {d.speaker}
+    <div>
+      <HideTranslationsToggle hidden={hideTranslations} onChange={setHidden} />
+      <ul className="px-4 py-2">
+        {lesson.dialogues.map((d) => (
+          <li key={d.id} className="py-2">
+            {d.speaker && (
+              <div lang="ja" className="mb-0.5 text-xs text-muted-foreground">
+                {d.speaker}
+              </div>
+            )}
+            <div className="leading-ruby">
+              <RubyText segments={d.ruby} furigana={furigana} />
             </div>
-          )}
-          <div className="leading-ruby">
-            <RubyText segments={d.ruby} furigana={furigana} />
-          </div>
-          <div className="text-xs text-muted-foreground">{d.translation}</div>
-        </li>
-      ))}
-    </ul>
+            <div className="text-xs text-muted-foreground">
+              <Translation
+                sentence={d}
+                hidden={hideTranslations}
+                open={revealed.has(d.id)}
+                onToggle={() => toggleRevealed(d.id)}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
