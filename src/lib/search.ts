@@ -13,7 +13,7 @@ export interface SearchHit {
   lessonId: number;
   title: string; // 主顯示:文型 pattern / 單字表面形 / 例句原文
   snippet: string; // 次要顯示:解說 / 釋義 / 翻譯
-  anchor: string; // 課程內頁錨點(文法點 id;單字無錨點為空字串)
+  anchor: string; // 課程內頁錨點:文法點/例句 → 文法點 id,單字 → 單字 id(課程頁捲動並高亮)
 }
 
 // 內部文件:ja / kana / zh 三個檢索欄位 + SearchHit 展示欄位
@@ -80,7 +80,7 @@ function toDocs(lessons: Lesson[]): SearchDoc[] {
         lessonId: lesson.id,
         title: surface(v.ruby),
         snippet: v.meaning,
-        anchor: "",
+        anchor: v.id,
         ja: surface(v.ruby),
         kana: v.kana,
         zh: v.note ? `${v.meaning} ${v.note}` : v.meaning,

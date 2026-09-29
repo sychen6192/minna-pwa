@@ -25,15 +25,15 @@ flowchart TD
 |---|---|---|
 | 框架 | Next.js 15 App Router(`output: 'export'`) | 純靜態輸出,50 課頁面 SSG |
 | 語言 | TypeScript(strict) | — |
-| UI | Tailwind CSS + shadcn/ui | 一致、可控、不引入第二套元件庫 |
+| UI | Tailwind CSS + shadcn/ui | 一致、可控、不引入第二套元件庫;語意色彩 token 見 D9 |
 | PWA | Serwist(next-pwa 的後繼維護版) | service worker 生成、precache、更新策略 |
 | 內容資料 | 靜態 JSON(`public/data/`) | 全量約 3–8 MB,SW 一次預快取後完全離線 |
 | 使用者資料 | IndexedDB + Dexie.js | 卡片狀態、複習紀錄、進度、設定 |
 | SRS | ts-fsrs(FSRS 演算法) | 排程效率優於 SM-2;logs 留存供日後 optimizer |
-| 狀態管理 | Zustand | 輕量,只管複習 session 等 UI 狀態 |
+| 狀態管理 | React state(`useState`) | 複習 session 等 UI 狀態只存在頁面內;持久狀態一律經 `db.ts` |
 | 日文處理 | WanaKana + 原生 `<ruby>` | 輸入正規化;furigana 由資料提供、不做 runtime 斷詞 |
 | 客端搜尋 | MiniSearch | 跨課全文檢索,無後端 |
-| 音訊 | Web Speech API(`ja-JP`) | 零成本 TTS;無可用 voice 時靜默降級 |
+| 音訊 | Web Speech API(`ja-JP`) | 零成本 TTS;語音清單非同步載入(`voiceschanged`,最多等 1.5 秒),優先裝置內建(`localService`)日語 voice;朗讀文字去除教材記號(［］〔〕（）〜…／);無可用 voice 時靜默降級 |
 | 統計圖表 | Recharts | 熱力圖、到期預測、留存曲線 |
 | 測試 | Vitest + @testing-library/react + fake-indexeddb | — |
 
@@ -71,7 +71,7 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
 └── src/
     ├── app/
     │   ├── layout.tsx          # 全域 shell + 底部導覽
-    │   ├── page.tsx            # 導向 /lessons
+    │   ├── page.tsx            # 今日儀表板(佇列 Hero、今日目標、安裝提示;資料層動態載入)
     │   ├── lessons/            # F1(/lessons、/lessons/[id])
     │   ├── review/             # F2
     │   ├── quiz/[id]/          # F3
@@ -79,13 +79,22 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── stats/              # F5
     │   └── settings/           # F6
     ├── components/             # RubyText、BottomNav、RatingButtons…
+    │   └── ui/button.tsx       # shadcn 樣式 Button / buttonVariants(手寫,無 asChild/radix)
     ├── lib/
     │   ├── content.ts          # 載入 + Zod parse + 記憶體快取
     │   ├── db.ts               # Dexie 定義(唯一 DB 入口)
     │   ├── srs.ts              # ts-fsrs 唯一入口
+    │   ├── cardId.ts           # cardId / 方向工具(baseVocabId 等;不依賴 ts-fsrs,srs 轉匯出)
+    │   ├── relearn.ts          # 複習 session 內重看的插入規則(純函式)
+    │   ├── notes.ts            # 單字 note 呈現:段落標記過濾與徽章分類、補充單字判定(純函式)
+    │   ├── lessonHash.ts       # 課程內頁 URL hash:分頁與文法/單字錨點解析(純函式)
+    │   ├── lang.ts             # isJapanese / jaLang:日文字串的 lang="ja" 判定(純函式)
+    │   ├── queueNote.ts        # 今日佇列因每日上限而空時的說明(純函式;首頁、課程頁共用)
+    │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)
     │   ├── quiz.ts             # 出題引擎(純函式)
     │   ├── stats.ts            # 統計聚合(純函式 + DB 查詢)
-    │   ├── tts.ts              # Web Speech API 包裝
+    │   ├── tts.ts              # Web Speech API 包裝 + 朗讀文字清理(speechText)
+    │   ├── useSetting.ts       # 讀取全域設定的 hook(useSetting / useTtsEnabled;經 db.ts)
     │   └── search.ts           # MiniSearch 索引建立與查詢
     ├── schemas/lesson.ts       # Zod:資料契約唯一真相
     └── sw.ts                   # Serwist service worker
@@ -109,3 +118,4 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
 | D6 | 使用者資料僅存 IndexedDB;備援 = JSON 匯出/匯入 | 無後端前提下最簡可靠;同步留待 v2(Workers + D1) |
 | D7 | repo 私有;部署公開 + noindex(2026-07-10 修訂,原方案為 Cloudflare Access) | 使用者要求免登入直接使用並自承版權風險;以 noindex 與不散佈網址降低曝光 |
 | D8 | 套件 API 不確定時一律查官方文件(Serwist / ts-fsrs / Dexie / Next 15) | 這幾個套件 API 迭代快,憑記憶實作風險高 |
+| D9 | 色彩一律用 `globals.css` 的 shadcn 命名語意 token(`bg-card`、`text-muted-foreground`、`text-link`…),淺色值在 `:root`、深色值在 `@media (prefers-color-scheme: dark)`;不用 `.dark` class、不跑 `shadcn init`,元件手寫加入 | 跟隨系統配色、零 JS;`shadcn init` 會改用 `.dark` class 並使深色失效。文字 token 在 background/card 上對比 ≥ 4.5:1(兩種配色);`themeColor` 依配色分兩值,manifest 只能一值故用淺色 primary;`src/app/theme.test.ts` 驗對比並掃描原始碼禁止寫死色票 |

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ChangeEvent } from "react";
+import { Loading } from "@/components/Loading";
+import { Button } from "@/components/ui/button";
 import { exportData, importData, parseBackup, resetAll, type BackupFile } from "@/lib/backup";
 import { getAllSettings, setSetting, type Settings } from "@/lib/db";
 import { ensureReverseCards } from "@/lib/srs";
@@ -9,16 +11,21 @@ type Notice = { kind: "success" | "error"; text: string } | null;
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-4">
-      <h2 className="mb-3 text-sm font-medium text-neutral-900">{title}</h2>
+    <section className="rounded-lg border border-border bg-card p-4">
+      <h2 className="mb-3 text-sm font-medium">{title}</h2>
       {children}
     </section>
   );
 }
 
+// 輸入框/下拉選單字級 16px(text-base):小於 16px 時 iOS Safari 在 focus 時會放大頁面且不縮回
+const NUMBER_INPUT = "h-9 w-20 rounded border border-input bg-transparent px-2 text-right text-base";
+const SELECT = "h-9 rounded border border-input bg-transparent px-2 text-base";
+
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex items-center justify-between gap-3 py-1.5 text-sm text-neutral-700">
+    // 整列為 label:點列上任何位置即操作欄位(checkbox 本身只有 16px),列高 ≥ 44px
+    <label className="flex min-h-11 items-center justify-between gap-3 py-1.5 text-sm">
       {label}
       {children}
     </label>
@@ -27,7 +34,7 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
-  // 匯入 / 重置後 bump,讓表單以新值重掛(欄位為 uncontrolled + defaultValue)
+  // 匯入後 bump,讓表單以新值重掛(欄位為 uncontrolled + defaultValue;重置不動設定)
   const [formEpoch, setFormEpoch] = useState(0);
   const [notice, setNotice] = useState<Notice>(null);
   const [pendingImport, setPendingImport] = useState<BackupFile | null>(null);
@@ -113,12 +120,11 @@ export default function SettingsPage() {
   async function handleConfirmReset() {
     await resetAll();
     setConfirmingReset(false);
-    await reloadSettings();
-    setNotice({ kind: "success", text: "已重置所有進度。" });
+    setNotice({ kind: "success", text: "已重置所有進度;設定維持不變。" });
   }
 
   if (!settings) {
-    return <p className="p-6 text-center text-sm text-neutral-500">載入中…</p>;
+    return <Loading className="p-6" />;
   }
 
   return (
@@ -130,8 +136,8 @@ export default function SettingsPage() {
           role={notice.kind === "error" ? "alert" : "status"}
           className={`rounded-lg border p-3 text-sm ${
             notice.kind === "error"
-              ? "border-red-200 bg-red-50 text-red-700"
-              : "border-sky-200 bg-sky-50 text-sky-700"
+              ? "border-destructive/30 bg-destructive/10 text-destructive"
+              : "border-success/30 bg-success/10 text-success"
           }`}
         >
           {notice.text}
@@ -139,7 +145,7 @@ export default function SettingsPage() {
       )}
 
       <SectionCard title="學習設定">
-        <div key={formEpoch} className="flex flex-col divide-y divide-neutral-100">
+        <div key={formEpoch} className="flex flex-col divide-y divide-border">
           <FieldRow label="每日新卡上限">
             <input
               type="number"
@@ -147,7 +153,7 @@ export default function SettingsPage() {
               aria-label="每日新卡上限"
               defaultValue={settings.newPerDay}
               onChange={(e) => updateNumber("newPerDay", e.target.value)}
-              className="w-20 rounded border border-neutral-300 px-2 py-1 text-right"
+              className={NUMBER_INPUT}
             />
           </FieldRow>
           <FieldRow label="每日複習上限">
@@ -157,7 +163,7 @@ export default function SettingsPage() {
               aria-label="每日複習上限"
               defaultValue={settings.maxReviewsPerDay}
               onChange={(e) => updateNumber("maxReviewsPerDay", e.target.value)}
-              className="w-20 rounded border border-neutral-300 px-2 py-1 text-right"
+              className={NUMBER_INPUT}
             />
           </FieldRow>
           <FieldRow label="每日目標張數">
@@ -167,7 +173,7 @@ export default function SettingsPage() {
               aria-label="每日目標張數"
               defaultValue={settings.dailyGoal}
               onChange={(e) => updateNumber("dailyGoal", e.target.value)}
-              className="w-20 rounded border border-neutral-300 px-2 py-1 text-right"
+              className={NUMBER_INPUT}
             />
           </FieldRow>
           <FieldRow label="TTS 發音">
@@ -176,7 +182,7 @@ export default function SettingsPage() {
               aria-label="TTS 發音"
               defaultChecked={settings.ttsEnabled}
               onChange={(e) => void setSetting("ttsEnabled", e.target.checked)}
-              className="h-4 w-4 accent-sky-600"
+              className="h-4 w-4 accent-primary"
             />
           </FieldRow>
           <FieldRow label="回想方向卡(中→日)">
@@ -185,7 +191,7 @@ export default function SettingsPage() {
               aria-label="回想方向卡"
               defaultChecked={settings.reverseCards}
               onChange={(e) => void handleReverseToggle(e.target.checked)}
-              className="h-4 w-4 accent-sky-600"
+              className="h-4 w-4 accent-primary"
             />
           </FieldRow>
           <FieldRow label="目標保留率(FSRS)">
@@ -193,7 +199,7 @@ export default function SettingsPage() {
               aria-label="目標保留率"
               defaultValue={String(settings.desiredRetention)}
               onChange={(e) => void setSetting("desiredRetention", Number(e.target.value))}
-              className="rounded border border-neutral-300 px-2 py-1"
+              className={SELECT}
             >
               <option value="0.8">80%(複習較少)</option>
               <option value="0.85">85%</option>
@@ -207,7 +213,7 @@ export default function SettingsPage() {
               aria-label="Furigana 預設"
               defaultValue={settings.furigana}
               onChange={(e) => void setSetting("furigana", e.target.value as Settings["furigana"])}
-              className="rounded border border-neutral-300 px-2 py-1"
+              className={SELECT}
             >
               <option value="show">顯示</option>
               <option value="hide">隱藏</option>
@@ -219,18 +225,14 @@ export default function SettingsPage() {
       <SectionCard title="資料管理">
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-neutral-700">匯出全部學習資料為 JSON 檔。</p>
-            <button
-              type="button"
-              onClick={() => void handleExport()}
-              className="shrink-0 rounded bg-sky-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-800"
-            >
+            <p className="text-sm">匯出全部學習資料為 JSON 檔。</p>
+            <Button size="sm" onClick={() => void handleExport()}>
               匯出備份
-            </button>
+            </Button>
           </div>
 
-          <div className="border-t border-neutral-100 pt-3">
-            <label className="flex items-center justify-between gap-3 text-sm text-neutral-700">
+          <div className="border-t border-border pt-3">
+            <label className="flex items-center justify-between gap-3 text-sm">
               從備份檔還原(覆蓋現有資料)。
               <input
                 type="file"
@@ -241,63 +243,63 @@ export default function SettingsPage() {
               />
             </label>
             {pendingImport && (
-              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <div className="mt-3 rounded-lg border border-warning-accent/40 bg-warning-accent/10 p-3 text-sm text-warning">
                 <p>
                   備份內容:{pendingImport.cards.length} 張卡片・{pendingImport.logs.length}{" "}
                   筆複習紀錄・匯出於 {pendingImport.exportedAt.slice(0, 10)}。 匯入將
                   <strong>清除並覆蓋</strong>目前全部資料。
                 </p>
                 <div className="mt-2 flex justify-end gap-2">
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setPendingImport(null)}
-                    className="rounded px-3 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
+                    className="font-normal text-foreground"
                   >
                     取消
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleConfirmImport()}
-                    className="rounded bg-amber-700 px-3 py-1 text-sm font-medium text-white hover:bg-amber-800"
-                  >
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => void handleConfirmImport()}>
                     確認覆蓋
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
           </div>
 
-          <div className="border-t border-neutral-100 pt-3">
+          <div className="border-t border-border pt-3">
             {confirmingReset ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                <p>將刪除全部卡片、複習紀錄與進度,此動作無法復原。確定要重置嗎?</p>
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                <p>
+                  將刪除全部卡片、複習紀錄與進度(設定會保留),此動作無法復原。確定要重置嗎?
+                </p>
                 <div className="mt-2 flex justify-end gap-2">
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setConfirmingReset(false)}
-                    className="rounded px-3 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
+                    className="font-normal text-foreground"
                   >
                     取消
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleConfirmReset()}
-                    className="rounded bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-700"
-                  >
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => void handleConfirmReset()}>
                     確定重置
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-neutral-700">清除所有進度,回到初始狀態。</p>
-                <button
-                  type="button"
+                <p className="text-sm">
+                  清除所有卡片與複習紀錄
+                  <span className="block text-xs text-muted-foreground">設定會保留</span>
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setConfirmingReset(true)}
-                  className="shrink-0 rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10 active:bg-destructive/10"
                 >
                   重置所有進度
-                </button>
+                </Button>
               </div>
             )}
           </div>

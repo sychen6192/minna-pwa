@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSupplementary } from "@/lib/notes";
 import {
   LessonIndexSchema,
   LessonSchema,
@@ -72,6 +73,23 @@ export function getLesson(id: number): Promise<Lesson> {
   });
   lessonCache.set(id, promise);
   return promise;
+}
+
+/**
+ * 指定各課的補充單字 id(lessonId → vocab id 集合;沒有補充單字的課為空集合)。
+ * 課程進度不計補充單字(stats.lessonProgress,T10.11)。沿用 getLesson 快取;
+ * 載入失敗的課不列入(呼叫端照 index 總數計,等同舊行為),不讓進度顯示整個失敗。
+ */
+export async function getSupplementaryWords(
+  lessonIds: Iterable<number>,
+): Promise<Map<number, Set<string>>> {
+  const results = await Promise.allSettled([...new Set(lessonIds)].map((id) => getLesson(id)));
+  const map = new Map<number, Set<string>>();
+  for (const r of results) {
+    if (r.status !== "fulfilled") continue;
+    map.set(r.value.id, new Set(r.value.vocab.filter(isSupplementary).map((v) => v.id)));
+  }
+  return map;
 }
 
 /** 清空記憶體快取(測試與開發期 HMR 用)。 */

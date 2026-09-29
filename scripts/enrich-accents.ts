@@ -38,7 +38,10 @@ function toHiragana(s: string): string {
   return out;
 }
 
-/** 配對前剝除的標點・空白・括注(教材表記如「お名前は?」「…歳」) */
+/**
+ * 配對前剝除的標點・空白・括注(教材表記如「お名前は?」「…歳」)。只用於組辭典查詢鍵
+ * (表記含漢字,不能只留假名);拍數一律由 pitch.ts 的 splitMorae 計算(非假名不計拍)。
+ */
 const STRIP_CHARS = new Set("。、?!?!・…()()[]［］「」 　〜~");
 
 function normalize(s: string): string {
@@ -111,6 +114,7 @@ export function matchAccent(vocab: VocabLike, dict: AccentDict): MatchResult {
   const surfaceRaw = vocab.ruby.map((s) => s.b).join("");
   const surface = normalize(surfaceRaw);
   const kanaHira = toHiragana(normalize(vocab.kana));
+  // 與顯示端(PitchAccent → pitchPattern)同一個拍數定義,寫入的 accent 上限因而一致
   const moraCount = splitMorae(kanaHira).length;
   const valid = (a: number | null | undefined): a is number =>
     a !== null && a !== undefined && a >= 0 && a <= moraCount;

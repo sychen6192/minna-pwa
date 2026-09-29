@@ -2,7 +2,6 @@ import { beforeEach } from "vitest";
 import {
   DEFAULT_SETTINGS,
   db,
-  ensureDefaultSettings,
   getAllSettings,
   getSetting,
   setSetting,
@@ -97,20 +96,6 @@ describe("MinnaDB schema", () => {
 });
 
 describe("settings", () => {
-  it("ensureDefaultSettings:寫入全部預設值", async () => {
-    await ensureDefaultSettings();
-    expect(await db.settings.count()).toBe(Object.keys(DEFAULT_SETTINGS).length);
-    expect(await getAllSettings()).toEqual(DEFAULT_SETTINGS);
-  });
-
-  it("ensureDefaultSettings:冪等,不覆蓋既有值", async () => {
-    await setSetting("newPerDay", 25);
-    await ensureDefaultSettings();
-    await ensureDefaultSettings();
-    expect(await db.settings.count()).toBe(Object.keys(DEFAULT_SETTINGS).length);
-    expect(await getSetting("newPerDay")).toBe(25); // 既有值保留
-  });
-
   it("getSetting:未設定時回退預設", async () => {
     expect(await getSetting("furigana")).toBe("show");
     expect(await getSetting("maxReviewsPerDay")).toBe(200);
@@ -130,5 +115,17 @@ describe("settings", () => {
       ...DEFAULT_SETTINGS,
       newPerDay: 5,
     });
+  });
+
+  it("設定列缺值(手改備份匯入)視同未設定:回退預設,上限不變成 NaN", async () => {
+    await db.settings.bulkPut([
+      { key: "newPerDay", value: undefined },
+      { key: "dailyGoal", value: null },
+      { key: "ttsEnabled", value: false }, // false 是有效值,不回退
+    ]);
+    expect(await getSetting("newPerDay")).toBe(DEFAULT_SETTINGS.newPerDay);
+    expect(await getSetting("dailyGoal")).toBe(DEFAULT_SETTINGS.dailyGoal);
+    expect(await getSetting("ttsEnabled")).toBe(false);
+    expect(await getAllSettings()).toEqual({ ...DEFAULT_SETTINGS, ttsEnabled: false });
   });
 });

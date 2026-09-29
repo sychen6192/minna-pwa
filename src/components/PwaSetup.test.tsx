@@ -1,18 +1,22 @@
-import { act, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
-import { db, getSetting, setSetting } from "@/lib/db";
+import { db, setSetting } from "@/lib/db";
+import { getInstallPromptEvent } from "@/lib/pwa";
 import { PwaSetup } from "./PwaSetup";
 
-/** 等待 useEffect 內的非同步鏈(display-mode 判定 + IndexedDB 讀取)完成 */
+/** 等待 useEffect 內的非同步鏈完成 */
 const flushEffects = () => act(() => new Promise((resolve) => setTimeout(resolve, 25)));
 
-function stubNavigator(overrides: Record<string, unknown>) {
+function stubStorage() {
+  const persist = vi.fn(async () => true);
   vi.stubGlobal("navigator", {
     userAgent: "jsdom",
     maxTouchPoints: 0,
-    ...overrides,
+    storage: { persisted: vi.fn(async () => false), persist },
   });
+  return persist;
 }
 
 beforeEach(async () => {
@@ -23,55 +27,51 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("PwaSetup 安裝提示", () => {
-  it("未安裝且未關閉過:顯示提示", async () => {
-    render(<PwaSetup />);
-
-    expect(await screen.findByRole("region", { name: "安裝提示" })).toBeInTheDocument();
+describe("PwaSetup(layout,每一頁)", () => {
+  it("掛在 root layout(每一頁都執行);安裝提示不在 layout", () => {
+    // 不 import layout.tsx(會連帶載入 globals.css 走 PostCSS),直接讀原始碼
+    const layout = readFileSync(join(process.cwd(), "src", "app", "layout.tsx"), "utf8");
+    expect(layout).toMatch(/<PwaSetup \/>/);
+    expect(layout).not.toMatch(/InstallPrompt/);
   });
 
-  it("已安裝(standalone):不顯示", async () => {
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn(() => ({ matches: true })),
-    );
+  it("啟動即要求持久化儲存,且不渲染任何提示(安裝提示只在首頁)", async () => {
+    const persist = stubStorage();
 
-    render(<PwaSetup />);
+    const { container } = render(<PwaSetup />);
     await flushEffects();
 
-    expect(screen.queryByRole("region", { name: "安裝提示" })).not.toBeInTheDocument();
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it("iOS 裝置:顯示 Safari 加入主畫面引導文案", async () => {
-    stubNavigator({
-      userAgent:
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
-    });
+  it("未安裝、未關閉過安裝提示時同樣不渲染(不以浮層蓋住各頁操作)", async () => {
+    stubStorage();
+    await setSetting("installPromptDismissed", false);
 
-    render(<PwaSetup />);
-
-    await screen.findByRole("region", { name: "安裝提示" });
-    expect(screen.getByText(/加入主畫面/)).toBeInTheDocument();
-    expect(screen.getByText(/分享/)).toBeInTheDocument();
-  });
-
-  it("點「知道了」:提示消失且旗標寫入 DB", async () => {
-    const user = userEvent.setup();
-    render(<PwaSetup />);
-    await screen.findByRole("region", { name: "安裝提示" });
-
-    await user.click(screen.getByRole("button", { name: "知道了" }));
-
-    expect(screen.queryByRole("region", { name: "安裝提示" })).not.toBeInTheDocument();
-    expect(await getSetting("installPromptDismissed")).toBe(true);
-  });
-
-  it("先前已關閉(旗標為 true):不顯示", async () => {
-    await setSetting("installPromptDismissed", true);
-
-    render(<PwaSetup />);
+    const { container } = render(<PwaSetup />);
     await flushEffects();
 
-    expect(screen.queryByRole("region", { name: "安裝提示" })).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("攔截 beforeinstallprompt(取消瀏覽器橫幅、保存事件);卸載後不再攔截", async () => {
+    stubStorage();
+    const { unmount } = render(<PwaSetup />);
+    await flushEffects();
+
+    const event = new Event("beforeinstallprompt", { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(getInstallPromptEvent()).toBe(event);
+
+    window.dispatchEvent(new Event("appinstalled"));
+    expect(getInstallPromptEvent()).toBeNull();
+
+    unmount();
+    const later = new Event("beforeinstallprompt", { cancelable: true });
+    window.dispatchEvent(later);
+    expect(later.defaultPrevented).toBe(false);
+    expect(getInstallPromptEvent()).toBeNull();
   });
 });

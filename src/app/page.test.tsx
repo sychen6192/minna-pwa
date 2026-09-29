@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
-import { beforeEach, vi } from "vitest";
-import { db, type CardRow } from "@/lib/db";
+import { act, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, vi } from "vitest";
+import { db, setSetting, type CardRow } from "@/lib/db";
+import { addStudyDays, nextStudyDayStart } from "@/lib/studyDay";
 import Home from "./page";
 
 // content.ts 走 fetch;首頁只需課程索引
@@ -30,8 +31,18 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
   };
 }
 
+/** 新卡(state=New) */
+function newCard(cardId: string): CardRow {
+  return card({ cardId, state: 0, reps: 0, stability: 0, difficulty: 0 });
+}
+
 beforeEach(async () => {
-  await Promise.all([db.cards.clear(), db.logs.clear()]);
+  await Promise.all([db.cards.clear(), db.logs.clear(), db.settings.clear()]);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("Home(今日儀表板)", () => {
@@ -40,8 +51,34 @@ describe("Home(今日儀表板)", () => {
 
     expect(await screen.findByText(/還沒有加入任何單字/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "瀏覽課程" })).toHaveAttribute("href", "/lessons");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveAttribute("lang", "ja");
     // 進度摘要:0 / 2 課
     expect(screen.getByText(/已開始課程/).parentElement).toHaveTextContent("0 / 2 課");
+  });
+
+  it("首次造訪:安裝提示為 Hero 下方的一般卡片(不論有無單字);關閉過即不顯示", async () => {
+    const { unmount } = render(<Home />);
+
+    const hero = (await screen.findByText(/還沒有加入任何單字/)).closest("section")!;
+    const prompt = await screen.findByRole("region", { name: "安裝到主畫面" });
+    expect(hero.nextElementSibling).toBe(prompt);
+    expect(prompt.className).not.toMatch(/\bfixed\b/);
+    unmount();
+
+    await setSetting("installPromptDismissed", true);
+    const get = vi.spyOn(db.settings, "get");
+    render(<Home />);
+    await screen.findByText(/還沒有加入任何單字/);
+    // 等安裝提示確實讀完旗標(正向訊號),「不顯示」才不會是還沒讀到的假通過
+    await vi.waitFor(() => expect(get).toHaveBeenCalledWith("installPromptDismissed"));
+    const read = get.mock.calls.findIndex(
+      (args: readonly unknown[]) => args[0] === "installPromptDismissed",
+    );
+    await act(async () => {
+      await get.mock.results[read].value;
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.queryByRole("region", { name: "安裝到主畫面" })).not.toBeInTheDocument();
   });
 
   it("有到期卡:顯示到期數與開始複習 CTA(→ /review)", async () => {
@@ -53,16 +90,22 @@ describe("Home(今日儀表板)", () => {
 
     render(<Home />);
 
-    expect(await screen.findByText("今日到期")).toBeInTheDocument();
+    expect(await screen.findByText("今日待複習")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("複習 3 · 新卡 0")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "開始複習" })).toHaveAttribute("href", "/review");
-    // 已開始 2 課、累計 3 張
+    // 已開始 2 課、累計 3 字(以正向卡計,與統計頁「單字」同口徑)
     expect(screen.getByText(/已開始課程/).parentElement).toHaveTextContent("2 / 2 課");
-    expect(screen.getByText(/累計卡片/).parentElement).toHaveTextContent("3 張");
+    expect(screen.getByText(/累計單字/).parentElement).toHaveTextContent("3 字");
   });
 
   it("有複習紀錄:顯示連續天數與今日目標進度", async () => {
-    await db.cards.bulkAdd([card({ cardId: "L01-V001", lessonId: 1 })]);
+    // 今日佇列尚有 20 張到期卡 → 有效目標維持設定值 20
+    await db.cards.bulkAdd(
+      Array.from({ length: 21 }, (_, i) =>
+        card({ cardId: `L01-V${String(i + 1).padStart(3, "0")}`, lessonId: 1 }),
+      ),
+    );
     const nowMs = Date.now();
     await db.logs.bulkAdd([
       { cardId: "L01-V001", rating: 3, state: 2, due: nowMs, elapsedDays: 0, reviewedAt: nowMs },
@@ -91,15 +134,210 @@ describe("Home(今日儀表板)", () => {
     expect(screen.getByRole("link", { name: /頑固卡/ })).toHaveAttribute("href", "/practice");
   });
 
-  it("有卡但無到期:顯示完成訊息,不顯示開始複習", async () => {
+  it("有卡但今日佇列為空、今日沒有複習:不慶祝(與今日目標 0/N 一致),不顯示開始複習", async () => {
     await db.cards.bulkAdd([
-      // due 在未來 → 不到期
-      card({ cardId: "L01-V001", lessonId: 1, due: Date.now() + DAY, state: 2 }),
+      // due 在明日學習日 → 今日不到期(不用 now + 24h:DST 回撥日的學習日長 25 小時)
+      card({
+        cardId: "L01-V001",
+        lessonId: 1,
+        due: nextStudyDayStart(Date.now()) + 3_600_000,
+        state: 2,
+      }),
     ]);
 
     render(<Home />);
 
-    expect(await screen.findByText(/今天沒有到期的卡片/)).toBeInTheDocument();
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
+    expect(screen.queryByText(/今日任務完成/)).not.toBeInTheDocument();
+    expect(screen.getByText(/要不要去課程加入新單字/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "開始複習" })).not.toBeInTheDocument();
+    expect(screen.getByText(/今日目標/).closest("section")).toHaveTextContent("0 / 20");
+  });
+
+  it("今日已複習且佇列清空:顯示今日任務完成", async () => {
+    const nowMs = Date.now();
+    await db.cards.bulkAdd([card({ cardId: "L01-V001", due: addStudyDays(nowMs, 3) })]);
+    await db.logs.add({
+      cardId: "L01-V001",
+      rating: 3,
+      state: 2,
+      due: nowMs - DAY,
+      elapsedDays: 3,
+      reviewedAt: nowMs,
+    });
+
+    render(<Home />);
+
+    expect(await screen.findByText("今日任務完成 🎉")).toBeInTheDocument();
+    expect(screen.getByText(/要不要去課程加入新單字/)).toBeInTheDocument();
+  });
+
+  it("只有新卡:顯示新卡數與開始複習", async () => {
+    await db.cards.bulkAdd([newCard("L01-V001"), newCard("L01-V002"), newCard("L01-V003")]);
+
+    render(<Home />);
+
+    expect(await screen.findByText("複習 0 · 新卡 3")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "開始複習" })).toHaveAttribute("href", "/review");
+    expect(screen.queryByText(/今日任務完成/)).not.toBeInTheDocument();
+    // 今日可做 3 張 → 有效目標 3(設定 20)
+    const goal = screen.getByText(/今日目標/).closest("section");
+    expect(goal).toHaveTextContent("0 / 3");
+    expect(goal).toHaveTextContent("設定 20");
+  });
+
+  it("今日新卡已達上限:完成訊息提示明天繼續", async () => {
+    await setSetting("newPerDay", 1);
+    const nowMs = Date.now();
+    await db.cards.bulkAdd([
+      card({ cardId: "L01-V001", due: addStudyDays(nowMs, 3) }), // 今日已首評
+      newCard("L01-V002"),
+    ]);
+    await db.logs.add({
+      cardId: "L01-V001",
+      rating: 3,
+      state: 0,
+      due: nowMs,
+      elapsedDays: 0,
+      reviewedAt: nowMs,
+    });
+
+    render(<Home />);
+
+    expect(await screen.findByText("今日任務完成 🎉")).toBeInTheDocument();
+    expect(screen.getByText("今日新卡已達上限,明天繼續")).toBeInTheDocument();
+    expect(screen.queryByText(/要不要去課程加入新單字/)).not.toBeInTheDocument();
+  });
+
+  it("reverseCards:新卡額度用完、只剩隔日才出的回想卡 → 提示明天繼續,不建議加新字", async () => {
+    await setSetting("newPerDay", 2);
+    const nowMs = Date.now();
+    const ids = ["L01-V001", "L01-V002"];
+    await db.cards.bulkAdd([
+      // 正向卡今日首評,已排到 3 天後;回想卡仍為 New(bury 至明天)
+      ...ids.map((cardId) => card({ cardId, due: addStudyDays(nowMs, 3) })),
+      ...ids.map((id) => ({ ...newCard(`${id}@r`), direction: "rev" as const })),
+    ]);
+    await db.logs.bulkAdd(
+      ids.map((cardId) => ({
+        cardId,
+        rating: 3 as const,
+        state: 0 as const,
+        due: nowMs,
+        elapsedDays: 0,
+        reviewedAt: nowMs,
+      })),
+    );
+
+    render(<Home />);
+
+    expect(await screen.findByText("今日任務完成 🎉")).toBeInTheDocument();
+    expect(screen.getByText("今日新卡已達上限,明天繼續")).toBeInTheDocument();
+    expect(screen.queryByText(/要不要去課程加入新單字/)).not.toBeInTheDocument();
+  });
+
+  it("每日新卡上限為 0:不說「明天繼續」", async () => {
+    await setSetting("newPerDay", 0);
+    await db.cards.bulkAdd([newCard("L01-V001")]);
+
+    render(<Home />);
+
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
+    expect(screen.getByText("每日新卡上限設為 0,暫不引入新卡")).toBeInTheDocument();
+    expect(screen.queryByText(/明天繼續/)).not.toBeInTheDocument();
+  });
+
+  it("今日複習已達上限且仍有到期卡:提示明天繼續,不建議加新字", async () => {
+    await setSetting("newPerDay", 0);
+    await setSetting("maxReviewsPerDay", 1);
+    const nowMs = Date.now();
+    await db.cards.bulkAdd([
+      card({ cardId: "L01-V001", due: addStudyDays(nowMs, 5) }), // 今日已複習
+      card({ cardId: "L01-V002", due: nowMs - DAY }), // 逾期,因上限等到明天
+    ]);
+    await db.logs.add({
+      cardId: "L01-V001",
+      rating: 3,
+      state: 2,
+      due: nowMs - DAY,
+      elapsedDays: 3,
+      reviewedAt: nowMs,
+    });
+
+    render(<Home />);
+
+    expect(await screen.findByText("今日任務完成 🎉")).toBeInTheDocument();
+    expect(screen.getByText("今日複習已達上限,明天繼續")).toBeInTheDocument();
+    expect(screen.queryByText(/要不要去課程加入新單字/)).not.toBeInTheDocument();
+  });
+
+  it("今日佇列清空即算達標(未達設定目標)", async () => {
+    const nowMs = Date.now();
+    const ids = ["L01-V001", "L01-V002", "L01-V003"];
+    // 三張新卡今日已首評,已排到 3 天後;dailyGoal 預設 20
+    await db.cards.bulkAdd(ids.map((cardId) => card({ cardId, due: addStudyDays(nowMs, 3) })));
+    await db.logs.bulkAdd(
+      ids.map((cardId) => ({
+        cardId,
+        rating: 3 as const,
+        state: 0 as const,
+        due: nowMs,
+        elapsedDays: 0,
+        reviewedAt: nowMs,
+      })),
+    );
+
+    render(<Home />);
+
+    const goal = (await screen.findByText(/今日目標/)).closest("section");
+    expect(goal).toHaveTextContent("3 / 3");
+    expect(goal).toHaveTextContent("今日佇列已清空 ✓");
+    expect(goal).not.toHaveTextContent("今日目標已達成");
+  });
+
+  it("頁面重新可見且已跨學習日:重算今日佇列", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const evening = new Date(2026, 8, 1, 22, 0).getTime();
+    vi.setSystemTime(evening);
+    // 明日學習日 08:00 到期
+    await db.cards.bulkAdd([
+      card({ cardId: "L01-V001", due: nextStudyDayStart(evening) + 4 * 3_600_000 }),
+    ]);
+
+    render(<Home />);
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
+
+    vi.setSystemTime(evening + 12 * 3_600_000); // 隔天 10:00 切回 App
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(await screen.findByText("複習 1 · 新卡 0")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "開始複習" })).toBeInTheDocument();
+  });
+
+  it("pageshow:只有 bfcache 還原(persisted)才重算", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const evening = new Date(2026, 8, 1, 22, 0).getTime();
+    vi.setSystemTime(evening);
+    await db.cards.bulkAdd([
+      card({ cardId: "L01-V001", due: nextStudyDayStart(evening) + 4 * 3_600_000 }),
+    ]);
+
+    render(<Home />);
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
+
+    vi.setSystemTime(evening + 12 * 3_600_000);
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false }));
+    });
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(screen.getByText("今天沒有要複習的卡片")).toBeInTheDocument(); // 一般 pageshow 不重載
+
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+    });
+    expect(await screen.findByText("複習 1 · 新卡 0")).toBeInTheDocument();
   });
 });

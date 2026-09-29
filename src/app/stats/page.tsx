@@ -14,41 +14,54 @@ import {
   YAxis,
 } from "recharts";
 import { Heatmap } from "@/components/Heatmap";
-import { getLessonIndex } from "@/lib/content";
+import { Loading } from "@/components/Loading";
+import { buttonVariants } from "@/components/ui/button";
+import { getLessonIndex, getSupplementaryWords } from "@/lib/content";
 import { db, type CardRow, type LogRow } from "@/lib/db";
+import { jaLang } from "@/lib/lang";
 import {
+  cardTotals,
   dailyReviewCounts,
   dueForecast,
+  lastRatingByCard,
   lessonProgress,
+  MATURE_STABILITY,
   retentionRate,
   stageDistribution,
   weeklyRetention,
   type StageCounts,
+  type SupplementaryWords,
 } from "@/lib/stats";
 import type { LessonIndex } from "@/schemas/lesson";
 
-const STAGES: { key: keyof StageCounts; label: string; color: string }[] = [
-  { key: "new", label: "新卡", color: "#7dd3fc" },
-  { key: "learning", label: "學習中", color: "#fbbf24" },
-  { key: "young", label: "未成熟", color: "#0284c7" },
-  { key: "mature", label: "已成熟", color: "#16a34a" },
-  { key: "suspended", label: "已會", color: "#a3a3a3" },
+// 顏色為 globals.css 的 --stage-* token(兩種配色各自定義);圖例另有文字標籤與張數
+const STAGES: { key: keyof StageCounts; label: string; cls: string }[] = [
+  { key: "new", label: "新卡", cls: "bg-stage-new" },
+  { key: "learning", label: "學習中", cls: "bg-stage-learning" },
+  { key: "young", label: "未成熟", cls: "bg-stage-young" },
+  { key: "mature", label: "已成熟", cls: "bg-stage-mature" },
+  { key: "suspended", label: "已會", cls: "bg-stage-suspended" },
 ];
 
 function StageBar({ counts }: { counts: StageCounts }) {
   const total = STAGES.reduce((sum, s) => sum + counts[s.key], 0);
   if (total === 0) {
-    return <p className="text-sm text-neutral-500">尚無卡片。</p>;
+    return <p className="text-sm text-muted-foreground">尚無卡片。</p>;
   }
   return (
     <div>
-      <div className="flex h-3 overflow-hidden rounded-full">
+      {/* 無語意的 div 上的 aria-label 不會被念出:整條以 role="img" 給一句摘要 */}
+      <div
+        role="img"
+        aria-label={`卡片階段分布:${STAGES.map((s) => `${s.label} ${counts[s.key]} 張`).join("、")}`}
+        className="flex h-3 overflow-hidden rounded-full"
+      >
         {STAGES.map((s) =>
           counts[s.key] > 0 ? (
             <div
               key={s.key}
-              style={{ width: `${(counts[s.key] / total) * 100}%`, background: s.color }}
-              aria-label={`${s.label} ${counts[s.key]}`}
+              className={s.cls}
+              style={{ width: `${(counts[s.key] / total) * 100}%` }}
             />
           ) : null,
         )}
@@ -56,16 +69,14 @@ function StageBar({ counts }: { counts: StageCounts }) {
       <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
         {STAGES.map((s) => (
           <li key={s.key} className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-neutral-600">
-              <span
-                className="inline-block size-2.5 rounded-full"
-                style={{ background: s.color }}
-                aria-hidden
-              />
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <span className={`inline-block size-2.5 rounded-full ${s.cls}`} aria-hidden />
               {s.label}
             </span>
-            <span className="font-medium tabular-nums text-neutral-900">
+            <span className="font-medium tabular-nums">
               {counts[s.key]}
+              {/* 以卡片計,與上方「單字」(以字計)區分 */}
+              <span className="ml-0.5 text-xs font-normal text-muted-foreground">張</span>
             </span>
           </li>
         ))}
@@ -76,8 +87,20 @@ function StageBar({ counts }: { counts: StageCounts }) {
 
 type Phase = "loading" | "empty" | "ready" | "error";
 
-const ACCENT = "#0284c7"; // sky-600,與全站 accent 一致(單一系列,單色相)
-const GRID = "#e5e5e5"; // neutral-200,格線後退
+// Recharts 以 CSS 變數上色(SVG 屬性支援 var()),深色模式隨 token 切換
+const SERIES = "var(--color-chart-1)"; // 單一系列,單色相
+const GRID = "var(--color-border)"; // 格線後退
+const TICK = { fontSize: 10, fill: "var(--color-muted-foreground)" };
+// Tooltip:卡片底 + 前景色文字(labelStyle/itemStyle 不設時,標籤會繼承 body 色而在某一配色下看不見)
+const TOOLTIP = {
+  contentStyle: {
+    fontSize: 12,
+    background: "var(--color-card)",
+    borderColor: "var(--color-border)",
+  },
+  labelStyle: { color: "var(--color-foreground)" },
+  itemStyle: { color: "var(--color-foreground)" },
+};
 
 /** "YYYY-MM-DD" → "M/D"(圖表刻度用) */
 function shortDate(key: string): string {
@@ -88,19 +111,48 @@ function formatPercent(rate: number | null): string {
   return rate === null ? "—" : `${Math.round(rate * 100)}%`;
 }
 
-function StatTile({ label, value }: { label: string; value: string }) {
+function StatTile({
+  label,
+  value,
+  notes = [],
+}: {
+  label: string;
+  value: string;
+  notes?: string[];
+}) {
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-3">
-      <div className="text-xs text-neutral-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-neutral-900">{value}</div>
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-semibold">{value}</div>
+      {notes.map((note) => (
+        <div key={note} className="mt-0.5 text-xs text-muted-foreground">
+          {note}
+        </div>
+      ))}
     </div>
+  );
+}
+
+// 各課進度條兩段的顏色(圖例色塊共用同一 class)
+const ADDED_CLS = "bg-chart-1/30";
+const LEARNED_CLS = "bg-chart-1";
+
+/** 各課進度圖例色塊:疊在與進度條相同的 muted 軌道上,兩種配色下都與條內顏色一致 */
+function ProgressSwatch({ cls }: { cls: string }) {
+  return (
+    <span
+      aria-hidden
+      className="inline-block h-2 w-3 overflow-hidden rounded-sm bg-muted align-middle"
+    >
+      <span className={`block size-full ${cls}`} />
+    </span>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-4">
-      <h2 className="mb-3 text-sm font-medium text-neutral-900">{title}</h2>
+    <section className="rounded-lg border border-border bg-card p-4">
+      <h2 className="mb-3 text-sm font-medium">{title}</h2>
       {children}
     </section>
   );
@@ -112,6 +164,8 @@ export default function StatsPage() {
   const [cards, setCards] = useState<CardRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [index, setIndex] = useState<LessonIndex | null>(null);
+  // 各課補充單字(不計入進度);需載入全部課程內容,晚於其餘統計補上(null = 載入中)
+  const [supplementary, setSupplementary] = useState<SupplementaryWords | null>(null);
   const [forecastDays, setForecastDays] = useState<7 | 30>(7);
   // 進頁面時定格,聚合結果穩定不隨 render 飄移
   const [now] = useState(() => new Date());
@@ -129,7 +183,15 @@ export default function StatsPage() {
         setCards(cardRows);
         setLogs(logRows);
         setIndex(lessonIndex);
-        setPhase(cardRows.length === 0 && logRows.length === 0 ? "empty" : "ready");
+        const empty = cardRows.length === 0 && logRows.length === 0;
+        setPhase(empty ? "empty" : "ready");
+        if (empty) return;
+        // 各課進度不計補充單字(與課程列表的「已完成」一致);全課載入,各課分母同一口徑。
+        // 50 課內容較大,不擋其餘統計;讀不到的課照 index 總數計,不讓整頁失敗
+        const supplementaryWords = await getSupplementaryWords(
+          lessonIndex.lessons.map((l) => l.id),
+        ).catch(() => new Map<number, Set<string>>());
+        if (active) setSupplementary(supplementaryWords);
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : String(err));
@@ -159,21 +221,27 @@ export default function StatsPage() {
       })),
     [logs, now],
   );
+  // 最後一次評分:「重來」者不算已學會、歸入學習中
+  const lastRating = useMemo(() => lastRatingByCard(logs), [logs]);
   const progress = useMemo(
-    () => (index ? lessonProgress(cards, index) : []),
-    [cards, index],
+    () =>
+      index && supplementary ? lessonProgress(cards, index, lastRating, supplementary) : null,
+    [cards, index, lastRating, supplementary],
   );
-  const stages = useMemo(() => stageDistribution(cards), [cards]);
+  const stages = useMemo(() => stageDistribution(cards, lastRating), [cards, lastRating]);
+  // 單字 = 正向卡數(與首頁「累計單字」同口徑);卡片另含義→日回想卡
+  const totals = useMemo(() => cardTotals(cards), [cards]);
+  const hasReverse = totals.cards > totals.words;
   const todayCount = daily.length ? daily[daily.length - 1].count : 0;
 
   if (phase === "loading") {
-    return <p className="p-6 text-center text-sm text-neutral-500">載入中…</p>;
+    return <Loading className="p-6" />;
   }
 
   if (phase === "error") {
     return (
       <div className="p-6 text-center">
-        <p className="text-sm text-red-600">統計載入失敗:{error}</p>
+        <p className="text-sm text-destructive">統計載入失敗:{error}</p>
       </div>
     );
   }
@@ -181,14 +249,11 @@ export default function StatsPage() {
   if (phase === "empty") {
     return (
       <div className="flex flex-col items-center gap-3 p-10 text-center">
-        <p className="text-neutral-600">尚無學習紀錄。</p>
-        <p className="text-sm text-neutral-500">
+        <p className="text-muted-foreground">尚無學習紀錄。</p>
+        <p className="text-sm text-muted-foreground">
           先到課程頁把單字加入複習,完成幾次複習後這裡就會有統計。
         </p>
-        <Link
-          href="/lessons"
-          className="rounded bg-sky-700 px-4 py-2 text-sm font-medium text-white hover:bg-sky-800"
-        >
+        <Link href="/lessons" className={buttonVariants()}>
           前往課程
         </Link>
       </div>
@@ -200,7 +265,14 @@ export default function StatsPage() {
       <h1 className="text-lg font-semibold">統計</h1>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <StatTile label="總卡數" value={String(cards.length)} />
+        <StatTile
+          label="單字"
+          value={String(totals.words)}
+          notes={[
+            ...(totals.suspendedWords > 0 ? [`其中已會 ${totals.suspendedWords} 字`] : []),
+            ...(hasReverse ? [`卡片 ${totals.cards} 張(含回想卡)`] : []),
+          ]}
+        />
         <StatTile label="今日已複習" value={String(todayCount)} />
         <StatTile label="整體留存率" value={formatPercent(retentionRate(logs))} />
         <StatTile
@@ -210,6 +282,10 @@ export default function StatsPage() {
       </div>
 
       <Section title="卡片階段分布">
+        <p className="mb-2 text-xs text-muted-foreground">
+          以卡片計{hasReverse && "(回想卡另計一張)"};學習中=最近一次評「重來」,已成熟=穩定度 ≥{" "}
+          {MATURE_STABILITY} 天。
+        </p>
         <StageBar counts={stages} />
       </Section>
 
@@ -225,11 +301,10 @@ export default function StatsPage() {
               type="button"
               aria-pressed={forecastDays === days}
               onClick={() => setForecastDays(days)}
-              className={`rounded px-3 py-1 text-xs font-medium ${
-                forecastDays === days
-                  ? "bg-sky-700 text-white"
-                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-              }`}
+              className={buttonVariants({
+                variant: forecastDays === days ? "default" : "secondary",
+                size: "sm",
+              })}
             >
               {days} 天
             </button>
@@ -243,20 +318,16 @@ export default function StatsPage() {
                 dataKey="label"
                 tickLine={false}
                 axisLine={false}
-                tick={{ fontSize: 10, fill: "#737373" }}
+                tick={TICK}
                 interval="preserveStartEnd"
               />
-              <YAxis
-                allowDecimals={false}
-                tickLine={false}
-                axisLine={false}
-                tick={{ fontSize: 10, fill: "#737373" }}
-              />
+              <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={TICK} />
               <Tooltip
                 formatter={(value) => [`${value} 張`, "到期"]}
-                contentStyle={{ fontSize: 12 }}
+                {...TOOLTIP}
+                cursor={{ fill: "var(--color-muted)" }}
               />
-              <Bar dataKey="count" fill={ACCENT} radius={[4, 4, 0, 0]} maxBarSize={18} />
+              <Bar dataKey="count" fill={SERIES} radius={[4, 4, 0, 0]} maxBarSize={18} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -271,27 +342,22 @@ export default function StatsPage() {
                 dataKey="label"
                 tickLine={false}
                 axisLine={false}
-                tick={{ fontSize: 10, fill: "#737373" }}
+                tick={TICK}
                 interval="preserveStartEnd"
               />
-              <YAxis
-                domain={[0, 100]}
-                tickLine={false}
-                axisLine={false}
-                tick={{ fontSize: 10, fill: "#737373" }}
-                unit="%"
-              />
+              <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={TICK} unit="%" />
               <Tooltip
                 formatter={(value) => [`${value}%`, "留存率"]}
-                contentStyle={{ fontSize: 12 }}
+                {...TOOLTIP}
+                cursor={{ stroke: "var(--color-border)" }}
               />
               <Line
                 type="monotone"
                 dataKey="rate"
-                stroke={ACCENT}
+                stroke={SERIES}
                 strokeWidth={2}
-                dot={{ r: 3, fill: ACCENT }}
-                activeDot={{ r: 5 }}
+                dot={{ r: 3, fill: SERIES }}
+                activeDot={{ r: 5, stroke: "var(--color-card)", strokeWidth: 2 }}
                 connectNulls={false}
               />
             </LineChart>
@@ -300,32 +366,39 @@ export default function StatsPage() {
       </Section>
 
       <Section title="各課進度">
-        <p className="mb-2 text-xs text-neutral-500">
-          淺色=已加入複習,深色=已學會(進入長期複習);右側為 已加入/單字總數。
+        {/* 圖例用色塊而非「淺色/深色」字樣:深色模式下兩段的明暗關係相反 */}
+        <p className="mb-2 text-xs text-muted-foreground">
+          <ProgressSwatch cls={ADDED_CLS} /> 已加入複習,{" "}
+          <ProgressSwatch cls={LEARNED_CLS} />{" "}
+          已學會(已複習且最近一次不是「重來」,或標為已會);右側為已加入/單字總數(補充單字選學,不計入)。
         </p>
+        {/* 補充單字名單(全課內容)晚於其餘統計載入:先顯示載入中,不閃出未扣除的分母 */}
+        {!progress && <Loading className="py-4" />}
         <ul className="flex flex-col gap-2">
-          {progress.map((lesson) => (
+          {progress?.map((lesson) => (
             <li key={lesson.lessonId} className="flex items-center gap-3">
-              <span className="w-10 shrink-0 text-xs text-neutral-500">
+              <span className="w-10 shrink-0 text-xs text-muted-foreground">
                 L{lesson.lessonId}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs text-neutral-700">{lesson.title}</div>
+                <div lang={jaLang(lesson.title)} className="truncate text-xs">
+                  {lesson.title}
+                </div>
                 <div
-                  className="relative mt-1 h-2 overflow-hidden rounded bg-neutral-100"
+                  className="relative mt-1 h-2 overflow-hidden rounded bg-muted"
                   title={`已加入 ${lesson.added}/${lesson.total},已學會 ${lesson.learned}`}
                 >
                   <div
-                    className="absolute inset-y-0 left-0 rounded bg-sky-200"
+                    className={`absolute inset-y-0 left-0 rounded ${ADDED_CLS}`}
                     style={{ width: `${Math.min(100, (lesson.added / lesson.total) * 100)}%` }}
                   />
                   <div
-                    className="absolute inset-y-0 left-0 rounded bg-sky-700"
+                    className={`absolute inset-y-0 left-0 rounded ${LEARNED_CLS}`}
                     style={{ width: `${Math.min(100, (lesson.learned / lesson.total) * 100)}%` }}
                   />
                 </div>
               </div>
-              <span className="w-14 shrink-0 text-right text-xs tabular-nums text-neutral-500">
+              <span className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                 {lesson.added}/{lesson.total}
               </span>
             </li>

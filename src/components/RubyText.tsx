@@ -14,6 +14,7 @@ interface RubyTextProps {
 /**
  * 以原生 <ruby> 渲染帶 furigana 的日文。
  * 純展示元件:讀音是否顯示由 furigana prop 控制(由上層接設定/頁內切換)。
+ * 根元素標 `lang="ja"`:日文字形、日文斷行(globals.css 的 :lang(ja))與日語朗讀。
  */
 export function RubyText({
   segments,
@@ -22,7 +23,7 @@ export function RubyText({
 }: RubyTextProps) {
   const showFurigana = furigana === "show";
   return (
-    <span className={cn(className)}>
+    <span lang="ja" className={cn(className)}>
       {segments.map((seg, i) =>
         seg.r ? (
           <ruby key={i}>

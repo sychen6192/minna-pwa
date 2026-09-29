@@ -114,7 +114,7 @@ describe("QuizRunner", () => {
     await screen.findByText("第 1 / 2 題");
 
     await user.click(screen.getByRole("button", { name: "貓" }));
-    expect(screen.getByText(/答錯.*いぬ/)).toBeInTheDocument();
+    expect(screen.getByText(/答錯/)).toHaveTextContent(/答錯.*いぬ/);
   });
 
   it("輸入題:羅馬字經正規化判定為正解,走完一輪到結算", async () => {
@@ -134,5 +134,142 @@ describe("QuizRunner", () => {
     await user.click(screen.getByRole("button", { name: "看結果" }));
     expect(screen.getByText("測驗完成")).toBeInTheDocument();
     expect(screen.getByText("2 / 2")).toBeInTheDocument();
+  });
+});
+
+describe("QuizRunner 無障礙:回饋 live region 與焦點(T10.10)", () => {
+  it("回饋為先掛載的 role=status;選擇題作答後焦點移到「下一題」,換題後移到題幹", async () => {
+    const user = userEvent.setup();
+    render(<QuizRunner id={13} />);
+    await screen.findByText("第 1 / 2 題");
+
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    expect(document.body).toHaveFocus(); // 首次載入不搶焦點
+
+    await user.click(screen.getByRole("button", { name: "貓" }));
+    expect(screen.getByRole("status")).toBe(status); // 同一個 live region,內容更新才會播報
+    expect(status).toHaveTextContent(/答錯.*いぬ/);
+    // 被選的選項已 disabled:焦點不掉到 body,移到下一步
+    expect(screen.getByRole("button", { name: "下一題" })).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    expect(screen.getByText("第 2 / 2 題")).toBeInTheDocument();
+    expect(screen.getByText("貓").closest("[tabindex]")).toHaveFocus(); // 新題幹
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("輸入題:作答後輸入框停用,焦點移到「看結果」", async () => {
+    const user = userEvent.setup();
+    generateQuiz.mockReturnValue([inputQ]);
+    render(<QuizRunner id={13} />);
+    await screen.findByText("第 1 / 1 題");
+
+    await user.type(screen.getByLabelText("輸入假名"), "neko{Enter}");
+    expect(screen.getByRole("status")).toHaveTextContent("答對 ✓");
+    expect(screen.getByRole("button", { name: "看結果" })).toHaveFocus();
+  });
+});
+
+describe("QuizRunner 判分、提示與再測(T10.4)", () => {
+  const mail: QuizCandidate = {
+    id: "L26-V042",
+    lessonId: 26,
+    ruby: [{ b: "電子", r: "でんし" }, { b: "メール" }],
+    kana: "でんしメール",
+    meaning: "電子郵件",
+    pos: "名",
+  };
+  const suki: QuizCandidate = {
+    id: "L09-V003",
+    lessonId: 9,
+    ruby: [{ b: "好", r: "す" }, { b: "き［な］" }],
+    kana: "すき［な］",
+    meaning: "喜歡",
+    pos: "な形",
+  };
+
+  it("輸入題:長音以羅馬字 - 作答判對", async () => {
+    const user = userEvent.setup();
+    generateQuiz.mockReturnValue([{ type: "input", answer: mail }]);
+    render(<QuizRunner id={26} />);
+    await screen.findByText("第 1 / 1 題");
+
+    await user.type(screen.getByLabelText("輸入假名"), "denshime-ru");
+    await user.click(screen.getByRole("button", { name: "作答" }));
+    expect(screen.getByText("答對 ✓")).toBeInTheDocument();
+  });
+
+  it("輸入題:［な］可省略;答錯時列出可接受的讀音(不含標記)", async () => {
+    const user = userEvent.setup();
+    generateQuiz.mockReturnValue([
+      { type: "input", answer: suki },
+      { type: "input", answer: suki },
+    ]);
+    render(<QuizRunner id={9} />);
+    await screen.findByText("第 1 / 2 題");
+
+    await user.type(screen.getByLabelText("輸入假名"), "suki");
+    await user.click(screen.getByRole("button", { name: "作答" }));
+    expect(screen.getByText("答對 ✓")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "下一題" }));
+    await user.type(screen.getByLabelText("輸入假名"), "すきだ");
+    await user.click(screen.getByRole("button", { name: "作答" }));
+    expect(screen.getByText(/答錯/)).toHaveTextContent(/^答錯 ✗\(すき／すきな\)$/);
+    // 正解讀音標 lang=ja(日文字形/語音),中文回饋不標
+    expect(screen.getByText("すき／すきな")).toHaveAttribute("lang", "ja");
+  });
+
+  it("答題後顯示搭配 note;段落標記不顯示", async () => {
+    const user = userEvent.setup();
+    const noted: McqQuestion = {
+      ...mcq,
+      answer: { ...inu, note: "〔電車に〜〕" },
+      options: mcq.options.map((o) =>
+        o.correct ? { ...o, candidate: { ...inu, note: "〔電車に〜〕" } } : o,
+      ),
+    };
+    const marker: Question = {
+      type: "input",
+      answer: { ...neko, note: "読み物" },
+    };
+    generateQuiz.mockReturnValue([noted, marker]);
+    render(<QuizRunner id={13} />);
+    await screen.findByText("第 1 / 2 題");
+
+    expect(screen.queryByText("〔電車に〜〕")).not.toBeInTheDocument(); // 作答前不提示
+    await user.click(screen.getByRole("button", { name: "狗" }));
+    expect(screen.getByText("〔電車に〜〕")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "下一題" }));
+    await user.type(screen.getByLabelText("輸入假名"), "neko");
+    await user.click(screen.getByRole("button", { name: "作答" }));
+    expect(screen.queryByText("読み物")).not.toBeInTheDocument();
+  });
+
+  it("結果頁「再測一次」重新出題並從第 1 題開始;有「下一課測驗」連結", async () => {
+    const user = userEvent.setup();
+    render(<QuizRunner id={13} />);
+    await screen.findByText("第 1 / 2 題");
+    await user.click(screen.getByRole("button", { name: "貓" })); // 答錯
+    await user.click(screen.getByRole("button", { name: "下一題" }));
+    await user.type(screen.getByLabelText("輸入假名"), "neko");
+    await user.click(screen.getByRole("button", { name: "作答" }));
+    await user.click(screen.getByRole("button", { name: "看結果" }));
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "下一課測驗 →" })).toHaveAttribute(
+      "href",
+      "/quiz/14",
+    );
+
+    generateQuiz.mockReturnValue([inputQ]);
+    await user.click(screen.getByRole("button", { name: "再測一次" }));
+    expect(generateQuiz).toHaveBeenCalledTimes(2);
+    expect(generateQuiz.mock.calls[1][0]).toBe(13);
+    expect(generateQuiz.mock.calls[1][1]).toBe(generateQuiz.mock.calls[0][1]); // 同一題庫
+    expect(screen.getByText("第 1 / 1 題")).toBeInTheDocument();
+    expect(screen.getByLabelText("輸入假名")).toHaveValue("");
+    expect(screen.queryByText("答對 ✓")).not.toBeInTheDocument();
   });
 });

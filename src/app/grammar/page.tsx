@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { Loading } from "@/components/Loading";
 import { getLesson, getLessonIndex } from "@/lib/content";
+import { jaLang } from "@/lib/lang";
 import {
   buildSearchIndex,
   searchAll,
@@ -43,20 +45,69 @@ function load(): Promise<Loaded> {
   return cached;
 }
 
-const KIND_META: Record<SearchKind, { label: string; cls: string }> = {
-  grammar: { label: "文型", cls: "bg-sky-600/10 text-sky-700 dark:text-sky-400" },
-  example: { label: "例句", cls: "bg-violet-600/10 text-violet-700 dark:text-violet-400" },
-  vocab: { label: "単語", cls: "bg-green-600/10 text-green-700 dark:text-green-400" },
+/** 徽章沿用課程頁分頁名(単語/文型 為日文用語,標 lang=ja;例句為中文) */
+const KIND_META: Record<SearchKind, { label: string; lang?: "ja"; cls: string }> = {
+  grammar: { label: "文型", lang: "ja", cls: "bg-tag-grammar/10 text-tag-grammar" },
+  example: { label: "例句", cls: "bg-tag-example/10 text-tag-example" },
+  vocab: { label: "単語", lang: "ja", cls: "bg-tag-vocab/10 text-tag-vocab" },
 };
 
 function hitHref(h: SearchHit): string {
   return h.anchor ? `/lessons/${h.lessonId}#${h.anchor}` : `/lessons/${h.lessonId}`;
 }
 
+/** 搜尋字串寫回網址(?q=)的延遲:打字中不每鍵改寫 */
+const QUERY_SYNC_MS = 300;
+
+/** 目前網址對應 `query` 的版本(?q= 存搜尋字串,空白查詢則移除);已相同時回傳 null。 */
+function urlWithQuery(query: string): string | null {
+  const url = new URL(window.location.href);
+  if (query.trim()) url.searchParams.set("q", query);
+  else url.searchParams.delete("q");
+  return url.href === window.location.href ? null : `${url.pathname}${url.search}${url.hash}`;
+}
+
 export default function GrammarPage() {
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+
+  // 搜尋字串存於網址 ?q=(replaceState,不新增歷史紀錄):點結果再返回時還原。
+  // 掛載後才讀 location(不用 useSearchParams:靜態匯出下需 Suspense 邊界,且預先渲染時無查詢字串)
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setQuery(q);
+  }, []);
+  // 延遲中的寫入(沒有則為 null):點連結時先寫入,見下方 capture 監聽
+  const flushQuery = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const pathname = window.location.pathname;
+    let timer = 0;
+    const sync = () => {
+      window.clearTimeout(timer);
+      flushQuery.current = null;
+      // 已離開本頁(如延遲中按上一頁):不改寫別頁的網址
+      if (window.location.pathname !== pathname) return;
+      const next = urlWithQuery(query);
+      if (next !== null) window.history.replaceState(null, "", next);
+    };
+    timer = window.setTimeout(sync, QUERY_SYNC_MS);
+    flushQuery.current = sync;
+    return () => {
+      window.clearTimeout(timer);
+      flushQuery.current = null;
+    };
+  }, [query]);
+  // 點任何連結(搜尋結果、底部導覽…)時先寫入延遲中的查詢:返回時還原到剛輸入的字串。
+  // capture 階段早於 Link 的導覽;Next 會把 replaceState 同步進 router(ACTION_RESTORE),
+  // 若等導覽開始後計時器才寫入,會取消尚在載入中的導覽
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest("a[href]")) flushQuery.current?.();
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -79,9 +130,10 @@ export default function GrammarPage() {
 
   return (
     <div>
-      <h1 className="px-4 py-3 text-lg font-bold">文法速查</h1>
+      <h1 className="px-4 pt-3 pb-1 text-lg font-bold">文法速查</h1>
 
-      <div className="px-4 pb-3">
+      {/* 黏在頂端:捲動長列表時仍可改查詢 */}
+      <div className="sticky top-0 z-10 border-b border-border bg-background px-4 py-2">
         <input
           type="search"
           aria-label="搜尋文型、解說、例句、單字"
@@ -89,24 +141,21 @@ export default function GrammarPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           disabled={!data}
-          className="w-full rounded-lg border border-foreground/20 bg-background px-3 py-2 text-sm"
+          // 16px 以上:iOS Safari 不會在 focus 時放大頁面
+          className="h-11 w-full rounded-lg border border-input bg-background px-3 text-base"
         />
       </div>
 
       {error && (
-        <p className="px-4 py-8 text-center text-sm text-red-600">載入失敗:{error}</p>
+        <p className="px-4 py-8 text-center text-sm text-destructive">載入失敗:{error}</p>
       )}
-      {!error && !data && (
-        <p className="px-4 py-8 text-center text-sm text-foreground/60">
-          載入全部課程資料中…
-        </p>
-      )}
+      {!error && !data && <Loading label="載入全部課程資料中…" />}
 
       {/* 搜尋結果 */}
       {data && hits && (
         <ul aria-label="搜尋結果">
           {hits.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-foreground/60">
+            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
               找不到「{query}」的結果
             </p>
           )}
@@ -116,22 +165,29 @@ export default function GrammarPage() {
               <li key={`${h.kind}-${h.id}`}>
                 <Link
                   href={hitHref(h)}
-                  className="flex items-start gap-2 border-b border-foreground/10 px-4 py-3 transition-colors active:bg-foreground/5"
+                  className="flex items-start gap-2 border-b border-border px-4 py-3 transition-colors active:bg-muted"
                 >
                   <span
+                    lang={meta.lang}
                     className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${meta.cls}`}
                   >
                     {meta.label}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{h.title}</span>
+                    {/* 單字/例句必為日文;文型 pattern 少數是中文說明 */}
+                    <span
+                      lang={h.kind === "grammar" ? jaLang(h.title) : "ja"}
+                      className="block truncate font-medium"
+                    >
+                      {h.title}
+                    </span>
                     {h.snippet && (
-                      <span className="block truncate text-xs text-foreground/60">
+                      <span className="block truncate text-xs text-muted-foreground">
                         {h.snippet}
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 text-xs text-foreground/50">
+                  <span className="shrink-0 text-xs text-muted-foreground">
                     第 {h.lessonId} 課
                   </span>
                 </Link>
@@ -148,10 +204,12 @@ export default function GrammarPage() {
             <li key={g.id}>
               <Link
                 href={`/lessons/${g.lessonId}#${g.id}`}
-                className="flex items-center justify-between border-b border-foreground/10 px-4 py-3 transition-colors active:bg-foreground/5"
+                className="flex items-center justify-between border-b border-border px-4 py-3 transition-colors active:bg-muted"
               >
-                <span className="min-w-0 truncate font-medium">{g.pattern}</span>
-                <span className="ml-3 shrink-0 text-xs text-foreground/50">
+                <span lang={jaLang(g.pattern)} className="min-w-0 truncate font-medium">
+                  {g.pattern}
+                </span>
+                <span className="ml-3 shrink-0 text-xs text-muted-foreground">
                   第 {g.lessonId} 課
                 </span>
               </Link>

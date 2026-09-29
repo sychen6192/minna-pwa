@@ -1,24 +1,184 @@
 @import "tailwindcss";
 
+/*
+ * 語意色彩 token(shadcn 命名)。淺色值寫在 :root,深色值只在下方
+ * `@media (prefers-color-scheme: dark)` 覆寫——跟隨系統配色,不用 `.dark` class
+ * (勿跑 `shadcn init`:它會改成 .dark class,使深色失效)。元件只用 `bg-card`、
+ * `text-muted-foreground` 這類語意 utility,不寫死 neutral、sky 等色票。
+ * 文字類 token 在 background、card(及其 10% 同色淡底)上對比皆 ≥ 4.5:1(兩種配色)。
+ */
 :root {
+  color-scheme: light dark;
+
+  /* 表面與文字 */
   --background: #ffffff;
   --foreground: #171717;
+  --card: #ffffff;
+  --muted: #f5f5f5;
+  --muted-foreground: #6b6b6b; /* 在 muted 底上仍 ≥ 4.5:1(neutral-500 只有 4.3) */
+  --border: #e5e5e5;
+  --input: #d4d4d4;
+  --ring: #0084d1;
+
+  /* 主要動作:填色按鈕兩種配色同值(白字 ≥ 4.5:1);文字連結另用 --link */
+  --primary: #0069a8;
+  --primary-foreground: #ffffff;
+  /* 按下/懸停:加深而非變透明(淺色底上 /80 會變淺,白字掉到 3.9:1) */
+  --primary-hover: #00598a;
+  --link: #0069a8;
+
+  /* 狀態(文字與淡底) */
+  --success: #007a33; /* 在 10% 同色淡底上仍 ≥ 4.5:1(green-700 只有 4.3) */
+  --warning: #a33f00; /* 在 warning-accent 15% 淡底上仍 ≥ 4.5:1(amber-700 只有 4.48) */
+  /* 警示的淡底/邊框(非文字;兩種配色同值):深色文字色直接調淡會混成灰褐,另用明亮的 amber-500 */
+  --warning-accent: #fe9a00;
+  --destructive: #c10007;
+  --destructive-foreground: #ffffff;
+
+  /* 評分鍵:重來/困難/良好/輕鬆 */
+  --rating-again: #c10007;
+  --rating-hard: #ca3500;
+  --rating-good: #008236;
+  --rating-easy: #0069a8;
+
+  /* 重音標記線(圖形,≥ 3:1) */
+  --pitch: #e7000b;
+
+  /* 文法速查結果徽章(文型/例句/単語;分類色,非狀態) */
+  --tag-grammar: #0069a8;
+  --tag-example: #7008e7;
+  --tag-vocab: #007a33;
+
+  /* 熱力圖:單一色相順序色階(0 = 無活動的中性底) */
+  --heat-0: #f5f5f5;
+  --heat-1: #b8e6fe;
+  --heat-2: #00bcff;
+  --heat-3: #0084d1;
+  --heat-4: #00598a;
+
+  /* 圖表:單一系列色;卡片階段分布(分類色,圖例另有文字標籤與張數) */
+  --chart-1: #0084d1;
+  --stage-new: #74d4ff;
+  --stage-learning: #ffb900;
+  --stage-young: #0084d1;
+  --stage-mature: #00a63e;
+  --stage-suspended: #a1a1a1;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-link: var(--link);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-warning-accent: var(--warning-accent);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-rating-again: var(--rating-again);
+  --color-rating-hard: var(--rating-hard);
+  --color-rating-good: var(--rating-good);
+  --color-rating-easy: var(--rating-easy);
+  --color-pitch: var(--pitch);
+  --color-tag-grammar: var(--tag-grammar);
+  --color-tag-example: var(--tag-example);
+  --color-tag-vocab: var(--tag-vocab);
+  --color-heat-0: var(--heat-0);
+  --color-heat-1: var(--heat-1);
+  --color-heat-2: var(--heat-2);
+  --color-heat-3: var(--heat-3);
+  --color-heat-4: var(--heat-4);
+  --color-chart-1: var(--chart-1);
+  --color-stage-new: var(--stage-new);
+  --color-stage-learning: var(--stage-learning);
+  --color-stage-young: var(--stage-young);
+  --color-stage-mature: var(--stage-mature);
+  --color-stage-suspended: var(--stage-suspended);
+  /* 只用系統字型(離線、不下載 web font):介面為繁中,日文內容(:lang(ja))改用日文字型 */
+  --font-sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --font-jp: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Noto Sans CJK JP", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+  /*
+   * 帶 furigana 的例句/会話(`leading-ruby`,16px 本文):半行距須容得下 10px 的 rt,
+   * 有無讀音的行才等高(2 時帶讀音的行高 2px,2.2 起一致)
+   */
+  --leading-ruby: 2.2;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --card: #171717;
+    --muted: #262626;
+    --muted-foreground: #a1a1a1;
+    --border: #262626;
+    --input: #404040;
+    --ring: #00bcff;
+    --link: #00bcff;
+    --success: #05df72;
+    --warning: #ffb900;
+    --destructive: #ff6467;
+    --destructive-foreground: #0a0a0a;
+    --rating-again: #ff6467;
+    --rating-hard: #ff8904;
+    --rating-good: #05df72;
+    --rating-easy: #00bcff;
+    --pitch: #fb2c36;
+    --tag-grammar: #00bcff;
+    --tag-example: #a684ff;
+    --tag-vocab: #05df72;
+    /* 深色底上越多越亮:淺色色階反轉(sky-800→200),最暗一階對 card 仍 ≥ 2:1 */
+    --heat-0: #262626;
+    --heat-1: #00598a;
+    --heat-2: #0084d1;
+    --heat-3: #00bcff;
+    --heat-4: #b8e6fe;
+    --chart-1: #00a6f4;
+    --stage-new: #74d4ff;
+    --stage-learning: #ffb900;
+    --stage-young: #0084d1;
+    --stage-mature: #00c950;
+    --stage-suspended: #737373;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* 放在 base layer:元件上的 Tailwind utility(truncate、font-sans 等)仍可覆寫 */
+@layer base {
+  /*
+   * 日文內容(RubyText、PitchAccent、課名等標 lang="ja"):日文字形;依教材的分かち書き空格斷行,
+   * 不在詞中間斷開(keep-all),沒有空格的長串由 overflow-wrap 兜底、不致撐破版面;
+   * 行首不出現小書き假名與長音(strict)。
+   */
+  :lang(ja) {
+    font-family: var(--font-jp);
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+    line-break: strict;
+  }
+
+  /* furigana:瀏覽器預設 50% 在小字級只剩 7–9px,至少 10px;顏色略淡於本文(以 currentColor 混色,兩種配色皆適用) */
+  rt {
+    font-size: max(0.55em, 10px);
+    line-height: 1;
+    color: color-mix(in oklab, currentColor 75%, transparent);
+  }
+
+  /* 讀音比漢字寬時(洋食/ようしょく),空白留在詞的兩側,不把漢字拆開(預設 space-around) */
+  ruby {
+    ruby-align: center;
+  }
 }

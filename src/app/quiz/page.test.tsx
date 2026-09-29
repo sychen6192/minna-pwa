@@ -22,6 +22,7 @@ describe("QuizIndexPage 測驗選課入口", () => {
       "href",
       "/quiz/13",
     );
+    expect(screen.getByText("〜が ほしいです")).toHaveAttribute("lang", "ja");
   });
 
   it("載入失敗:顯示錯誤訊息", async () => {

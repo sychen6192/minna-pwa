@@ -11,5 +11,6 @@ export default async function LessonPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <LessonDetail id={Number(id)} />;
+  // key:「‹ 上一課」「下一課 ›」在同一路由間切換時重新掛載,分頁、錨點與加入結果不沿用
+  return <LessonDetail key={id} id={Number(id)} />;
 }
