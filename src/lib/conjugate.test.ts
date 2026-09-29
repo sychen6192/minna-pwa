@@ -6,6 +6,7 @@ import {
   VERB_FORMS,
   conjClass,
   conjugate,
+  conjugationBase,
   formIntro,
   formsOf,
   isConjugable,
@@ -312,6 +313,41 @@ describe("回傳 null 的情況", () => {
     expect(CONJUGATION_EXCLUDED.has(v.id)).toBe(true);
     expect(conjugate(v, "te")).toBeNull();
     expect(isConjugable(v)).toBe(false);
+  });
+});
+
+describe("conjugationBase:活用的基底(活用練習用)", () => {
+  const base = (v: ConjugableItem) =>
+    conjugationBase(v)
+      ?.map((s) => (s.r ? `${s.b}(${s.r})` : s.b))
+      .join("|") ?? null;
+
+  it("動詞為ます形;形容詞去除［な］、替代說法、並列的第二個寫法", () => {
+    expect(base(item("動I", "持(も)|って |行(い)|きます"))).toBe(
+      "持(も)|って |行(い)|きます",
+    );
+    expect(base(item("な形", "静(しず)|か［な］", "しずか［な］"))).toBe(
+      "静(しず)|か",
+    );
+    expect(base(item("な形", "有名(ゆうめい)|［な］", "ゆうめい［な］"))).toBe(
+      "有名(ゆうめい)",
+    );
+    expect(base(item("い形", "いい （よい）", "いい"))).toBe("いい");
+    expect(base(item("い形", "暑(あつ)|い、|熱(あつ)|い", "あつい"))).toBe(
+      "暑(あつ)|い",
+    );
+  });
+
+  it("不活用的詞性、排除清單、資料不一致:null;回傳複本(不改動輸入)", () => {
+    expect(conjugationBase(item("名", "駅(えき)"))).toBeNull();
+    expect(
+      conjugationBase({ ...item("動I", "借(か)|ります"), id: "L07-V006" }),
+    ).toBeNull();
+    expect(conjugationBase(item("動I", "書(か)|きます", "かく"))).toBeNull();
+    const v = item("動I", "書(か)|きます");
+    const b = conjugationBase(v);
+    if (b) b[0].b = "改";
+    expect(v.ruby[0].b).toBe("書");
   });
 });
 

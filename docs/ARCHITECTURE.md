@@ -74,7 +74,8 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── page.tsx            # 今日儀表板(佇列 Hero、今日目標、安裝提示;資料層動態載入)
     │   ├── lessons/            # F1(/lessons、/lessons/[id])
     │   ├── review/             # F2
-    │   ├── quiz/[id]/          # F3
+    │   ├── quiz/[id]/          # F3(/quiz 頂端「練習」區塊連到各練習)
+    │   ├── drill/              # F7.3 活用練習(/drill:範圍與形 → 10 題 → 結果;不寫入 DB)
     │   ├── grammar/            # F4
     │   ├── stats/              # F5
     │   └── settings/           # F6
@@ -88,9 +89,11 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── relearn.ts          # 複習 session 內重看的插入規則(純函式)
     │   ├── notes.ts            # 單字 note 呈現:段落標記過濾與徽章分類、補充單字判定(純函式)
     │   ├── lessonHash.ts       # 課程內頁 URL hash:分頁與文法/單字錨點解析(純函式)
+    │   ├── urlParams.ts        # app 查詢參數(/drill?upto=N)與 SW precache 查找時忽略的參數(sw.ts 共用)
     │   ├── vocabFilter.ts      # 課程頁単語的詞性篩選:13 種詞性併為 名詞/動詞/形容詞/其他(純函式)
     │   ├── dialogue.ts         # 会話朗讀與角色扮演:標題行判定、說話者、播放步驟 speak/wait(純函式)
     │   ├── conjugate.ts        # 活用引擎:動詞/形容詞基本形推導(例外表、排除清單)、各形導入文法點 FORM_INTRO(純函式)
+    │   ├── drill.ts            # 活用練習:出題池、依範圍開放的形、錯誤規則干擾項、出題與判分(純函式)
     │   ├── lang.ts             # isJapanese / jaLang:日文字串的 lang="ja" 判定(純函式)
     │   ├── queueNote.ts        # 今日佇列因每日上限而空時的說明(純函式;首頁、課程頁共用)
     │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)
@@ -100,7 +103,7 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── useSetting.ts       # 讀取全域設定的 hook(useSetting / useTtsEnabled;經 db.ts)與日語語音可用性(useJaVoiceAvailable)
     │   └── search.ts           # MiniSearch 索引建立與查詢
     ├── schemas/lesson.ts       # Zod:資料契約唯一真相
-    └── sw.ts                   # Serwist service worker
+    └── sw.ts                   # Serwist service worker(precache 查找忽略 _rsc 與 app 查詢參數,離線可開帶參數的網址)
 ```
 
 ## 4. 資料流

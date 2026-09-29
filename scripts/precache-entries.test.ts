@@ -76,7 +76,7 @@ describe("buildRouteEntries", () => {
   it("涵蓋固定頁面與每課的 lessons / quiz 路由", () => {
     const urls = buildRouteEntries([1, 2], "rev1").map((e) => e.url);
 
-    for (const expected of ["/", "/lessons", "/grammar", "/review", "/practice", "/stats", "/settings", "/quiz", "/lessons/1", "/lessons/2", "/quiz/1", "/quiz/2"]) {
+    for (const expected of ["/", "/lessons", "/grammar", "/review", "/practice", "/stats", "/settings", "/quiz", "/drill", "/lessons/1", "/lessons/2", "/quiz/1", "/quiz/2"]) {
       expect(urls).toContain(expected);
     }
   });
@@ -84,15 +84,15 @@ describe("buildRouteEntries", () => {
   it("每個路由都附帶 .txt RSC payload 條目(/ 對應 /index.txt)", () => {
     const urls = buildRouteEntries([1], "rev1").map((e) => e.url);
 
-    for (const expected of ["/index.txt", "/lessons.txt", "/review.txt", "/stats.txt", "/settings.txt", "/quiz.txt", "/lessons/1.txt", "/quiz/1.txt"]) {
+    for (const expected of ["/index.txt", "/lessons.txt", "/review.txt", "/stats.txt", "/settings.txt", "/quiz.txt", "/drill.txt", "/lessons/1.txt", "/quiz/1.txt"]) {
       expect(urls).toContain(expected);
     }
   });
 
-  it("條目數 =(固定 8 頁 + 每課 2 頁)× 2,且全部使用指定 revision", () => {
+  it("條目數 =(固定 9 頁 + 每課 2 頁)× 2,且全部使用指定 revision", () => {
     const entries = buildRouteEntries([1, 2, 3], "build-abc");
 
-    expect(entries).toHaveLength((8 + 3 * 2) * 2);
+    expect(entries).toHaveLength((9 + 3 * 2) * 2);
     for (const entry of entries) {
       expect(entry.revision).toBe("build-abc");
     }

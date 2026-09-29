@@ -23,6 +23,7 @@ import {
   suspendedWordIds,
 } from "@/lib/srs";
 import { speakSequence, speechText } from "@/lib/tts";
+import { drillHref } from "@/lib/urlParams";
 import { useJaVoiceAvailable, useSetting, useTtsEnabled } from "@/lib/useSetting";
 import { cn } from "@/lib/utils";
 import { countByPosGroup, filterByPosGroup, POS_FILTERS, type PosFilter } from "@/lib/vocabFilter";
@@ -106,12 +107,18 @@ export function LessonDetail({ id }: { id: number }) {
   const [hideTranslations, setHideTranslations] = useState(false);
   const [role, setRole] = useState<string | null>(null);
   const headerRef = useRef<HTMLElement>(null);
+  // 本課有可練的動詞/形容詞、且到本課已教過至少一種活用形:標頭給「活用練習」(範圍到本課)
+  const [hasDrill, setHasDrill] = useState(false);
 
   useEffect(() => {
     let active = true;
-    getLesson(id)
-      .then((data) => {
-        if (active) setLesson(data);
+    // 活用練習的判斷(drill.ts,含活用引擎與 wanakana)動態載入、與課程資料並行:
+    // 不計入課程頁 first-load JS;連結與內容同時出現(不晚一步推擠標頭)。載入失敗只是不給連結
+    Promise.all([getLesson(id), import("@/lib/drill").catch(() => null)])
+      .then(([data, drill]) => {
+        if (!active) return;
+        setHasDrill(drill?.lessonHasDrill(data) ?? false);
+        setLesson(data);
       })
       .catch((e: unknown) => {
         if (active) setError(e instanceof Error ? e.message : String(e));
@@ -284,14 +291,22 @@ export function LessonDetail({ id }: { id: number }) {
             假名
           </Button>
         </div>
-        {/* 流程互連:本課測驗、上/下一課(不必回列表找) */}
-        <nav aria-label="課程導覽" className="mt-2 flex items-center gap-2">
+        {/* 流程互連:本課測驗、活用練習、上/下一課(不必回列表找) */}
+        <nav aria-label="課程導覽" className="mt-2 flex flex-wrap items-center gap-2">
           <Link
             href={`/quiz/${lesson.id}`}
             className={buttonVariants({ variant: "outline", size: "sm", className: "font-normal" })}
           >
             測驗本課
           </Link>
+          {hasDrill && (
+            <Link
+              href={drillHref(lesson.id)}
+              className={buttonVariants({ variant: "outline", size: "sm", className: "font-normal" })}
+            >
+              活用練習
+            </Link>
+          )}
           <div className="ml-auto flex items-center">
             {lesson.id > 1 && (
               <Link href={`/lessons/${lesson.id - 1}`} className={navLink}>

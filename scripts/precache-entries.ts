@@ -51,6 +51,7 @@ export function buildRouteEntries(lessonIds: number[], revision: string): Precac
     "/stats",
     "/settings",
     "/quiz",
+    "/drill",
     ...lessonIds.flatMap((id) => [`/lessons/${id}`, `/quiz/${id}`]),
   ];
   return routes.flatMap((route) => [

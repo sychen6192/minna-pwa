@@ -323,15 +323,18 @@ const KURU_STEM: Readonly<Record<PlainVerbForm, string>> = {
   dict: "く",
 };
 
-/** Ⅰ類:ます形最後一音(い段)→ あ段(ない)、う段(辞書形)、て形/た形語尾(L14-G03、L17-G01、L18-G01) */
-interface GodanRow {
+/**
+ * Ⅰ類:ます形最後一音(い段)→ あ段(ない)、う段(辞書形)、て形/た形語尾(L14-G03、L17-G01、L18-G01)。
+ * 活用練習(drill.ts)亦以此表套用「別行的規則」產生錯誤選項。
+ */
+export interface GodanRow {
   a: string;
   u: string;
   te: string;
   ta: string;
 }
 
-const GODAN: ReadonlyMap<string, GodanRow> = new Map([
+export const GODAN: ReadonlyMap<string, GodanRow> = new Map([
   ["い", { a: "わ", u: "う", te: "って", ta: "った" }], // 買います → 買わない(い → わ)
   ["ち", { a: "た", u: "つ", te: "って", ta: "った" }],
   ["り", { a: "ら", u: "る", te: "って", ta: "った" }],
@@ -535,6 +538,18 @@ export function conjugate(
     ruby = conjugateAdj(base, cls, form);
   }
   return ruby === null ? null : { ruby, kana: toKana(ruby) };
+}
+
+/**
+ * 活用的基底 ruby(教材記號已去除):動詞為ます形、形容詞為辞書形(［な］與替代說法「（よい）」、
+ * 並列的第二個寫法皆去除)。不活用的詞性、排除清單中的字與資料形狀不符者回傳 null。
+ * 活用練習以此產生錯誤選項與判斷同一個字(drill.ts)。
+ */
+export function conjugationBase(v: ConjugableItem): RubySeg[] | null {
+  if (CONJUGATION_EXCLUDED.has(v.id)) return null;
+  const cls = conjClass(v.pos);
+  const base = cls === null ? null : baseRuby(v, cls);
+  return base === null ? null : base.map((s) => ({ ...s }));
 }
 
 /**

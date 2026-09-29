@@ -432,13 +432,18 @@ describe("LessonDetail", () => {
     expect(screen.queryByText("玩、遊玩")).not.toBeInTheDocument();
   });
 
-  it("標頭連結:測驗本課、上一課、下一課(第 1 課無上一課、第 50 課無下一課)", async () => {
+  it("標頭連結:測驗本課、活用練習、上一課、下一課(第 1 課無上一課、第 50 課無下一課)", async () => {
     getLesson.mockResolvedValue(sampleLesson);
     const { unmount } = render(<LessonDetail id={13} />);
     await screen.findByText("玩、遊玩");
 
     const nav = screen.getByRole("navigation", { name: "課程導覽" });
     expect(within(nav).getByRole("link", { name: "測驗本課" })).toHaveAttribute("href", "/quiz/13");
+    // 本課有動詞(遊びます),第 4 課起已教ます系:範圍到本課
+    expect(within(nav).getByRole("link", { name: "活用練習" })).toHaveAttribute(
+      "href",
+      "/drill?upto=13",
+    );
     expect(within(nav).getByRole("link", { name: "上一課" })).toHaveAttribute("href", "/lessons/12");
     expect(within(nav).getByRole("link", { name: "下一課" })).toHaveAttribute("href", "/lessons/14");
     // 觸控區 ≥ 44px(buttonVariants size sm = h-11)
@@ -449,6 +454,8 @@ describe("LessonDetail", () => {
     const first = render(<LessonDetail id={1} />);
     await screen.findByText("玩、遊玩");
     expect(screen.queryByRole("link", { name: "上一課" })).not.toBeInTheDocument();
+    // 第 1 課還沒教任何活用形:不給活用練習
+    expect(screen.queryByRole("link", { name: "活用練習" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "下一課" })).toHaveAttribute("href", "/lessons/2");
     first.unmount();
 
