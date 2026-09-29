@@ -65,6 +65,16 @@ describe("useTtsEnabled", () => {
     expect(getVoices).toHaveBeenCalled();
   });
 
+  it("卸載(離開頁面)時取消朗讀", async () => {
+    installSynth();
+    const { result, unmount } = renderHook(() => useTtsEnabled());
+    await waitFor(() => expect(result.current).toBe(true));
+    const { cancel } = window.speechSynthesis as unknown as { cancel: ReturnType<typeof vi.fn> };
+    expect(cancel).not.toHaveBeenCalled();
+    unmount();
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
   it("關閉:回傳 false,不碰語音 API", async () => {
     const getVoices = installSynth();
     await setSetting("ttsEnabled", false);

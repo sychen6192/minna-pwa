@@ -35,14 +35,28 @@ const addCards = vi.fn();
 const existingCardIds = vi.fn();
 const setWordSuspended = vi.fn();
 const suspendedWordIds = vi.fn();
+const queueCounts = vi.fn();
 vi.mock("@/lib/srs", () => ({
   addCards: (...a: unknown[]) => addCards(...a),
   existingCardIds: (...a: unknown[]) => existingCardIds(...a),
+  queueCounts: (...a: unknown[]) => queueCounts(...a),
   setWordSuspended: (...a: unknown[]) => setWordSuspended(...a),
   suspendedWordIds: (...a: unknown[]) => suspendedWordIds(...a),
 }));
 
 import { LessonDetail } from "./LessonDetail";
+
+/** queueCounts 基底:今日佇列空、未達上限 */
+const COUNTS = {
+  due: 0,
+  fresh: 0,
+  newCapReached: false,
+  newCapped: 0,
+  newRemaining: 10,
+  newToday: 0,
+  newPerDay: 10,
+  reviewCapReached: false,
+};
 
 const sampleLesson: Lesson = {
   id: 13,
@@ -204,6 +218,7 @@ beforeEach(async () => {
   suspendedWordIds.mockResolvedValue([]);
   setWordSuspended.mockResolvedValue(undefined);
   addCards.mockImplementation(async (ids: string[]) => ids.length); // 回傳新加入的字數
+  queueCounts.mockResolvedValue({ ...COUNTS, fresh: 2 }); // 加入後今日有新卡可學
   // 分頁與錨點存在 URL hash:每個測試從無 hash 開始
   window.history.replaceState(null, "", "/lessons/13");
   // jsdom 未實作 scrollIntoView / scrollTo
@@ -649,6 +664,28 @@ describe("LessonDetail", () => {
       "/review",
     );
     // 按鈕變 disabled:焦點移到結果訊息(不掉到 body)
+    await waitFor(() => expect(status).toHaveFocus());
+  });
+
+  it("整課加入後今日新卡額度已用完:說明明天繼續,不給會落空的「開始複習」", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    queueCounts.mockResolvedValue({
+      ...COUNTS,
+      newCapReached: true,
+      newCapped: 2,
+      newRemaining: 0,
+      newToday: 10,
+    });
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(screen.getByRole("button", { name: "整課加入複習" }));
+    const status = screen.getByRole("status");
+    await waitFor(() =>
+      expect(status).toHaveTextContent("已加入 2 字 · 今日新卡已達上限,明天繼續"),
+    );
+    expect(within(status).queryByRole("link")).not.toBeInTheDocument();
     await waitFor(() => expect(status).toHaveFocus());
   });
 

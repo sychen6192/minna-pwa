@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
-import { db, type CardRow } from "@/lib/db";
+import { db, setSetting, type CardRow } from "@/lib/db";
 import { addCards, buildQueue, rate, setWordSuspended } from "@/lib/srs";
 import type { QuizCandidate } from "@/lib/quiz";
 import { describeRequeue, QuizResult } from "./QuizResult";
@@ -206,6 +206,30 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
     );
   });
 
+  it("今日複習額度已用完:提前的字排在逾期卡之後,不宣稱今天出現", async () => {
+    const user = userEvent.setup();
+    await setSetting("maxReviewsPerDay", 1);
+    const now = Date.now();
+    // 兩張逾期卡(3 天前到期)已佔滿今日額度;錯題 L13-V002 5 天後才到期
+    await db.cards.bulkAdd([
+      learnedCard("L13-V010", now - 8 * DAY),
+      learnedCard("L13-V011", now - 8 * DAY),
+      learnedCard("L13-V002", now),
+    ]);
+
+    render(<QuizResult results={oneWrong} lessonId={13} />);
+    await user.click(screen.getByRole("button", { name: "錯題加入複習" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("提前到期 1"),
+    );
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("今日複習已達上限,到期的字依到期先後出現,不一定在今天");
+    expect(status).not.toHaveTextContent("今天 1");
+    // 確實不在今日佇列(被額度截掉)
+    expect((await buildQueue(Date.now())).map((c) => c.cardId)).not.toContain("L13-V002");
+  });
+
   it("今天已複習過的錯題:明天複習並提示原因", async () => {
     const user = userEvent.setup();
     await addCards(["L13-V002"], 13);
@@ -251,6 +275,13 @@ describe("describeRequeue", () => {
   it("全部原本就在今日佇列時給整句說明", () => {
     expect(describeRequeue({ ...zero, alreadyDue: 3 })).toBe(
       "錯題皆已在今日複習佇列中",
+    );
+  });
+
+  it("今日複習額度已用完:到期與提前的字不宣稱「今日」", () => {
+    expect(describeRequeue({ ...zero, alreadyDue: 3 }, true)).toBe("錯題皆已到期");
+    expect(describeRequeue({ ...zero, requeued: 2, alreadyDue: 1 }, true)).toBe(
+      "提前到期 2 · 已到期 1",
     );
   });
 });

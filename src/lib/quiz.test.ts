@@ -4,7 +4,6 @@ import {
   answerLabel,
   canInput,
   checkAnswer,
-  checkInput,
   generateQuiz,
   pickDistractors,
   type McqQuestion,
@@ -56,7 +55,10 @@ function seeded(seed: number): () => number {
   };
 }
 
-describe("checkInput", () => {
+/** 以單一假名讀音判分(答案只由 `kana` 推導,規則同 checkAnswer) */
+const checkInput = (input: string, kana: string) => checkAnswer(input, { kana, ruby: [{ b: kana }] });
+
+describe("checkAnswer:輸入正規化(單一假名讀音)", () => {
   it("羅馬字 / 平假名 / 片假名 視為同答", () => {
     expect(checkInput("sanpo", "さんぽ")).toBe(true);
     expect(checkInput("さんぽ", "さんぽ")).toBe(true);

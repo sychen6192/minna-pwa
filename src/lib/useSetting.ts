@@ -5,7 +5,7 @@ import {
   type Settings,
   type SettingsKey,
 } from "@/lib/db";
-import { loadJaVoice } from "@/lib/tts";
+import { cancelSpeech, loadJaVoice } from "@/lib/tts";
 
 /**
  * 讀取單一全域設定(經 db.ts,掛載時讀一次):讀取中為 undefined,讀取失敗或值缺漏時回退預設值。
@@ -20,8 +20,8 @@ export function useSetting<K extends SettingsKey>(
     getSetting(key)
       .catch(() => DEFAULT_SETTINGS[key])
       .then((v) => {
-        // 列存在但缺 value(手改的備份匯入不檢查內容)也回退預設,否則會永遠停在讀取中
-        if (active) setValue(v ?? DEFAULT_SETTINGS[key]);
+        // 列存在但缺 value 時 getSetting 已回退預設,不會停在讀取中(undefined)
+        if (active) setValue(v);
       });
     return () => {
       active = false;
@@ -33,11 +33,14 @@ export function useSetting<K extends SettingsKey>(
 /**
  * 設定「TTS 發音」(`ttsEnabled`):false 時頁面不渲染任何發音鈕;讀取中為 undefined。
  * 開啟時順便預載日語 voice,首次點擊即可在點擊事件內同步發音。
+ * 使用它的頁面(有發音鈕者)卸載時取消朗讀:離開頁面後不再讀出上一頁的字,
+ * 包括語音清單載入前點下、仍在等待中的請求(tts.speak)。
  */
 export function useTtsEnabled(): boolean | undefined {
   const enabled = useSetting("ttsEnabled");
   useEffect(() => {
     if (enabled) void loadJaVoice();
   }, [enabled]);
+  useEffect(() => cancelSpeech, []);
   return enabled;
 }

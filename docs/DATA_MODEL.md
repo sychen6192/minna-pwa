@@ -170,7 +170,7 @@ interface ProgressRow {
 interface SettingsRow { key: string; value: unknown }
 ```
 
-settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAllSettings` 讀取時回退為下列值;重置不回填):
+settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAllSettings` 讀取時回退為下列值,缺 `value` 的列同未設定;重置不回填):
 
 | key | 預設 |
 |---|---|
@@ -208,7 +208,7 @@ settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAl
 4. `due`、`reviewedAt` 等時間一律存 epoch ms(number,真實時刻),顯示層才轉時區。
 5. **學習日**(2026-09-28 追加):以本地時區**凌晨 4 點**換日(`src/lib/studyDay.ts`,對標 Anki)。每日上限、到期判定(`due` 落在今日學習日結束前即到期)、今日目標、streak 與統計分日一律依學習日。ts-fsrs 內部以 UTC 日期計算 `elapsed_days`,故 `srs.ts` 餵入 ts-fsrs 的時間先平移為「UTC 日 = 本地學習日」、輸出再換回真實時刻;DB 內永遠是真實時刻,平移只存在於 `srs.ts` 內部。細則:
    - 學習日邊界以本地日期欄位建構(`new Date(y, m, d, 4)`),DST 切換日的學習日為 23 或 25 小時,換日點不偏移;日期鍵 `studyDayKey` = 學習日的 `YYYY-MM-DD`。
-   - 到期:`due < nextStudyDayStart(now)`(含逾期)。`countDue(now)` = 今日到期的複習卡數;`countDueByTomorrow(now)` = 到明日學習日結束前到期者(明日到期預估)。
+   - 到期:`due < nextStudyDayStart(now)`(含逾期)。頁面顯示的今日張數一律取 `queueCounts(now)`(與 `buildQueue` 同一計算,已套每日上限與 bury);`countDueByTomorrow(now)` = 到明日學習日結束前到期的複習卡數(不含新卡,明日到期預估)。
    - 餵入:`toFsrsTime(t)` = 學習日日期的 UTC 00:00 + 距學習日起點的經過時間(上限 1 天 − 1 ms);now、`due`、`lastReview` 各自換算。
    - 換回:以該次呼叫的 now 為基準取整日差 n,結果為 now 的本地牆上時間 n 個日曆日之後(`due` 保持評分當下的牆上時間;遇 DST 跳時缺口而該時間不存在時,截在目標學習日內);不對平移後的時刻再查時差。`previewIntervals` 與 `rate` 用同一套換算,預估即實際。
    - `LogRow.due` 存卡片評分前的 `due`(真實時刻),不沿用 ts-fsrs `ReviewLog.due`(其值為 `last_review ?? due`);`reviewedAt` 為評分真實時刻;`elapsedDays` 以學習日計。
@@ -216,7 +216,7 @@ settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAl
    - 兄弟卡 bury(T10.2):同一字(`baseVocabId`)今日已評過或已入列者,另一方向今日不入列,卡片不改動、仍保持到期,下一學習日才出。New 的 `@r` 卡須正向卡已非 New 且首評不在今日;新卡額度先給正向卡。
    - fuzz(T10.2):ts-fsrs `enable_fuzz` 開啟,種子 = `cardId + reps`(`GenSeedStrategyWithCardId`,與評分時刻無關),同一張卡的預估與實際套用一致;fuzz 後間隔仍為整數天。ts-fsrs 只對 ≥ 2.5 天的間隔加 fuzz,預設保留率下新卡首評(Good 3 天)不受影響;兄弟卡同日不出由 bury 保證。
    - 復原與重看(T10.3):`rate()` 回傳 `{ card, prev, logId }`;`undoRate({ prev, logId })` 於同一 transaction 放回評分前的卡片、刪除該筆 log(logs 唯一的逐筆刪除路徑,重置/匯入的整表清除除外;每日上限由 logs 計算,復原後額度隨之回復)。複習 session 內的「重看」只存在頁面 state,不呼叫 `rate()`、不寫 log(同日再評分會重複扣 stability 與 lapses)。「已會」以字為單位:`setWordSuspended` 同時作用於正向卡與 `@r`,課程頁以任一方向暫停視為已會;新建 `@r` 繼承正向卡的 `suspended`。T10.3 前只暫停單一方向的既有資料不遷移,恢復時兩個方向一併恢復。
-   - 錯題加入複習(T10.4):`requeueWrong(vocabIds, lessonId, now)` 於同一 transaction 以字為單位處理——無正向卡者照 `addCards` 建立(含 `@r`);已暫停者兩個方向一併恢復;已學過(state ≠ New)且 `due ≥ nextStudyDayStart(now)` 的卡把 `due` 設為 now(今日已評過、受 bury 者改設為 `nextStudyDayStart(now)`)。不寫 log、不改 stability/difficulty/lastReview,下次評分由 ts-fsrs 以距 lastReview 的實際學習日數計算(等同提前複習);提前的卡佔今日複習額度。回傳各類字數 `{ created, tomorrow, unsuspended, alreadyDue, requeued, pendingNew }`(每字只歸一類,優先序同此順序):分類依「這個字何時會出現」——原本就有學過的卡今日到期者為 `alreadyDue`(另一方向未到期的卡仍照規則提前),只有新卡者為 `pendingNew`(依每日新卡額度引入,不宣稱已在今日佇列)。
+   - 錯題加入複習(T10.4):`requeueWrong(vocabIds, lessonId, now)` 於同一 transaction 以字為單位處理——無正向卡者照 `addCards` 建立(含 `@r`);已暫停者兩個方向一併恢復;已學過(state ≠ New)且 `due ≥ nextStudyDayStart(now)` 的卡把 `due` 設為 now(今日已評過、受 bury 者改設為 `nextStudyDayStart(now)`)。不寫 log、不改 stability/difficulty/lastReview,下次評分由 ts-fsrs 以距 lastReview 的實際學習日數計算(等同提前複習);提前的卡佔今日複習額度;今日複習額度已用完時,到期的卡依 `due` 先後排隊,不保證今天出現(結果頁不宣稱「今日」)。回傳各類字數 `{ created, tomorrow, unsuspended, alreadyDue, requeued, pendingNew }`(每字只歸一類,優先序同此順序):分類依「這個字何時會出現」——原本就有學過的卡今日到期者為 `alreadyDue`(另一方向未到期的卡仍照規則提前),只有新卡者為 `pendingNew`(依每日新卡額度引入,不宣稱已在今日佇列)。
 6. **進度與統計語意**(T10.7):一律由 `cards` + `logs` 即時推導(`stats.ts` 純函式),不另存欄位。
    - 單字 vs 卡片:「單字」= 正向卡數(首頁「累計單字」、統計頁「單字」、各課「已加入」同口徑);「卡片」另含 `@r` 回想卡(統計頁附註、階段分布以卡片計)。「已會」以字計:任一方向暫停即算、雙向不重複。
    - 已學會(各課進度、課程列表「已完成」):正向卡所屬的字已會,或 state = Review 且最後一次評分(`lastRatingByCard`,依 `reviewedAt` 最新)不是「重來」。

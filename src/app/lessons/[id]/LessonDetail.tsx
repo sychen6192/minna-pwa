@@ -13,7 +13,14 @@ import { jaLang } from "@/lib/lang";
 import { lessonTabHash, parseLessonHash, type LessonTab } from "@/lib/lessonHash";
 import { displayNote, isSupplementary, noteSection, type VocabSection } from "@/lib/notes";
 import { kanaHeadword } from "@/lib/pitch";
-import { addCards, existingCardIds, setWordSuspended, suspendedWordIds } from "@/lib/srs";
+import { capNote } from "@/lib/queueNote";
+import {
+  addCards,
+  existingCardIds,
+  queueCounts,
+  setWordSuspended,
+  suspendedWordIds,
+} from "@/lib/srs";
 import { speechText } from "@/lib/tts";
 import { useSetting, useTtsEnabled } from "@/lib/useSetting";
 import { cn } from "@/lib/utils";
@@ -38,6 +45,14 @@ const ANCHOR_SCROLL_MARGIN = "scroll-mt-[calc(2.75rem_+_1px)]";
 /** 單字錨點的短暫高亮:淡底(10%,次要文字對比仍 ≥ 4.5:1)+ 左側色條(深色底上淡底不明顯,靠色條辨識) */
 const ANCHOR_HIGHLIGHT = "bg-link/10 shadow-[inset_3px_0_0_var(--color-link)]";
 
+/** 整課加入的結果 */
+interface AddAllResult {
+  /** 實際新加入的字數 */
+  created: number;
+  /** 今日佇列仍空時的說明(如新卡額度已用完);null = 今日有卡可複習,給「開始複習」連結 */
+  emptyNote: string | null;
+}
+
 /** 待捲動的錨點:目標分頁 commit 後才捲(見下方 effect) */
 interface PendingAnchor {
   id: string;
@@ -60,8 +75,8 @@ export function LessonDetail({ id }: { id: number }) {
   const [suspended, setSuspendedIds] = useState<Set<string>>(new Set());
   // 上兩者的初始值已讀到(讀取失敗也算):單字錨點等它才捲動(見下方)
   const [cardStateLoaded, setCardStateLoaded] = useState(false);
-  // 整課加入後實際新加入的字數(顯示「已加入 N 字 · 開始複習 →」);未整課加入為 null
-  const [addedCount, setAddedCount] = useState<number | null>(null);
+  // 整課加入的結果(「已加入 N 字 · 開始複習 →」);未整課加入為 null
+  const [addAllResult, setAddAllResult] = useState<AddAllResult | null>(null);
   const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -186,8 +201,14 @@ export function LessonDetail({ id }: { id: number }) {
       // 補充單字(自行練習發音)不整課加入(仍可單字加入);回傳值 = 實際新加入的字數
       const ids = lesson.vocab.filter((v) => !isSupplementary(v)).map((v) => v.id);
       const created = await addCards(ids, lesson.id);
+      // 今日佇列仍空(新卡額度已用完等)時不給「開始複習」:點進去只會看到上限說明。讀不到照常給連結
+      const counts = await queueCounts().catch(() => null);
+      const emptyNote =
+        counts && counts.due + counts.fresh === 0
+          ? (capNote(counts) ?? "今天沒有要複習的卡片")
+          : null;
       setAdded((prev) => new Set([...prev, ...ids]));
-      setAddedCount(created);
+      setAddAllResult({ created, emptyNote });
     } finally {
       addingAll.current = false;
     }
@@ -289,7 +310,7 @@ export function LessonDetail({ id }: { id: number }) {
           tts={ttsEnabled === true}
           added={added}
           suspended={suspended}
-          addedCount={addedCount}
+          addAllResult={addAllResult}
           highlighted={highlighted}
           onAddOne={addOne}
           onAddAll={addAll}
@@ -346,7 +367,7 @@ function VocabList({
   tts,
   added,
   suspended,
-  addedCount,
+  addAllResult,
   highlighted,
   onAddOne,
   onAddAll,
@@ -358,8 +379,8 @@ function VocabList({
   tts: boolean;
   added: Set<string>;
   suspended: Set<string>;
-  /** 整課加入後新加入的字數(null = 尚未整課加入) */
-  addedCount: number | null;
+  /** 整課加入的結果(null = 尚未整課加入) */
+  addAllResult: AddAllResult | null;
   /** 單字錨點捲到後短暫高亮的字 */
   highlighted: string | null;
   onAddOne: (cardId: string) => Promise<void>;
@@ -373,10 +394,10 @@ function VocabList({
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const focusNotice = useRef(false);
   useEffect(() => {
-    if (addedCount === null || !focusNotice.current) return;
+    if (addAllResult === null || !focusNotice.current) return;
     focusNotice.current = false;
     noticeRef.current?.focus();
-  }, [addedCount]);
+  }, [addAllResult]);
   // 列內的鈕會換成同一位置的另一顆(+ → 已會 → 已會·恢復):
   // - 換鈕後 ROW_CHANGE_GUARD_MS 內忽略該列的點擊:連點兩下的第二下會落在新鈕上(剛加入就被標為已會)
   // - 焦點原在鈕上(鍵盤操作)時,換鈕後交給同一列的新鈕,不掉到 body
@@ -420,15 +441,20 @@ function VocabList({
           tabIndex={-1}
           className="mr-auto min-w-0 rounded-sm text-sm text-foreground/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          {addedCount !== null && (
+          {addAllResult !== null && (
             <>
-              {addedCount > 0 ? `已加入 ${addedCount} 字` : "本課單字皆已加入"} ·{" "}
-              <Link
-                href="/review"
-                className="inline-flex min-h-11 items-center font-medium text-link underline-offset-4 hover:underline"
-              >
-                開始複習 →
-              </Link>
+              {addAllResult.created > 0
+                ? `已加入 ${addAllResult.created} 字`
+                : "本課單字皆已加入"}{" "}
+              ·{" "}
+              {addAllResult.emptyNote ?? (
+                <Link
+                  href="/review"
+                  className="inline-flex min-h-11 items-center font-medium text-link underline-offset-4 hover:underline"
+                >
+                  開始複習 →
+                </Link>
+              )}
             </>
           )}
         </p>

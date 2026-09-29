@@ -42,6 +42,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("Home(今日儀表板)", () => {
@@ -65,9 +66,18 @@ describe("Home(今日儀表板)", () => {
     unmount();
 
     await setSetting("installPromptDismissed", true);
+    const get = vi.spyOn(db.settings, "get");
     render(<Home />);
     await screen.findByText(/還沒有加入任何單字/);
-    await act(() => new Promise((r) => setTimeout(r, 50)));
+    // 等安裝提示確實讀完旗標(正向訊號),「不顯示」才不會是還沒讀到的假通過
+    await vi.waitFor(() => expect(get).toHaveBeenCalledWith("installPromptDismissed"));
+    const read = get.mock.calls.findIndex(
+      (args: readonly unknown[]) => args[0] === "installPromptDismissed",
+    );
+    await act(async () => {
+      await get.mock.results[read].value;
+      await new Promise((r) => setTimeout(r, 0));
+    });
     expect(screen.queryByRole("region", { name: "安裝到主畫面" })).not.toBeInTheDocument();
   });
 
@@ -124,7 +134,7 @@ describe("Home(今日儀表板)", () => {
     expect(screen.getByRole("link", { name: /頑固卡/ })).toHaveAttribute("href", "/practice");
   });
 
-  it("有卡但今日佇列為空:顯示今日任務完成,不顯示開始複習", async () => {
+  it("有卡但今日佇列為空、今日沒有複習:不慶祝(與今日目標 0/N 一致),不顯示開始複習", async () => {
     await db.cards.bulkAdd([
       // due 在明日學習日 → 今日不到期(不用 now + 24h:DST 回撥日的學習日長 25 小時)
       card({
@@ -137,9 +147,29 @@ describe("Home(今日儀表板)", () => {
 
     render(<Home />);
 
-    expect(await screen.findByText("今日任務完成 🎉")).toBeInTheDocument();
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
+    expect(screen.queryByText(/今日任務完成/)).not.toBeInTheDocument();
     expect(screen.getByText(/要不要去課程加入新單字/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "開始複習" })).not.toBeInTheDocument();
+    expect(screen.getByText(/今日目標/).closest("section")).toHaveTextContent("0 / 20");
+  });
+
+  it("今日已複習且佇列清空:顯示今日任務完成", async () => {
+    const nowMs = Date.now();
+    await db.cards.bulkAdd([card({ cardId: "L01-V001", due: addStudyDays(nowMs, 3) })]);
+    await db.logs.add({
+      cardId: "L01-V001",
+      rating: 3,
+      state: 2,
+      due: nowMs - DAY,
+      elapsedDays: 3,
+      reviewedAt: nowMs,
+    });
+
+    render(<Home />);
+
+    expect(await screen.findByText("今日任務完成 🎉")).toBeInTheDocument();
+    expect(screen.getByText(/要不要去課程加入新單字/)).toBeInTheDocument();
   });
 
   it("只有新卡:顯示新卡數與開始複習", async () => {
@@ -213,7 +243,7 @@ describe("Home(今日儀表板)", () => {
 
     render(<Home />);
 
-    expect(await screen.findByText("今日任務完成 🎉")).toBeInTheDocument();
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
     expect(screen.getByText("每日新卡上限設為 0,暫不引入新卡")).toBeInTheDocument();
     expect(screen.queryByText(/明天繼續/)).not.toBeInTheDocument();
   });
@@ -276,7 +306,7 @@ describe("Home(今日儀表板)", () => {
     ]);
 
     render(<Home />);
-    expect(await screen.findByText("今日任務完成 🎉")).toBeInTheDocument();
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
 
     vi.setSystemTime(evening + 12 * 3_600_000); // 隔天 10:00 切回 App
     act(() => {
@@ -296,14 +326,14 @@ describe("Home(今日儀表板)", () => {
     ]);
 
     render(<Home />);
-    expect(await screen.findByText("今日任務完成 🎉")).toBeInTheDocument();
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
 
     vi.setSystemTime(evening + 12 * 3_600_000);
     act(() => {
       window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false }));
     });
     await act(() => new Promise((r) => setTimeout(r, 50)));
-    expect(screen.getByText("今日任務完成 🎉")).toBeInTheDocument(); // 一般 pageshow 不重載
+    expect(screen.getByText("今天沒有要複習的卡片")).toBeInTheDocument(); // 一般 pageshow 不重載
 
     act(() => {
       window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));

@@ -41,6 +41,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("SettingsPage 學習設定(F6.1)", () => {
@@ -137,6 +138,8 @@ describe("SettingsPage 匯出(F6.2)", () => {
     const revokeObjectURL = vi.fn();
     // 以獨立 stub 物件取代,不可 Object.assign 真的 URL(會永久污染其他測試)
     vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    // jsdom 未實作導覽:攔下下載連結的 click(否則印出 Not implemented 雜訊),只驗證有觸發
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     const user = userEvent.setup();
     render(<SettingsPage />);
@@ -147,5 +150,6 @@ describe("SettingsPage 匯出(F6.2)", () => {
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
     expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob);
     expect(await screen.findByText(/已產生備份檔/)).toBeInTheDocument();
+    expect(click).toHaveBeenCalledTimes(1);
   });
 });

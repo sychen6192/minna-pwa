@@ -237,9 +237,12 @@ export interface RequeueResult {
   tomorrow: number;
   /** 由「已會/暫停」恢復的字數 */
   unsuspended: number;
-  /** 原本就有卡今日到期(已在今日佇列)的字數;另一方向未到期的卡仍照規則提前 */
+  /**
+   * 原本就有卡今日到期的字數;另一方向未到期的卡仍照規則提前。今日複習額度用完
+   * (queueCounts.reviewCapReached)時依到期先後排隊,不保證今天出現
+   */
   alreadyDue: number;
-  /** 原本未到期、due 提前到現在(今日佇列)的字數 */
+  /** 原本未到期、due 提前到現在的字數(佔今日複習額度;額度用完時同上,不保證今天出現) */
   requeued: number;
   /** 仍是待學新卡、未變動的字數(依每日新卡額度與教材順序引入,不一定今天出現) */
   pendingNew: number;
@@ -484,15 +487,6 @@ export async function setWordSuspended(vocabId: string, suspended: boolean): Pro
 }
 
 /**
- * 「已會」的字數:以字為單位(T10.3),任一方向的卡暫停即算、雙向卡不重複計
- * (與 suspendedWordIds 一致)。
- */
-export async function countSuspended(): Promise<number> {
-  const rows = await db.cards.filter((c) => c.suspended === true).toArray();
-  return new Set(rows.map((c) => baseVocabId(c.cardId))).size;
-}
-
-/**
  * 回傳 `vocabIds` 中「已會」的字(任一方向的卡暫停即算;課程頁標示用)。
  * 舊資料可能只暫停了單一方向,恢復時 setWordSuspended 會一併恢復兩個方向。
  */
@@ -515,21 +509,16 @@ export async function existingCardIds(vocabIds: string[]): Promise<string[]> {
   return db.cards.where("cardId").anyOf(vocabIds).primaryKeys();
 }
 
-/** 在 `end`(epoch ms,不含)之前到期的複習卡數(state≠New、排除暫停)。 */
+/**
+ * 在 `end`(epoch ms,不含)之前到期的複習卡數(state≠New、排除暫停;不套 bury 與每日上限)。
+ * 今日佇列的張數一律用 queueCounts(與 buildQueue 同一計算),此處只供「明日到期」預估。
+ */
 function countDueBefore(end: number): Promise<number> {
   return db.cards
     .where("due")
     .below(end)
     .filter((c) => c.state !== State.New && !c.suspended)
     .count();
-}
-
-/**
- * 今日(`now` 所屬學習日)到期的複習卡數:`due < nextStudyDayStart(now)`,含逾期;
- * 不含新卡、暫停卡,也不套 maxReviewsPerDay 上限。與 buildQueue 的到期判定一致。
- */
-export function countDue(now: number): Promise<number> {
-  return countDueBefore(nextStudyDayStart(now));
 }
 
 /**

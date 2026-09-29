@@ -37,6 +37,7 @@ afterEach(() => {
   window.dispatchEvent(new Event("appinstalled")); // 清掉保存的事件
   release();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("InstallPrompt(首頁安裝提示)", () => {
@@ -63,9 +64,15 @@ describe("InstallPrompt(首頁安裝提示)", () => {
 
   it("先前已關閉(旗標為 true):不顯示", async () => {
     await setSetting("installPromptDismissed", true);
+    const get = vi.spyOn(db.settings, "get");
 
     render(<InstallPrompt />);
-    await flushEffects();
+    // 先等旗標確實讀完(正向訊號),「不顯示」才不會是還沒讀到的假通過
+    await vi.waitFor(() => expect(get).toHaveBeenCalledWith("installPromptDismissed"));
+    await act(async () => {
+      await get.mock.results[0].value;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
 
     expect(screen.queryByRole("region", REGION)).not.toBeInTheDocument();
   });

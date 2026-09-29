@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { requeueWrong, type RequeueResult } from "@/lib/srs";
+import { queueCounts, requeueWrong, type RequeueResult } from "@/lib/srs";
 import type { QuizCandidate } from "@/lib/quiz";
 
 export interface QuizResultItem {
@@ -14,18 +14,30 @@ export interface QuizResultItem {
 
 const LAST_LESSON = 50;
 
-/** 錯題加入複習的實際結果(每個字只歸入一類);全部原本就在今日佇列時回傳整句說明。 */
-export function describeRequeue(r: RequeueResult): string {
+/**
+ * 錯題加入複習的實際結果(每個字只歸入一類);全部原本就到期時回傳整句說明。
+ * `reviewCapReached`:今日複習額度已用完(queueCounts),到期的字依到期先後排隊、不一定
+ * 今天出現,此時不宣稱「今日」。
+ */
+export function describeRequeue(r: RequeueResult, reviewCapReached = false): string {
   const parts = [
     r.created > 0 && `新加入 ${r.created}`,
-    r.requeued > 0 && `提前到今天 ${r.requeued}`,
+    r.requeued > 0 && `${reviewCapReached ? "提前到期" : "提前到今天"} ${r.requeued}`,
     r.tomorrow > 0 && `明天複習 ${r.tomorrow}`,
     r.unsuspended > 0 && `恢復 ${r.unsuspended}`,
-    r.alreadyDue > 0 && `已在今日佇列 ${r.alreadyDue}`,
+    r.alreadyDue > 0 && `${reviewCapReached ? "已到期" : "已在今日佇列"} ${r.alreadyDue}`,
     r.pendingNew > 0 && `待學新卡 ${r.pendingNew}`,
   ].filter((p): p is string => typeof p === "string");
-  if (parts.length === 1 && r.alreadyDue > 0) return "錯題皆已在今日複習佇列中";
+  if (parts.length === 1 && r.alreadyDue > 0) {
+    return reviewCapReached ? "錯題皆已到期" : "錯題皆已在今日複習佇列中";
+  }
   return parts.join(" · ");
+}
+
+/** 加入複習的結果 + 當下今日複習額度是否已用完 */
+interface Outcome {
+  result: RequeueResult;
+  reviewCapReached: boolean;
 }
 
 /** 是否有字因這次操作而加入/恢復/提前(否則錯題本來就都在複習中)。 */
@@ -48,7 +60,7 @@ export function QuizResult({
   const wrong = results.filter((r) => !r.correct);
   const correct = results.length - wrong.length;
   const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<RequeueResult | null>(null);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   // 進結果頁時「看結果」鈕已卸載:焦點移到標題(不掉到 body),螢幕閱讀器從成績開始念
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -62,12 +74,15 @@ export function QuizResult({
     submitting.current = true;
     setBusy(true);
     try {
-      setOutcome(
-        await requeueWrong(
-          wrong.map((r) => r.card.id),
-          lessonId,
-        ),
+      const now = Date.now();
+      const result = await requeueWrong(
+        wrong.map((r) => r.card.id),
+        lessonId,
+        now,
       );
+      // 提前的卡排在逾期卡之後:今日複習額度用完時不一定今天出現(讀不到時照一般說明)
+      const counts = await queueCounts(now).catch(() => null);
+      setOutcome({ result, reviewCapReached: counts?.reviewCapReached === true });
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -102,7 +117,7 @@ export function QuizResult({
               >
                 {outcome === null
                   ? "錯題加入複習"
-                  : requeueChanged(outcome)
+                  : requeueChanged(outcome.result)
                     ? "已加入複習"
                     : "已在複習中"}
               </Button>
@@ -114,13 +129,19 @@ export function QuizResult({
             >
               {outcome && (
                 <div className="mb-2">
-                  <p>{describeRequeue(outcome)}</p>
-                  {outcome.tomorrow > 0 && (
+                  <p>{describeRequeue(outcome.result, outcome.reviewCapReached)}</p>
+                  {outcome.reviewCapReached &&
+                    outcome.result.requeued + outcome.result.alreadyDue > 0 && (
+                      <p className="mt-0.5 text-muted-foreground">
+                        今日複習已達上限,到期的字依到期先後出現,不一定在今天
+                      </p>
+                    )}
+                  {outcome.result.tomorrow > 0 && (
                     <p className="mt-0.5 text-muted-foreground">
                       今天已複習過的字,明天再出現
                     </p>
                   )}
-                  {outcome.created + outcome.pendingNew > 0 && (
+                  {outcome.result.created + outcome.result.pendingNew > 0 && (
                     <p className="mt-0.5 text-muted-foreground">
                       新卡依每日新卡上限陸續出現
                     </p>

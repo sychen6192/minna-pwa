@@ -33,11 +33,11 @@ PDF 具文字層,採 `pdftotext -layout` 抽文字 → Claude Code 依 `docs/PIP
 
 GitHub Actions:push `main` → verify + build → `wrangler pages deploy` 至 Cloudflare Pages(公開網址 + noindex)。完整設定(API token、secrets、noindex 驗證)見 `docs/DEPLOY.md`。
 
-## 品質基線(2026-07,詳見 `docs/reports/`)
+## 品質基線(2026-09,詳見 `docs/reports/`)
 
-- 首頁 JS(gzip)**185.4 KB** < N4 預算 200 KB;`/stats` 271 KB(Recharts,不在預算範圍)
-- Lighthouse:PWA 類別滿分(lighthouse@11)、Accessibility **100**、Performance 97、SEO 100
-- 測試:51 檔 727 例(2026-09;lib 純函式全覆蓋 + UI 關鍵路徑)
+- 首頁 JS(gzip)**165.2 KB** < N4 預算 200 KB(`next build` First Load 122 kB);`/stats` First Load 284 kB(Recharts,不在預算範圍)。量測方式見 `docs/reports/bundle.md`
+- Lighthouse(2026-07):PWA 類別滿分(lighthouse@11)、Accessibility **100**、Performance 97、SEO 100
+- 測試:52 檔 737 例(lib 純函式全覆蓋 + UI 關鍵路徑)
 
 ## 已知限制(v1 未含)
 

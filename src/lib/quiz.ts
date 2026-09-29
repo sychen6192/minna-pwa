@@ -207,11 +207,6 @@ export function checkAnswer(
   return matchesAny(input, acceptedAnswers(v));
 }
 
-/** 以單一假名讀音判分(規則同 checkAnswer,答案只由 `answerKana` 推導)。 */
-export function checkInput(input: string, answerKana: string): boolean {
-  return checkAnswer(input, { kana: answerKana, ruby: [{ b: answerKana }] });
-}
-
 /**
  * 能否出輸入題(看中文與漢字、輸入假名):須含漢字讀音、表面不含〜…(接續用法無標準答案),
  * 且題幹(隱藏假名)沒有直接寫出某個答案(純假名字、トイレ（お手洗い）、キトク（危篤）)。

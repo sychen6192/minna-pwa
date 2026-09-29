@@ -88,26 +88,19 @@ export const db = new MinnaDB();
 // ── 設定存取 ────────────────────────────────────────────────────────
 
 /**
- * 把尚未存在的預設設定寫入(冪等,不覆蓋既有值)。app 目前不呼叫:未設定的 key 讀取時
- * 即回退 DEFAULT_SETTINGS,重置也不回填(T10.7,DATA_MODEL §2)。
+ * 設定列是否帶值。備份匯入不檢查設定內容(backup.ts),手改的備份可能留下缺 value 的列;
+ * 這種列視同未設定,否則每日上限會變成 NaN 而失效。
  */
-export async function ensureDefaultSettings(): Promise<void> {
-  await db.transaction("rw", db.settings, async () => {
-    for (const key of Object.keys(DEFAULT_SETTINGS) as SettingsKey[]) {
-      const existing = await db.settings.get(key);
-      if (existing === undefined) {
-        await db.settings.put({ key, value: DEFAULT_SETTINGS[key] });
-      }
-    }
-  });
+function hasValue(row: SettingsRow | undefined): row is SettingsRow {
+  return row !== undefined && row.value !== undefined && row.value !== null;
 }
 
-/** 讀取單一設定;未設定時回退預設值。 */
+/** 讀取單一設定;未設定(或列缺值)時回退預設值。 */
 export async function getSetting<K extends SettingsKey>(
   key: K,
 ): Promise<Settings[K]> {
   const row = await db.settings.get(key);
-  return row ? (row.value as Settings[K]) : DEFAULT_SETTINGS[key];
+  return hasValue(row) ? (row.value as Settings[K]) : DEFAULT_SETTINGS[key];
 }
 
 /** 寫入單一設定。 */
@@ -118,10 +111,10 @@ export async function setSetting<K extends SettingsKey>(
   await db.settings.put({ key, value });
 }
 
-/** 讀取全部設定(以預設值補齊缺漏)。 */
+/** 讀取全部設定(以預設值補齊缺漏;缺值的列同未設定)。 */
 export async function getAllSettings(): Promise<Settings> {
   const rows = await db.settings.toArray();
-  const stored = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const stored = Object.fromEntries(rows.filter(hasValue).map((r) => [r.key, r.value]));
   // stored 的值型別為 unknown,以預設值為基底覆蓋,結構符合 Settings
   return { ...DEFAULT_SETTINGS, ...stored } as Settings;
 }

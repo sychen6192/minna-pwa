@@ -30,7 +30,7 @@ flowchart TD
 | 內容資料 | 靜態 JSON(`public/data/`) | 全量約 3–8 MB,SW 一次預快取後完全離線 |
 | 使用者資料 | IndexedDB + Dexie.js | 卡片狀態、複習紀錄、進度、設定 |
 | SRS | ts-fsrs(FSRS 演算法) | 排程效率優於 SM-2;logs 留存供日後 optimizer |
-| 狀態管理 | Zustand | 輕量,只管複習 session 等 UI 狀態 |
+| 狀態管理 | React state(`useState`) | 複習 session 等 UI 狀態只存在頁面內;持久狀態一律經 `db.ts` |
 | 日文處理 | WanaKana + 原生 `<ruby>` | 輸入正規化;furigana 由資料提供、不做 runtime 斷詞 |
 | 客端搜尋 | MiniSearch | 跨課全文檢索,無後端 |
 | 音訊 | Web Speech API(`ja-JP`) | 零成本 TTS;語音清單非同步載入(`voiceschanged`,最多等 1.5 秒),優先裝置內建(`localService`)日語 voice;朗讀文字去除教材記號(［］〔〕（）〜…／);無可用 voice 時靜默降級 |
@@ -71,7 +71,7 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
 └── src/
     ├── app/
     │   ├── layout.tsx          # 全域 shell + 底部導覽
-    │   ├── page.tsx            # 導向 /lessons
+    │   ├── page.tsx            # 今日儀表板(佇列 Hero、今日目標、安裝提示;資料層動態載入)
     │   ├── lessons/            # F1(/lessons、/lessons/[id])
     │   ├── review/             # F2
     │   ├── quiz/[id]/          # F3
@@ -88,6 +88,8 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── relearn.ts          # 複習 session 內重看的插入規則(純函式)
     │   ├── notes.ts            # 單字 note 呈現:段落標記過濾與徽章分類、補充單字判定(純函式)
     │   ├── lessonHash.ts       # 課程內頁 URL hash:分頁與文法/單字錨點解析(純函式)
+    │   ├── lang.ts             # isJapanese / jaLang:日文字串的 lang="ja" 判定(純函式)
+    │   ├── queueNote.ts        # 今日佇列因每日上限而空時的說明(純函式;首頁、課程頁共用)
     │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)
     │   ├── quiz.ts             # 出題引擎(純函式)
     │   ├── stats.ts            # 統計聚合(純函式 + DB 查詢)

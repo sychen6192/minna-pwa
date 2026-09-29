@@ -7,7 +7,7 @@ import { RatingButtons, ShortcutHint } from "@/components/RatingButtons";
 import { Loading } from "@/components/Loading";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { SpeakButton } from "@/components/SpeakButton";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { getLesson } from "@/lib/content";
 import { findExampleSentence } from "@/lib/examples";
 import { db, getSetting, type CardRow } from "@/lib/db";
@@ -54,18 +54,27 @@ interface SessionItem {
 
 type Phase = "loading" | "empty" | "review" | "summary" | "error";
 
-/** 空狀態的區分依據:尚未加入單字 / 今日新卡已達上限 / 今日完成 */
+/**
+ * 空狀態的區分依據(與首頁 Hero 同一套規則):尚未加入單字 / 今日複習已達上限 /
+ * 今日新卡已達上限 / 今日完成(今日有複習才慶祝)/ 今天沒有要複習的卡片
+ */
 interface EmptyInfo {
   hasCards: boolean;
   counts: QueueCounts;
+  /** 今日(學習日)已複習筆數 */
+  todayCount: number;
 }
 
 async function loadEmptyInfo(now: number): Promise<EmptyInfo> {
-  const [hasCards, counts] = await Promise.all([hasAnyCards(), queueCounts(now)]);
-  return { hasCards, counts };
+  const [hasCards, counts, logs] = await Promise.all([
+    hasAnyCards(),
+    queueCounts(now),
+    db.logs.toArray(),
+  ]);
+  return { hasCards, counts, todayCount: reviewsToday(logs, new Date(now)) };
 }
 
-/** 「可在設定調整」:連到設定頁的每日新卡上限 */
+/** 「可在設定調整」:連到設定頁的每日上限 */
 function SettingsHint({ prefix }: { prefix: string }) {
   return (
     <p className="mt-2 text-sm text-muted-foreground">
@@ -150,9 +159,11 @@ interface UndoEntry {
     | { kind: "none" }; // 重看的決定只在 session 內
 }
 
-/** 結算頁資料:明日到期與今日目標/連續天數(與首頁同一套計算) */
+/** 結算頁資料:明日到期、今日佇列剩餘與今日目標/連續天數(與首頁同一套計算) */
 interface SummaryInfo {
   tomorrowDue: number;
+  /** 今日佇列仍有的張數(略過空出的新卡額度、其他分頁加入的字等);> 0 時可繼續複習 */
+  remaining: number;
   todayCount: number;
   goal: GoalProgress;
   streak: number;
@@ -167,10 +178,12 @@ async function loadSummaryInfo(now: number): Promise<SummaryInfo> {
   ]);
   const date = new Date(now);
   const todayCount = reviewsToday(logs, date);
+  const remaining = counts.due + counts.fresh;
   return {
     tomorrowDue,
+    remaining,
     todayCount,
-    goal: effectiveGoal(dailyGoal, todayCount, counts.due + counts.fresh),
+    goal: effectiveGoal(dailyGoal, todayCount, remaining),
     streak: computeStreak(logs, date),
   };
 }
@@ -438,6 +451,12 @@ export default function ReviewPage() {
     [run, undoRef, setUndo, setSession, setFlipped, setPhase],
   );
 
+  // 結算頁「繼續複習」:重新載入今日佇列,焦點交給第一張卡(按下的鈕會被卸載)
+  const continueReview = useCallback(() => {
+    moveFocus.current = true;
+    setLoadSeq((n) => n + 1);
+  }, []);
+
   const flip = useCallback(() => {
     moveFocus.current = true;
     setFlipped(true);
@@ -529,15 +548,23 @@ export default function ReviewPage() {
         </Centered>
       );
     }
+    // 判斷順序同首頁(capNote):複習額度 → 新卡額度 → 今日有複習才慶祝
     return (
       <Centered>
-        {emptyInfo?.counts.newCapReached ? (
+        {emptyInfo?.counts.reviewCapReached ? (
+          <>
+            <p className="text-lg font-medium">今日複習已達上限</p>
+            <SettingsHint prefix="明天繼續;" />
+          </>
+        ) : emptyInfo?.counts.newCapReached ? (
           <NewCapMessage counts={emptyInfo.counts} />
-        ) : (
+        ) : emptyInfo && emptyInfo.todayCount > 0 ? (
           <p className="text-lg font-medium">今日複習完成 🎉</p>
+        ) : (
+          <p className="text-lg font-medium">今天沒有要複習的卡片</p>
         )}
         <p className="mt-2 text-sm text-muted-foreground">
-          明日到期:{tomorrowDue} 張
+          明日到期複習:{tomorrowDue} 張
         </p>
         <Link
           href="/"
@@ -572,7 +599,7 @@ export default function ReviewPage() {
           <Row label="良好" value={stats.good} />
           <Row label="輕鬆" value={stats.easy} />
           {session.skipped > 0 && <Row label="已會·略過" value={session.skipped} />}
-          <Row label="明日到期" value={summary ? summary.tomorrowDue : "—"} />
+          <Row label="明日到期複習" value={summary ? summary.tomorrowDue : "—"} />
         </dl>
         {missed.length > 0 && (
           <section className="mx-auto mt-6 max-w-xs">
@@ -601,9 +628,24 @@ export default function ReviewPage() {
           </p>
         )}
         <div className="mt-6 flex flex-col items-center gap-1">
-          <Link href="/" className={buttonVariants({ className: "px-8" })}>
-            回首頁
-          </Link>
+          {/* 今日佇列還有卡(如略過空出新卡額度):主行動改為繼續複習,回首頁降為次連結 */}
+          {summary && summary.remaining > 0 ? (
+            <>
+              <Button onClick={continueReview} className="px-8">
+                繼續複習({summary.remaining})
+              </Button>
+              <Link
+                href="/"
+                className={buttonVariants({ variant: "link", className: "px-3 text-sm" })}
+              >
+                回首頁
+              </Link>
+            </>
+          ) : (
+            <Link href="/" className={buttonVariants({ className: "px-8" })}>
+              回首頁
+            </Link>
+          )}
           <Link
             href="/lessons"
             className={buttonVariants({ variant: "link", className: "px-3 text-sm" })}

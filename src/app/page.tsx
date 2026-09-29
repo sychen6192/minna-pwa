@@ -5,6 +5,7 @@ import Link from "next/link";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { Loading } from "@/components/Loading";
 import { buttonVariants } from "@/components/ui/button";
+import { capNote } from "@/lib/queueNote";
 import type { QueueCounts } from "@/lib/srs";
 import type { GoalProgress, StudySummary } from "@/lib/stats";
 
@@ -99,17 +100,18 @@ function StreakGoalCard({
 }
 
 /**
- * 今日佇列已空、但仍有卡因每日上限等到明天時的說明;此時不建議「加入新單字」
- * (新卡額度已用完,今天加了也學不到)。
+ * 今日複習 Hero:依「空 DB / 今日佇列有卡 / 今日佇列已空」切換主行動。
+ * 佇列已空時今日有複習才慶祝;沒複習(今天本來就沒有卡)只如實說明,不與今日目標 0/N 矛盾。
  */
-function capNote(queue: QueueCounts): string | null {
-  if (queue.reviewCapReached) return "今日複習已達上限,明天繼續";
-  if (!queue.newCapReached) return null;
-  return queue.newPerDay === 0 ? "每日新卡上限設為 0,暫不引入新卡" : "今日新卡已達上限,明天繼續";
-}
-
-/** 今日複習 Hero:依「空 DB / 今日佇列有卡 / 今日完成」三態切換主行動。 */
-function HeroCard({ queue, hasCards }: { queue: QueueCounts; hasCards: boolean }) {
+function HeroCard({
+  queue,
+  hasCards,
+  todayCount,
+}: {
+  queue: QueueCounts;
+  hasCards: boolean;
+  todayCount: number;
+}) {
   if (!hasCards) {
     return (
       <section className="rounded-xl border border-border bg-card p-6 text-center">
@@ -124,10 +126,13 @@ function HeroCard({ queue, hasCards }: { queue: QueueCounts; hasCards: boolean }
 
   const total = queue.due + queue.fresh;
   if (total === 0) {
+    // 有卡因上限等到明天時不建議「加入新單字」(新卡額度已用完,今天加了也學不到)
     const note = capNote(queue);
     return (
       <section className="rounded-xl border border-border bg-card p-6 text-center">
-        <p className="text-lg font-medium">今日任務完成 🎉</p>
+        <p className="text-lg font-medium">
+          {todayCount > 0 ? "今日任務完成 🎉" : "今天沒有要複習的卡片"}
+        </p>
         {note ? (
           <p className="mt-1 text-sm text-muted-foreground">{note}</p>
         ) : (
@@ -231,7 +236,7 @@ export default function Home() {
 
       {phase === "ready" && data && (
         <div className="space-y-6">
-          <HeroCard queue={data.queue} hasCards={data.hasCards} />
+          <HeroCard queue={data.queue} hasCards={data.hasCards} todayCount={data.todayCount} />
 
           {/* 安裝提示:一般排版(不以浮層蓋住操作),首次造訪即顯示,直到安裝或按「知道了」 */}
           <InstallPrompt />

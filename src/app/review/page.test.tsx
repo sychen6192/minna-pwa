@@ -222,7 +222,7 @@ describe("ReviewPage", () => {
     expect(await screen.findByText("今日新卡已達上限(10/10)")).toBeInTheDocument();
     expect(screen.getByText(/明天繼續/)).toHaveTextContent("明天繼續;可在設定調整");
     expect(screen.getByRole("link", { name: "設定" })).toHaveAttribute("href", "/settings");
-    expect(screen.getByText(/明日到期:4 張/)).toBeInTheDocument();
+    expect(screen.getByText(/明日到期複習:4 張/)).toBeInTheDocument();
     expect(screen.queryByText(/今日複習完成/)).not.toBeInTheDocument();
   });
 
@@ -241,6 +241,40 @@ describe("ReviewPage", () => {
     expect(await screen.findByText("今日新卡已達上限(3/3)")).toBeInTheDocument();
     expect(screen.getByText("明天繼續")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "設定" })).not.toBeInTheDocument();
+  });
+
+  it("佇列空、今日沒有複習:不慶祝,說明今天沒有要複習的卡片(同首頁)", async () => {
+    buildQueue.mockResolvedValue([]);
+    countDueByTomorrow.mockResolvedValue(0);
+    logsToArray.mockResolvedValue([
+      // 昨天的紀錄不算今日
+      { cardId: "a", rating: 3, state: 2, due: 0, elapsedDays: 1, reviewedAt: Date.now() - 86_400_000 },
+    ]);
+    render(<ReviewPage />);
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
+    expect(screen.queryByText(/今日複習完成/)).not.toBeInTheDocument();
+  });
+
+  it("今日複習已達上限:先於新卡上限說明(同首頁),不顯示今日完成", async () => {
+    buildQueue.mockResolvedValue([]);
+    queueCounts.mockResolvedValue({
+      ...COUNTS_DONE,
+      reviewCapReached: true,
+      newCapReached: true,
+      newCapped: 1,
+      newRemaining: 0,
+      newToday: 10,
+    });
+    countDueByTomorrow.mockResolvedValue(3);
+    logsToArray.mockResolvedValue([
+      { cardId: "a", rating: 3, state: 2, due: 0, elapsedDays: 1, reviewedAt: Date.now() },
+    ]);
+    render(<ReviewPage />);
+    expect(await screen.findByText("今日複習已達上限")).toBeInTheDocument();
+    expect(screen.getByText(/明天繼續/)).toHaveTextContent("明天繼續;可在設定調整");
+    expect(screen.getByRole("link", { name: "設定" })).toHaveAttribute("href", "/settings");
+    expect(screen.queryByText(/今日新卡已達上限/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/今日複習完成/)).not.toBeInTheDocument();
   });
 
   it("每日新卡上限為 0:不說明天繼續,引導到設定", async () => {
@@ -263,7 +297,7 @@ describe("ReviewPage", () => {
     buildQueue.mockResolvedValueOnce([]);
     countDueByTomorrow.mockResolvedValue(1);
     render(<ReviewPage />);
-    expect(await screen.findByText("今日複習完成 🎉")).toBeInTheDocument();
+    expect(await screen.findByText("今天沒有要複習的卡片")).toBeInTheDocument();
 
     setupOneCard(); // 之後的 buildQueue 回傳一張卡
     becomeVisible();
@@ -305,12 +339,15 @@ describe("ReviewPage", () => {
     expect(buildQueue).toHaveBeenCalledTimes(2);
   });
 
-  it("佇列空時顯示今日完成與明日到期", async () => {
+  it("佇列空、今日已複習:顯示今日完成與明日到期(複習卡)", async () => {
     buildQueue.mockResolvedValue([]);
     countDueByTomorrow.mockResolvedValue(5);
+    logsToArray.mockResolvedValue([
+      { cardId: "a", rating: 3, state: 2, due: 0, elapsedDays: 1, reviewedAt: Date.now() },
+    ]);
     render(<ReviewPage />);
     expect(await screen.findByText("今日複習完成 🎉")).toBeInTheDocument();
-    expect(screen.getByText(/明日到期:5 張/)).toBeInTheDocument();
+    expect(screen.getByText(/明日到期複習:5 張/)).toBeInTheDocument();
     // 明日到期以學習日估算(countDueByTomorrow 取當下時刻,不再自行 +24h)
     const [at] = countDueByTomorrow.mock.calls[0] as [number];
     expect(Math.abs(at - Date.now())).toBeLessThan(5_000);
@@ -821,6 +858,29 @@ describe("ReviewPage:結算頁(T10.3)", () => {
     expect(screen.getByRole("link", { name: "課程列表" })).toHaveAttribute("href", "/lessons");
     // 今日 2 筆、佇列剩 0 → 有效目標 2;昨日也有紀錄 → 連續 2 天
     expect(screen.getByText("今日 2/2 · 🔥 2")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /繼續複習/ })).not.toBeInTheDocument();
+  });
+
+  it("今日佇列還有卡(如略過空出新卡額度):主行動為繼續複習,按下重新載入佇列並聚焦新卡", async () => {
+    setupOneCard();
+    render(<ReviewPage />);
+    await screen.findByText("1 / 1");
+    flipByKey();
+    // 結算時今日佇列仍有 1 張(下一張新卡)
+    queueCounts.mockResolvedValue({ ...COUNTS_DONE, fresh: 1, newRemaining: 1 });
+    fireEvent.keyDown(window, { key: "3" });
+    expect(await screen.findByText("本次複習結算")).toBeInTheDocument();
+
+    const next = screen.getByRole("button", { name: "繼續複習(1)" });
+    expect(screen.getByRole("link", { name: "回首頁" })).toHaveAttribute("href", "/");
+    buildQueue.mockResolvedValue([card2]);
+    getLesson.mockResolvedValue(lesson2);
+    passTapGuard();
+    fireEvent.click(next);
+    expect(await screen.findByText("ほしい")).toBeInTheDocument();
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
+    expect(buildQueue).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: /顯示答案/ })).toHaveFocus();
   });
 });
 

@@ -7,10 +7,8 @@ import {
   cardDirection,
   ensureReverseCards,
   buildQueue,
-  countDue,
   countDueByTomorrow,
   countLeeches,
-  countSuspended,
   hasAnyCards,
   queueCounts,
   setFuzzForTesting,
@@ -202,22 +200,25 @@ describe("rate", () => {
   });
 });
 
-describe("countDue", () => {
-  it("計算今日(學習日)到期的複習卡,當日稍晚才到期者也算(排除 New)", async () => {
+/** 今日佇列中的到期(複習)卡數 */
+const dueCount = async (now: number) => (await queueCounts(now)).due;
+
+describe("到期判定(按學習日)", () => {
+  it("今日(學習日)到期的複習卡,當日稍晚才到期者也算(排除 New)", async () => {
     await addCards(["a", "b", "new"], 13, NOW);
     const dueA = (await rate("a", 3, NOW)).card.due;
     await rate("b", 3, NOW); // 與 a 同 due
-    expect(await countDue(dueA - DAY)).toBe(0); // 尚未到期
-    expect(await countDue(studyDayStart(dueA) - 1)).toBe(0); // 前一學習日最後一刻
-    expect(await countDue(studyDayStart(dueA))).toBe(2); // 到期日一開始即計
-    expect(await countDue(dueA)).toBe(2); // a、b 到期;new 仍為 New 不計
+    expect(await dueCount(dueA - DAY)).toBe(0); // 尚未到期
+    expect(await dueCount(studyDayStart(dueA) - 1)).toBe(0); // 前一學習日最後一刻
+    expect(await dueCount(studyDayStart(dueA))).toBe(2); // 到期日一開始即計
+    expect(await dueCount(dueA)).toBe(2); // a、b 到期;new 仍為 New 不計
   });
 
   it("countDueByTomorrow:到明日學習日結束前到期者(明日到期預估)", async () => {
     await addCards(["a"], 13, NOW);
     const dueA = (await rate("a", 3, NOW)).card.due;
     expect(await countDueByTomorrow(addStudyDays(dueA, -2))).toBe(0); // 後天才到期
-    expect(await countDue(addStudyDays(dueA, -1))).toBe(0);
+    expect(await dueCount(addStudyDays(dueA, -1))).toBe(0);
     expect(await countDueByTomorrow(addStudyDays(dueA, -1))).toBe(1); // 明日到期
     expect(await countDueByTomorrow(dueA)).toBe(1); // 今日未完成者也計入
   });
@@ -385,7 +386,7 @@ describe("suspend 已會/暫停(T9.3;T10.3 以字為單位)", () => {
     await setWordSuspended("a", true);
     const queue = await buildQueue(dueA);
     expect(queue.map((c) => c.cardId)).not.toContain("a");
-    expect(await countDue(dueA)).toBe(0); // a 暫停、b 仍 New,皆不計
+    expect(await dueCount(dueA)).toBe(0); // a 暫停、b 仍 New,皆不計
 
     // 恢復後又出現
     await setWordSuspended("a", false);
@@ -399,21 +400,20 @@ describe("suspend 已會/暫停(T9.3;T10.3 以字為單位)", () => {
     expect(queue.map((c) => c.cardId)).toEqual(["b"]);
   });
 
-  it("countSuspended / suspendedWordIds", async () => {
+  it("suspendedWordIds", async () => {
     await addCards(["a", "b", "c"], 13, NOW);
     await setWordSuspended("a", true);
     await setWordSuspended("c", true);
-    expect(await countSuspended()).toBe(2);
     expect(await suspendedWordIds(["a", "b", "c"])).toEqual(["a", "c"]);
     expect(await suspendedWordIds([])).toEqual([]);
   });
 
-  it("countSuspended 以字計:雙向卡同一字只算一次,只暫停 @r 的舊資料也算", async () => {
+  it("suspendedWordIds 以字計:雙向卡同一字只列一次,只暫停 @r 的舊資料也算", async () => {
     await setSetting("reverseCards", true);
     await addCards(["a", "b", "c"], 13, NOW);
     await setWordSuspended("a", true); // a 與 a@r 皆暫停
     await db.cards.update("b@r", { suspended: true }); // T10.3 前的單向暫停
-    expect(await countSuspended()).toBe(2);
+    expect(await suspendedWordIds(["a", "b", "c"])).toEqual(["a", "b"]);
   });
 
   it("setWordSuspended:同時作用於正向與 @r(傳入 @r id 亦同),恢復亦雙向", async () => {
@@ -572,7 +572,7 @@ describe("學習日與 ts-fsrs 日界(T10.1,Asia/Taipei)", () => {
 
     expect(await buildQueue(at(4, 3, 59))).toEqual([]); // 9/4 03:59 仍屬 9/3 學習日
     expect(ids(await buildQueue(at(4, 7, 30)))).toEqual(["a"]);
-    expect(await countDue(at(4, 7, 30))).toBe(1);
+    expect(await dueCount(at(4, 7, 30))).toBe(1);
   });
 
   it("跨 08:00(UTC 換日)的兩次複習:elapsedDays 與 stability 相同", async () => {
@@ -692,7 +692,9 @@ describe("每日上限以學習日計(T10.2)", () => {
     await rate("a", 3, day);
     await rate("b", 3, day);
     expect(await buildQueue(day + 120_000)).toEqual([]); // 今日複習額度用完
-    expect(await countDue(day)).toBe(1); // c 仍到期
+    // c 仍到期,只因額度等到明天
+    expect((await db.cards.get("c"))!.due).toBeLessThan(nextStudyDayStart(day));
+    expect((await queueCounts(day + 120_000)).reviewCapReached).toBe(true);
     expect(queueIds(await buildQueue(addStudyDays(day, 1)))).toEqual(["c"]);
   });
 });
@@ -723,7 +725,7 @@ describe("雙向卡兄弟 bury(T10.2)", () => {
     await rate("X@r", 3, NOW);
     await rate("W", 3, NOW);
     expect(await buildQueue(NOW + 60_000)).toEqual([]); // X 今日仍 bury
-    expect(await countDue(NOW)).toBe(1); // X 未被改動,仍到期
+    expect((await db.cards.get("X"))!.due).toBe(NOW); // X 未被改動,仍到期
     expect(queueIds(await buildQueue(addStudyDays(NOW, 1)))).toEqual(["X"]);
   });
 
