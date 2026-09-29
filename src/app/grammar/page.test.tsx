@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import type { Lesson } from "@/schemas/lesson";
@@ -74,7 +74,7 @@ describe("GrammarPage", () => {
       "/lessons/1#L01-G01",
       "/lessons/13#L13-G01",
     ]);
-    expect(screen.getByText("(名詞)が 欲しいです")).toBeInTheDocument();
+    expect(screen.getByText("(名詞)が 欲しいです")).toHaveAttribute("lang", "ja");
   });
 
   it("搜尋:各類結果附徽章與正確連結;清空回到列表", async () => {
@@ -94,12 +94,16 @@ describe("GrammarPage", () => {
     const results2 = await screen.findByRole("list", { name: "搜尋結果" });
     expect(results2).toHaveTextContent("単語");
     expect(results2.querySelector('a[href="/lessons/1"]')).toBeTruthy();
+    // 日文標題與日文用語徽章標 lang=ja
+    expect(within(results2).getByText("先生")).toHaveAttribute("lang", "ja");
+    expect(within(results2).getByText("単語")).toHaveAttribute("lang", "ja");
 
     // 例句命中 → 錨點指向所屬文法點
     await user.clear(input);
     await user.type(input, "学生");
     const results3 = await screen.findByRole("list", { name: "搜尋結果" });
     expect(results3).toHaveTextContent("例句");
+    expect(within(results3).getByText("例句")).not.toHaveAttribute("lang");
     expect(results3.querySelector('a[href="/lessons/1#L01-G01"]')).toBeTruthy();
 
     // 清空 → 回到全部文法列表

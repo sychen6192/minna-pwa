@@ -135,6 +135,20 @@ async function clickFlip(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "顯示答案" }));
 }
 
+/** PitchAccent 的 sr-only 說明(「讀音、重音 n 型(…)」;中文說明不掛 aria-label) */
+function getPitchLabel(label: string): HTMLElement {
+  return screen.getByText(
+    (_, el) => el?.classList.contains("sr-only") === true && el.textContent === label,
+  );
+}
+
+/** 畫面上看得到的文字(去除 sr-only) */
+function visibleText(el: Element): string {
+  const clone = el.cloneNode(true) as Element;
+  clone.querySelectorAll(".sr-only").forEach((n) => n.remove());
+  return clone.textContent ?? "";
+}
+
 /** 可手動完成的 promise(模擬評分寫入中) */
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -416,9 +430,52 @@ describe("ReviewPage", () => {
 
     await screen.findByText(/點擊卡片/);
     await clickFlip(user);
-    expect(
-      screen.getByLabelText("あそびます、重音 4 型(中高)"),
-    ).toBeInTheDocument();
+    expect(getPitchLabel("あそびます、重音 4 型(中高)")).toBeInTheDocument();
+  });
+
+  it("純假名字:翻面後重音標記取代標題,讀音不重複顯示(辨識卡與回想卡)", async () => {
+    const hoshii: Lesson = {
+      ...lesson,
+      title: "課名", // 避免課名(〜が ほしいです)干擾計數
+      vocab: [{ ...lesson.vocab[0], ruby: [{ b: "ほしい" }], kana: "ほしい", accent: 2 }],
+    };
+    getLesson.mockResolvedValue(hoshii);
+    previewIntervals.mockResolvedValue(previews);
+    countDueByTomorrow.mockResolvedValue(0);
+    buildQueue.mockResolvedValue([cardRow]);
+    const user = userEvent.setup();
+    const { container, unmount } = render(<ReviewPage />);
+
+    await screen.findByText(/點擊卡片/);
+    // 翻面前:標題照常,不提前顯示重音
+    expect(visibleText(container).match(/ほしい/g)).toHaveLength(1);
+    expect(container.querySelector("[data-mora]")).toBeNull();
+    await clickFlip(user);
+    expect(getPitchLabel("ほしい、重音 2 型(中高)")).toBeInTheDocument();
+    expect(visibleText(container).match(/ほしい/g)).toHaveLength(1);
+    unmount();
+
+    // 回想卡:答案面同樣只出現一次
+    buildQueue.mockResolvedValue([{ ...cardRow, cardId: "L13-V001@r", direction: "rev" }]);
+    const rev = render(<ReviewPage />);
+    await screen.findByText("中 → 日");
+    await clickFlip(user);
+    expect(getPitchLabel("ほしい、重音 2 型(中高)")).toBeInTheDocument();
+    expect(visibleText(rev.container).match(/ほしい/g)).toHaveLength(1);
+  });
+
+  it("含漢字的字:翻面後標題(RubyText)與重音讀音並列", async () => {
+    buildQueue.mockResolvedValue([cardRow]);
+    getLesson.mockResolvedValue({ ...lesson, vocab: [{ ...lesson.vocab[0], accent: 4 }] });
+    previewIntervals.mockResolvedValue(previews);
+    countDueByTomorrow.mockResolvedValue(0);
+    const user = userEvent.setup();
+    const { container } = render(<ReviewPage />);
+
+    await screen.findByText(/點擊卡片/);
+    await clickFlip(user);
+    expect(container.querySelector('ruby')?.closest("[lang]")).toHaveAttribute("lang", "ja");
+    expect(container.querySelectorAll("[data-mora]")).toHaveLength(5);
   });
 
   it("回想方向卡(rev):正面給中文,翻面才顯示日文與讀音", async () => {

@@ -9,7 +9,9 @@ import { SpeakButton } from "@/components/SpeakButton";
 import { getLesson } from "@/lib/content";
 import { findExampleSentence } from "@/lib/examples";
 import { db, getSetting, type CardRow } from "@/lib/db";
+import { jaLang } from "@/lib/lang";
 import { displayNote } from "@/lib/notes";
+import { isKanaSurface, kanaHeadword } from "@/lib/pitch";
 import { canRelearnAgain, insertRelearn } from "@/lib/relearn";
 import {
   baseVocabId,
@@ -572,6 +574,15 @@ export default function ReviewPage() {
   const isRev = cardDirection(item.card) === "rev";
   const isRelearn = item.relearn !== undefined;
   const note = displayNote(item.vocab.note);
+  // 純假名字:標題即讀音 → 翻面後以重音標記取代標題,不再另列一行相同的假名
+  const kanaOnly = isKanaSurface(item.vocab);
+  const pitchHead = kanaHeadword(item.vocab);
+  const answerHead =
+    pitchHead !== null ? (
+      <PitchAccent kana={pitchHead} accent={item.vocab.accent} />
+    ) : (
+      <RubyText segments={item.vocab.ruby} furigana={furigana} />
+    );
   return (
     <div className="flex min-h-[80vh] flex-col">
       <div className="flex items-center justify-between px-4 py-2 text-xs text-foreground/60">
@@ -609,25 +620,27 @@ export default function ReviewPage() {
           </div>
         ) : (
           <div className="text-3xl">
-            <RubyText segments={item.vocab.ruby} furigana={furigana} />
+            {flipped ? answerHead : <RubyText segments={item.vocab.ruby} furigana={furigana} />}
           </div>
         )}
         {flipped && (
           <div className="space-y-1">
             {isRev ? (
               <>
-                <div className="text-3xl">
-                  <RubyText segments={item.vocab.ruby} furigana={furigana} />
-                </div>
-                <div className="text-base text-foreground/70">
-                  <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
-                </div>
+                <div className="text-3xl">{answerHead}</div>
+                {!kanaOnly && (
+                  <div className="text-base text-foreground/70">
+                    <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
+                  </div>
+                )}
               </>
             ) : (
               <>
-                <div className="text-base text-foreground/70">
-                  <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
-                </div>
+                {!kanaOnly && (
+                  <div className="text-base text-foreground/70">
+                    <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
+                  </div>
+                )}
                 <div className="text-lg">{item.vocab.meaning}</div>
               </>
             )}
@@ -635,7 +648,7 @@ export default function ReviewPage() {
             {note && <div className="text-sm text-foreground/70">{note}</div>}
             {!isRev && (
               <div className="text-xs text-foreground/60">
-                {item.vocab.pos}・{item.lessonTitle}
+                {item.vocab.pos}・<span lang={jaLang(item.lessonTitle)}>{item.lessonTitle}</span>
               </div>
             )}
           </div>
@@ -654,7 +667,10 @@ export default function ReviewPage() {
             <div className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1 text-sm">
-                  <RubyText segments={item.example.ruby} furigana={furigana} />
+                  {/* 行高足以容納 furigana:有無讀音的行距一致 */}
+                  <div className="text-base leading-ruby">
+                    <RubyText segments={item.example.ruby} furigana={furigana} />
+                  </div>
                   <p className="mt-1 text-xs text-foreground/60">
                     {item.example.translation}
                   </p>

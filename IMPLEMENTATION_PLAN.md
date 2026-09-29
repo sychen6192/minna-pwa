@@ -226,7 +226,7 @@
 
 ### B. UI/UX
 
-- [ ] **T10.8 日文排版**
+- [x] **T10.8 日文排版**
   做什麼:`RubyText` 根元素 `lang="ja"`;PitchAccent 視覺層與降級文字加 `lang="ja"`,中文說明改 sr-only(不把 ja 掛在中文標籤上);課名、文型 pattern、会話說話者、分頁標籤等日文加 `lang="ja"`。globals.css 移除 Arial,定義 `--font-sans`(繁中系統字)與 `--font-jp`(Hiragino / Noto Sans JP / Yu Gothic 等系統字,不下載 web font),`:lang(ja)` 套用。`rt` 至少 10px;日文 `word-break: keep-all` + `overflow-wrap: anywhere`(依教材空格斷行);例句/会話行距一致。純假名字的單字列不重複顯示讀音(以 PitchAccent 取代標題)。pitch.ts 對 kana 內非假名字元(…、、)不計拍、原樣顯示。
   驗收:RubyText/PitchAccent 測試(lang、sr-only 文字)、pitchPattern('…ばい',0) 拍型、LessonDetail 純假名字只渲染一次;light/dark 截圖回歸;`pnpm verify` 全綠。
 

@@ -194,7 +194,13 @@ export function QuizRunner({ id }: { id: number }) {
                   : "font-medium text-red-600"
               }
             >
-              {lastCorrect ? "答對 ✓" : `答錯 ✗(${answerLabel(q.answer)})`}
+              {lastCorrect ? (
+                "答對 ✓"
+              ) : (
+                <>
+                  答錯 ✗(<span lang="ja">{answerLabel(q.answer)}</span>)
+                </>
+              )}
             </p>
             {note && <p className="text-sm text-foreground/70">{note}</p>}
           </div>

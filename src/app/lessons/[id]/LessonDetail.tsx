@@ -5,6 +5,8 @@ import { Check, Plus, Volume2 } from "lucide-react";
 import { PitchAccent, hasPitch } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { getLesson } from "@/lib/content";
+import { jaLang } from "@/lib/lang";
+import { kanaHeadword } from "@/lib/pitch";
 import { addCards, existingCardIds, setWordSuspended, suspendedWordIds } from "@/lib/srs";
 import { speak, speechText } from "@/lib/tts";
 import { useSetting, useTtsEnabled } from "@/lib/useSetting";
@@ -127,7 +129,9 @@ export function LessonDetail({ id }: { id: number }) {
       <header className="flex items-start justify-between px-4 py-3">
         <div className="min-w-0">
           <div className="text-xs text-foreground/60">第 {lesson.id} 課</div>
-          <h1 className="text-lg font-bold">{lesson.title}</h1>
+          <h1 lang={jaLang(lesson.title)} className="text-lg font-bold">
+            {lesson.title}
+          </h1>
         </div>
         <button
           type="button"
@@ -145,6 +149,7 @@ export function LessonDetail({ id }: { id: number }) {
             key={key}
             type="button"
             role="tab"
+            lang="ja"
             aria-selected={tab === key}
             onClick={() => setTab(key)}
             className={cn(
@@ -218,11 +223,17 @@ function VocabList({
           // 隱藏假名時,含漢字讀音的字不顯示重音列(它寫出完整讀音);純假名字照常顯示
           const readingHidden = furigana === "hide" && v.ruby.some((s) => s.r !== undefined);
           const spoken = speechText(v); // 名稱與實際朗讀一致(同複習/練習的 SpeakButton)
+          // 純假名字:重音標記本身就是標題,不再重複列一份相同的假名
+          const pitchHead = kanaHeadword(v);
           return (
             <li key={v.id} className="border-b border-foreground/10 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="flex flex-wrap items-center gap-2 text-lg">
-                  <RubyText segments={v.ruby} furigana={furigana} />
+                  {pitchHead !== null ? (
+                    <PitchAccent kana={pitchHead} accent={v.accent} />
+                  ) : (
+                    <RubyText segments={v.ruby} furigana={furigana} />
+                  )}
                   {tts && (
                     <button
                       type="button"
@@ -233,7 +244,7 @@ function VocabList({
                       <Volume2 className="size-4" aria-hidden />
                     </button>
                   )}
-                  {hasPitch(v.kana, v.accent) && !readingHidden && (
+                  {pitchHead === null && hasPitch(v.kana, v.accent) && !readingHidden && (
                     <PitchAccent
                       kana={v.kana}
                       accent={v.accent}
@@ -308,12 +319,15 @@ function GrammarList({
           id={g.id}
           className="scroll-mt-4 border-b border-foreground/10 px-4 py-3"
         >
-          <h2 className="font-medium">{g.pattern}</h2>
+          <h2 lang={jaLang(g.pattern)} className="font-medium">
+            {g.pattern}
+          </h2>
           <p className="mt-1 text-sm text-foreground/70">{g.explanation}</p>
           <ul className="mt-2 space-y-2">
             {g.examples.map((s) => (
               <li key={s.id}>
-                <div>
+                {/* 行高足以容納 furigana:有無讀音的行距一致 */}
+                <div className="leading-ruby">
                   <RubyText segments={s.ruby} furigana={furigana} />
                 </div>
                 <div className="text-xs text-foreground/60">
@@ -343,9 +357,11 @@ function DialogueList({
       {lesson.dialogues.map((d) => (
         <li key={d.id} className="py-2">
           {d.speaker && (
-            <div className="text-xs text-foreground/60">{d.speaker}</div>
+            <div lang="ja" className="mb-0.5 text-xs text-foreground/60">
+              {d.speaker}
+            </div>
           )}
-          <div>
+          <div className="leading-ruby">
             <RubyText segments={d.ruby} furigana={furigana} />
           </div>
           <div className="text-xs text-foreground/60">{d.translation}</div>

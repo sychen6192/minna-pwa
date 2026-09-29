@@ -114,7 +114,7 @@ describe("QuizRunner", () => {
     await screen.findByText("第 1 / 2 題");
 
     await user.click(screen.getByRole("button", { name: "貓" }));
-    expect(screen.getByText(/答錯.*いぬ/)).toBeInTheDocument();
+    expect(screen.getByText(/答錯/)).toHaveTextContent(/答錯.*いぬ/);
   });
 
   it("輸入題:羅馬字經正規化判定為正解,走完一輪到結算", async () => {
@@ -182,7 +182,9 @@ describe("QuizRunner 判分、提示與再測(T10.4)", () => {
     await user.click(screen.getByRole("button", { name: "下一題" }));
     await user.type(screen.getByLabelText("輸入假名"), "すきだ");
     await user.click(screen.getByRole("button", { name: "作答" }));
-    expect(screen.getByText("答錯 ✗(すき／すきな)")).toBeInTheDocument();
+    expect(screen.getByText(/答錯/)).toHaveTextContent(/^答錯 ✗\(すき／すきな\)$/);
+    // 正解讀音標 lang=ja(日文字形/語音),中文回饋不標
+    expect(screen.getByText("すき／すきな")).toHaveAttribute("lang", "ja");
   });
 
   it("答題後顯示搭配 note;段落標記不顯示", async () => {

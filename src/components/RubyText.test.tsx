@@ -28,6 +28,13 @@ describe("RubyText", () => {
     expect(container.textContent).toBe("さびしい");
   });
 
+  it("根元素標 lang=ja(日文字形與斷行),furigana 隱藏時亦然", () => {
+    const { container, rerender } = render(<RubyText segments={segments} />);
+    expect(container.firstElementChild).toHaveAttribute("lang", "ja");
+    rerender(<RubyText segments={segments} furigana="hide" />);
+    expect(container.firstElementChild).toHaveAttribute("lang", "ja");
+  });
+
   it("多個漢字段:每段各產生一個 <rt>", () => {
     const { container } = render(
       <RubyText

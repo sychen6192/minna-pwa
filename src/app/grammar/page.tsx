@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getLesson, getLessonIndex } from "@/lib/content";
+import { jaLang } from "@/lib/lang";
 import {
   buildSearchIndex,
   searchAll,
@@ -43,10 +44,11 @@ function load(): Promise<Loaded> {
   return cached;
 }
 
-const KIND_META: Record<SearchKind, { label: string; cls: string }> = {
-  grammar: { label: "文型", cls: "bg-sky-600/10 text-sky-700 dark:text-sky-400" },
+/** 徽章沿用課程頁分頁名(単語/文型 為日文用語,標 lang=ja;例句為中文) */
+const KIND_META: Record<SearchKind, { label: string; lang?: "ja"; cls: string }> = {
+  grammar: { label: "文型", lang: "ja", cls: "bg-sky-600/10 text-sky-700 dark:text-sky-400" },
   example: { label: "例句", cls: "bg-violet-600/10 text-violet-700 dark:text-violet-400" },
-  vocab: { label: "単語", cls: "bg-green-600/10 text-green-700 dark:text-green-400" },
+  vocab: { label: "単語", lang: "ja", cls: "bg-green-600/10 text-green-700 dark:text-green-400" },
 };
 
 function hitHref(h: SearchHit): string {
@@ -119,12 +121,19 @@ export default function GrammarPage() {
                   className="flex items-start gap-2 border-b border-foreground/10 px-4 py-3 transition-colors active:bg-foreground/5"
                 >
                   <span
+                    lang={meta.lang}
                     className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${meta.cls}`}
                   >
                     {meta.label}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{h.title}</span>
+                    {/* 單字/例句必為日文;文型 pattern 少數是中文說明 */}
+                    <span
+                      lang={h.kind === "grammar" ? jaLang(h.title) : "ja"}
+                      className="block truncate font-medium"
+                    >
+                      {h.title}
+                    </span>
                     {h.snippet && (
                       <span className="block truncate text-xs text-foreground/60">
                         {h.snippet}
@@ -150,7 +159,9 @@ export default function GrammarPage() {
                 href={`/lessons/${g.lessonId}#${g.id}`}
                 className="flex items-center justify-between border-b border-foreground/10 px-4 py-3 transition-colors active:bg-foreground/5"
               >
-                <span className="min-w-0 truncate font-medium">{g.pattern}</span>
+                <span lang={jaLang(g.pattern)} className="min-w-0 truncate font-medium">
+                  {g.pattern}
+                </span>
                 <span className="ml-3 shrink-0 text-xs text-foreground/50">
                   第 {g.lessonId} 課
                 </span>

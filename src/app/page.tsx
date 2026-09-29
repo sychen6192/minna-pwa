@@ -217,7 +217,9 @@ export default function Home() {
   return (
     <div className="px-4 py-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">みんなの日本語</h1>
+        <h1 lang="ja" className="text-2xl font-bold">
+          みんなの日本語
+        </h1>
         <p className="mt-1 text-sm text-foreground/60">《大家的日本語》初級 I・II</p>
       </header>
 

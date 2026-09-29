@@ -83,6 +83,7 @@ describe("LessonsPage", () => {
     await waitFor(() =>
       expect(screen.getByText("〜が ほしいです")).toBeInTheDocument(),
     );
+    expect(screen.getByText("〜が ほしいです")).toHaveAttribute("lang", "ja");
     expect(screen.getAllByRole("link")).toHaveLength(50);
     expect(screen.getByText("12 字")).toBeInTheDocument();
 

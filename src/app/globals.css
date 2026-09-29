@@ -8,6 +8,14 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* 只用系統字型(離線、不下載 web font):介面為繁中,日文內容(:lang(ja))改用日文字型 */
+  --font-sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --font-jp: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Noto Sans CJK JP", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+  /*
+   * 帶 furigana 的例句/会話(`leading-ruby`,16px 本文):半行距須容得下 10px 的 rt,
+   * 有無讀音的行才等高(2 時帶讀音的行高 2px,2.2 起一致)
+   */
+  --leading-ruby: 2.2;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -20,5 +28,32 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* 放在 base layer:元件上的 Tailwind utility(truncate、font-sans 等)仍可覆寫 */
+@layer base {
+  /*
+   * 日文內容(RubyText、PitchAccent、課名等標 lang="ja"):日文字形;依教材的分かち書き空格斷行,
+   * 不在詞中間斷開(keep-all),沒有空格的長串由 overflow-wrap 兜底、不致撐破版面;
+   * 行首不出現小書き假名與長音(strict)。
+   */
+  :lang(ja) {
+    font-family: var(--font-jp);
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+    line-break: strict;
+  }
+
+  /* furigana:瀏覽器預設 50% 在小字級只剩 7–9px,至少 10px;顏色略淡於本文(以 currentColor 混色,兩種配色皆適用) */
+  rt {
+    font-size: max(0.55em, 10px);
+    line-height: 1;
+    color: color-mix(in oklab, currentColor 75%, transparent);
+  }
+
+  /* 讀音比漢字寬時(洋食/ようしょく),空白留在詞的兩側,不把漢字拆開(預設 space-around) */
+  ruby {
+    ruby-align: center;
+  }
 }

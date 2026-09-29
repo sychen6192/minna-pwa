@@ -50,6 +50,7 @@ describe("Home(今日儀表板)", () => {
 
     expect(await screen.findByText(/還沒有加入任何單字/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "瀏覽課程" })).toHaveAttribute("href", "/lessons");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveAttribute("lang", "ja");
     // 進度摘要:0 / 2 課
     expect(screen.getByText(/已開始課程/).parentElement).toHaveTextContent("0 / 2 課");
   });

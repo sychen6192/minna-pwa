@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getLessonIndex } from "@/lib/content";
 import { db } from "@/lib/db";
+import { jaLang } from "@/lib/lang";
 import {
   lastRatingByCard,
   lessonProgress,
@@ -80,7 +81,9 @@ export default function LessonsPage() {
                     <div className="text-xs text-foreground/60">
                       第 {lesson.id} 課
                     </div>
-                    <div className="truncate font-medium">{lesson.title}</div>
+                    <div lang={jaLang(lesson.title)} className="truncate font-medium">
+                      {lesson.title}
+                    </div>
                   </div>
                   <div className="ml-3 shrink-0 text-right">
                     <div className="text-sm">{lesson.vocabCount} 字</div>

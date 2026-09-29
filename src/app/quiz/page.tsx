@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getLessonIndex } from "@/lib/content";
+import { jaLang } from "@/lib/lang";
 import type { LessonIndex } from "@/schemas/lesson";
 
 /** 測驗選課入口(T7.4):選一課開始 10 題測驗 */
@@ -49,7 +50,9 @@ export default function QuizIndexPage() {
               >
                 <div className="min-w-0">
                   <div className="text-xs text-foreground/60">第 {lesson.id} 課</div>
-                  <div className="truncate font-medium">{lesson.title}</div>
+                  <div lang={jaLang(lesson.title)} className="truncate font-medium">
+                    {lesson.title}
+                  </div>
                 </div>
                 <div className="ml-3 shrink-0 text-sm text-foreground/60">
                   {lesson.vocabCount} 字

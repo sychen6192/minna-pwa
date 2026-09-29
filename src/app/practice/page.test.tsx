@@ -31,6 +31,7 @@ const lesson: Lesson = {
       meaning: "丈夫",
       pos: "名",
     },
+    { id: "L13-V004", ruby: [{ b: "ほしい" }], kana: "ほしい", accent: 2, meaning: "想要", pos: "い形" },
   ],
   grammar: [],
   dialogues: [],
@@ -82,7 +83,27 @@ function installSpeech() {
   return speak;
 }
 
+/** 畫面上看得到的文字(去除 sr-only) */
+function visibleText(el: Element): string {
+  const clone = el.cloneNode(true) as Element;
+  clone.querySelectorAll(".sr-only").forEach((n) => n.remove());
+  return clone.textContent ?? "";
+}
+
 describe("PracticePage", () => {
+  it("純假名字:翻面後重音標記取代標題,讀音不重複顯示", async () => {
+    await db.cards.bulkAdd([leechCard("L13-V004", 5)]);
+    const user = userEvent.setup();
+    const { container } = render(<PracticePage />);
+
+    await screen.findByText("1 / 1");
+    expect(container.querySelector("[data-mora]")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    expect(container.querySelectorAll("[data-mora]")).toHaveLength(3);
+    expect(container.querySelector(".sr-only")).toHaveTextContent("ほしい、重音 2 型(中高)");
+    expect(visibleText(container).match(/ほしい/g)).toHaveLength(1);
+  });
+
   it("無頑固卡:顯示空狀態", async () => {
     render(<PracticePage />);
     expect(await screen.findByText(/目前沒有頑固卡/)).toBeInTheDocument();

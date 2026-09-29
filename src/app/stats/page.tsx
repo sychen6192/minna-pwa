@@ -16,6 +16,7 @@ import {
 import { Heatmap } from "@/components/Heatmap";
 import { getLessonIndex } from "@/lib/content";
 import { db, type CardRow, type LogRow } from "@/lib/db";
+import { jaLang } from "@/lib/lang";
 import {
   cardTotals,
   dailyReviewCounts,
@@ -345,7 +346,9 @@ export default function StatsPage() {
                 L{lesson.lessonId}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs text-neutral-700">{lesson.title}</div>
+                <div lang={jaLang(lesson.title)} className="truncate text-xs text-neutral-700">
+                  {lesson.title}
+                </div>
                 <div
                   className="relative mt-1 h-2 overflow-hidden rounded bg-neutral-100"
                   title={`已加入 ${lesson.added}/${lesson.total},已學會 ${lesson.learned}`}

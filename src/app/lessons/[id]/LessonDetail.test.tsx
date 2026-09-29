@@ -125,6 +125,26 @@ function watchRt(): {
   };
 }
 
+/** PitchAccent 的 sr-only 說明(「ほしい、重音 2 型(中高)」;中文說明不掛 aria-label) */
+function isPitchLabel(el: Element | null, label: string | RegExp): boolean {
+  if (!el?.classList.contains("sr-only")) return false;
+  const text = el.textContent ?? "";
+  return typeof label === "string" ? text === label : label.test(text);
+}
+function getPitchLabel(label: string | RegExp): HTMLElement {
+  return screen.getByText((_, el) => isPitchLabel(el, label));
+}
+function queryPitchLabel(label: string | RegExp): HTMLElement | null {
+  return screen.queryByText((_, el) => isPitchLabel(el, label));
+}
+
+/** 畫面上看得到的文字(去除 sr-only) */
+function visibleText(el: Element): string {
+  const clone = el.cloneNode(true) as Element;
+  clone.querySelectorAll(".sr-only").forEach((n) => n.remove());
+  return clone.textContent ?? "";
+}
+
 beforeEach(async () => {
   await db.settings.clear();
   existingCardIds.mockResolvedValue([]);
@@ -155,10 +175,60 @@ describe("LessonDetail", () => {
     await screen.findByText("玩、遊玩");
 
     // ほしい(accent: 2)→ 重音標記;あそびます(無 accent)→ 無標記
-    expect(
-      screen.getByLabelText("ほしい、重音 2 型(中高)"),
-    ).toBeInTheDocument();
-    expect(screen.queryByLabelText(/あそびます、重音/)).not.toBeInTheDocument();
+    expect(getPitchLabel("ほしい、重音 2 型(中高)")).toBeInTheDocument();
+    expect(queryPitchLabel(/あそびます、重音/)).not.toBeInTheDocument();
+  });
+
+  it("純假名字(表面 = 讀音):重音標記即標題,假名只渲染一次", async () => {
+    getLesson.mockResolvedValue(lessonWithKanjiPitch);
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    const row = (meaning: string) => screen.getByText(meaning).closest("li") as HTMLElement;
+    // ほしい:只有重音標記那一份(舊版為 RubyText 標題 + 重音讀音兩份)
+    const hoshii = row("想要");
+    expect(visibleText(hoshii).match(/ほしい/g)).toHaveLength(1);
+    expect(hoshii.querySelectorAll("[data-mora]")).toHaveLength(3);
+    expect(hoshii.querySelector("ruby")).toBeNull();
+    // 含漢字的字:RubyText 標題 + 重音讀音並列
+    const kurumaRow = row("車子");
+    expect(kurumaRow.querySelector("ruby")).not.toBeNull();
+    expect(kurumaRow.querySelectorAll("[data-mora]")).toHaveLength(3);
+  });
+
+  it("日文標記 lang=ja:課名、分頁標籤、文型、会話說話者;中文說明的文型不標", async () => {
+    getLesson.mockResolvedValue({
+      ...sampleLesson,
+      grammar: [
+        ...sampleLesson.grammar,
+        {
+          id: "L13-G02",
+          pattern: "動詞的活用",
+          explanation: "中文說明的文型標題。",
+          examples: sampleLesson.grammar[0].examples,
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    expect(screen.getByRole("heading", { name: "〜が ほしいです" })).toHaveAttribute("lang", "ja");
+    for (const name of ["単語", "文型", "会話"]) {
+      expect(screen.getByRole("tab", { name })).toHaveAttribute("lang", "ja");
+    }
+    // 單字標題(RubyText)
+    expect(screen.getByText("遊").closest("[lang]")).toHaveAttribute("lang", "ja");
+
+    await user.click(screen.getByRole("tab", { name: "文型" }));
+    expect(screen.getByRole("heading", { name: "(名詞)が ほしいです" })).toHaveAttribute(
+      "lang",
+      "ja",
+    );
+    expect(screen.getByRole("heading", { name: "動詞的活用" })).not.toHaveAttribute("lang");
+
+    await user.click(screen.getByRole("tab", { name: "会話" }));
+    expect(screen.getByText("ミラー")).toHaveAttribute("lang", "ja");
   });
 
   it("頁內 furigana 快切:隱藏後移除所有 <rt>", async () => {
@@ -308,25 +378,18 @@ describe("LessonDetail", () => {
     render(<LessonDetail id={13} />);
     await screen.findByText("玩、遊玩");
 
-    // 顯示假名:兩者皆有重音標記
-    expect(
-      screen.getByLabelText("くるま、重音 0 型(平板)"),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText(/^すき［な］、重音 2 型/)).toBeInTheDocument();
-    expect(
-      screen.getByLabelText("ほしい、重音 2 型(中高)"),
-    ).toBeInTheDocument();
+    // 顯示假名:兩者皆有重音標記(sr 讀音不含［］記號)
+    expect(getPitchLabel("くるま、重音 0 型(平板)")).toBeInTheDocument();
+    expect(getPitchLabel(/^すきな、重音 2 型/)).toBeInTheDocument();
+    expect(getPitchLabel("ほしい、重音 2 型(中高)")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "隱藏假名" }));
-    expect(screen.queryByLabelText(/^くるま、重音/)).not.toBeInTheDocument();
-    expect(
-      screen.queryByLabelText(/^すき［な］、重音/),
-    ).not.toBeInTheDocument();
+    expect(queryPitchLabel(/^くるま、重音/)).not.toBeInTheDocument();
+    expect(queryPitchLabel(/^すきな、重音/)).not.toBeInTheDocument();
     expect(screen.queryByText("くるま")).not.toBeInTheDocument(); // 讀音不以任何形式出現
+    expect(screen.queryByText(/くるま/)).not.toBeInTheDocument();
     // 純假名字(ほしい)沒有可洩漏的讀音
-    expect(
-      screen.getByLabelText("ほしい、重音 2 型(中高)"),
-    ).toBeInTheDocument();
+    expect(getPitchLabel("ほしい、重音 2 型(中高)")).toBeInTheDocument();
   });
 
   it("全域隱藏時:首次渲染即不顯示含漢字字的重音讀音", async () => {
@@ -335,10 +398,8 @@ describe("LessonDetail", () => {
     render(<LessonDetail id={13} />);
     await screen.findByText("車子");
 
-    expect(screen.queryByLabelText(/^くるま、重音/)).not.toBeInTheDocument();
-    expect(
-      screen.getByLabelText("ほしい、重音 2 型(中高)"),
-    ).toBeInTheDocument();
+    expect(queryPitchLabel(/^くるま、重音/)).not.toBeInTheDocument();
+    expect(getPitchLabel("ほしい、重音 2 型(中高)")).toBeInTheDocument();
   });
 
   it("單字加入複習:點擊以該 id 呼叫 addCards 並標示已加入", async () => {
