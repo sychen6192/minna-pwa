@@ -104,6 +104,11 @@ describe("buildSearchIndex + searchAll", () => {
     expect(v).toMatchObject({ id: "L01-V001", lessonId: 1, snippet: "老師" });
   });
 
+  it("單字命中:anchor 為單字 id(課程頁捲到該字)", () => {
+    const v = searchAll(index, "あそびます").find((h) => h.kind === "vocab");
+    expect(v).toMatchObject({ id: "L13-V001", lessonId: 13, anchor: "L13-V001" });
+  });
+
   it("例句命中:anchor 指向所屬文法點", () => {
     const hits = searchAll(index, "エンジニア");
     const s = hits.find((h) => h.kind === "example");

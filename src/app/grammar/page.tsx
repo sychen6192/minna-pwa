@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Loading } from "@/components/Loading";
 import { getLesson, getLessonIndex } from "@/lib/content";
@@ -56,10 +56,58 @@ function hitHref(h: SearchHit): string {
   return h.anchor ? `/lessons/${h.lessonId}#${h.anchor}` : `/lessons/${h.lessonId}`;
 }
 
+/** 搜尋字串寫回網址(?q=)的延遲:打字中不每鍵改寫 */
+const QUERY_SYNC_MS = 300;
+
+/** 目前網址對應 `query` 的版本(?q= 存搜尋字串,空白查詢則移除);已相同時回傳 null。 */
+function urlWithQuery(query: string): string | null {
+  const url = new URL(window.location.href);
+  if (query.trim()) url.searchParams.set("q", query);
+  else url.searchParams.delete("q");
+  return url.href === window.location.href ? null : `${url.pathname}${url.search}${url.hash}`;
+}
+
 export default function GrammarPage() {
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+
+  // 搜尋字串存於網址 ?q=(replaceState,不新增歷史紀錄):點結果再返回時還原。
+  // 掛載後才讀 location(不用 useSearchParams:靜態匯出下需 Suspense 邊界,且預先渲染時無查詢字串)
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setQuery(q);
+  }, []);
+  // 延遲中的寫入(沒有則為 null):點連結時先寫入,見下方 capture 監聽
+  const flushQuery = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const pathname = window.location.pathname;
+    let timer = 0;
+    const sync = () => {
+      window.clearTimeout(timer);
+      flushQuery.current = null;
+      // 已離開本頁(如延遲中按上一頁):不改寫別頁的網址
+      if (window.location.pathname !== pathname) return;
+      const next = urlWithQuery(query);
+      if (next !== null) window.history.replaceState(null, "", next);
+    };
+    timer = window.setTimeout(sync, QUERY_SYNC_MS);
+    flushQuery.current = sync;
+    return () => {
+      window.clearTimeout(timer);
+      flushQuery.current = null;
+    };
+  }, [query]);
+  // 點任何連結(搜尋結果、底部導覽…)時先寫入延遲中的查詢:返回時還原到剛輸入的字串。
+  // capture 階段早於 Link 的導覽;Next 會把 replaceState 同步進 router(ACTION_RESTORE),
+  // 若等導覽開始後計時器才寫入,會取消尚在載入中的導覽
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest("a[href]")) flushQuery.current?.();
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -82,9 +130,10 @@ export default function GrammarPage() {
 
   return (
     <div>
-      <h1 className="px-4 py-3 text-lg font-bold">文法速查</h1>
+      <h1 className="px-4 pt-3 pb-1 text-lg font-bold">文法速查</h1>
 
-      <div className="px-4 pb-3">
+      {/* 黏在頂端:捲動長列表時仍可改查詢 */}
+      <div className="sticky top-0 z-10 border-b border-border bg-background px-4 py-2">
         <input
           type="search"
           aria-label="搜尋文型、解說、例句、單字"

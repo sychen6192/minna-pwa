@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loading } from "@/components/Loading";
-import { getLessonIndex } from "@/lib/content";
+import { getLessonIndex, getSupplementaryWords } from "@/lib/content";
 import { db } from "@/lib/db";
 import { jaLang } from "@/lib/lang";
 import {
@@ -12,6 +12,7 @@ import {
   lessonStatus,
   type LessonStatus,
 } from "@/lib/stats";
+import { cn } from "@/lib/utils";
 import type { LessonIndex } from "@/schemas/lesson";
 
 const STATUS_META: Record<LessonStatus, { label: string; cls: string }> = {
@@ -22,9 +23,26 @@ const STATUS_META: Record<LessonStatus, { label: string; cls: string }> = {
 
 export default function LessonsPage() {
   const [index, setIndex] = useState<LessonIndex | null>(null);
-  const [statusById, setStatusById] = useState<Map<number, LessonStatus>>(new Map());
+  // null = 狀態尚未算出(列表照常顯示,狀態欄留白)
+  const [statusById, setStatusById] = useState<Map<number, LessonStatus> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 列表只等索引(記憶體快取,返回本頁時幾乎立即完成):列表高度先到位,瀏覽器才能還原捲動位置
+  useEffect(() => {
+    let active = true;
+    getLessonIndex()
+      .then((idx) => {
+        if (active) setIndex(idx);
+      })
+      .catch((e: unknown) => {
+        if (active) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // 各課狀態另外補上(IndexedDB + 已開始各課的補充單字),不擋列表渲染
   useEffect(() => {
     let active = true;
     (async () => {
@@ -33,18 +51,20 @@ export default function LessonsPage() {
         db.cards.toArray(),
         db.logs.toArray(),
       ]);
+      // 補充單字不計入進度(整課加入不含它們);只需載入已有卡片的課
+      const started = [...new Set(cards.map((c) => c.lessonId))];
+      const supplementary = await getSupplementaryWords(started);
       if (!active) return;
-      setIndex(idx);
       // 最後一次評「重來」的字不算已學會(stats.lessonProgress)
       const byId = new Map<number, LessonStatus>(
-        lessonProgress(cards, idx, lastRatingByCard(logs)).map((p) => [
+        lessonProgress(cards, idx, lastRatingByCard(logs), supplementary).map((p) => [
           p.lessonId,
           lessonStatus(p),
         ]),
       );
       setStatusById(byId);
-    })().catch((e: unknown) => {
-      if (active) setError(e instanceof Error ? e.message : String(e));
+    })().catch(() => {
+      // 索引失敗由上方 effect 顯示錯誤;讀不到進度時狀態欄維持留白,列表仍可使用
     });
     return () => {
       active = false;
@@ -66,8 +86,8 @@ export default function LessonsPage() {
       {index && (
         <ul>
           {index.lessons.map((lesson) => {
-            const status = statusById.get(lesson.id) ?? "not-started";
-            const meta = STATUS_META[status];
+            const status = statusById?.get(lesson.id);
+            const meta = status ? STATUS_META[status] : null;
             return (
               <li key={lesson.id}>
                 <Link
@@ -84,7 +104,8 @@ export default function LessonsPage() {
                   </div>
                   <div className="ml-3 shrink-0 text-right">
                     <div className="text-sm">{lesson.vocabCount} 字</div>
-                    <div className={`text-xs ${meta.cls}`}>{meta.label}</div>
+                    {/* 狀態算出前以空白佔位:列高不變 */}
+                    <div className={cn("text-xs", meta?.cls)}>{meta?.label ?? "\u00a0"}</div>
                   </div>
                 </Link>
               </li>

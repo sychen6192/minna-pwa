@@ -174,15 +174,16 @@ function newReverseRow(
 /**
  * 將單字加入複習(冪等):已存在的 cardId 不重複建立、不重置進度。
  * `reverseCards` 設定開啟時,同時建立義→日回想方向卡(cardId 加 `@r`,繼承正向卡的暫停狀態)。
+ * 回傳實際新建的正向卡數(= 新加入的字數;補建的 `@r` 不計),供「已加入 N 字」回饋(T10.11)。
  */
 export async function addCards(
   vocabIds: string[],
   lessonId: number,
   now: number = Date.now(),
-): Promise<void> {
-  if (vocabIds.length === 0) return;
+): Promise<number> {
+  if (vocabIds.length === 0) return 0;
   const { reverseCards } = await getAllSettings();
-  await db.transaction("rw", db.cards, async () => {
+  return db.transaction("rw", db.cards, async () => {
     const wanted = reverseCards
       ? [...vocabIds, ...vocabIds.map((id) => `${id}${REVERSE_SUFFIX}`)]
       : vocabIds;
@@ -191,17 +192,19 @@ export async function addCards(
     );
     const at = new Date(now);
     const toAdd: CardRow[] = [];
-    for (const id of vocabIds) {
+    for (const id of new Set(vocabIds)) {
       if (!existing.has(id)) toAdd.push(newCardRow(id, lessonId, at));
     }
+    const created = toAdd.length;
     if (reverseCards) {
-      for (const id of vocabIds) {
+      for (const id of new Set(vocabIds)) {
         if (!existing.has(`${id}${REVERSE_SUFFIX}`)) {
           toAdd.push(newReverseRow(existing.get(id), id, lessonId, at));
         }
       }
     }
     if (toAdd.length > 0) await db.cards.bulkAdd(toAdd);
+    return created;
   });
 }
 

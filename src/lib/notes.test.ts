@@ -1,6 +1,7 @@
 import {
   displayNote,
   isSupplementary,
+  noteSection,
   SECTION_MARKER_NOTES,
   SUPPLEMENT_NOTE,
 } from "./notes";
@@ -40,5 +41,25 @@ describe("isSupplementary", () => {
     expect(isSupplementary({ note: "読み物" })).toBe(false);
     expect(isSupplementary({ note: "〔電車に〜〕" })).toBe(false);
     expect(isSupplementary({})).toBe(false);
+  });
+});
+
+describe("noteSection", () => {
+  it("段落標記 → 所屬段落(與 displayNote 互補:標記不當提示)", () => {
+    expect(noteSection(SUPPLEMENT_NOTE)).toBe("supplementary");
+    expect(noteSection("読み物")).toBe("reading");
+    expect(noteSection("会話")).toBe("dialogue");
+    for (const marker of SECTION_MARKER_NOTES) {
+      expect(noteSection(marker)).not.toBeNull();
+      expect(displayNote(marker)).toBeNull();
+    }
+  });
+
+  it("其他 note(搭配、說明、含標記字樣)與無 note → null", () => {
+    expect(noteSection("〔電車に〜〕")).toBeNull();
+    expect(noteSection("会話で使う")).toBeNull();
+    expect(noteSection("読み物 ")).toBeNull();
+    expect(noteSection("")).toBeNull();
+    expect(noteSection(undefined)).toBeNull();
   });
 });

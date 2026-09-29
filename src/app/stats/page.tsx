@@ -16,7 +16,7 @@ import {
 import { Heatmap } from "@/components/Heatmap";
 import { Loading } from "@/components/Loading";
 import { buttonVariants } from "@/components/ui/button";
-import { getLessonIndex } from "@/lib/content";
+import { getLessonIndex, getSupplementaryWords } from "@/lib/content";
 import { db, type CardRow, type LogRow } from "@/lib/db";
 import { jaLang } from "@/lib/lang";
 import {
@@ -30,6 +30,7 @@ import {
   stageDistribution,
   weeklyRetention,
   type StageCounts,
+  type SupplementaryWords,
 } from "@/lib/stats";
 import type { LessonIndex } from "@/schemas/lesson";
 
@@ -163,6 +164,8 @@ export default function StatsPage() {
   const [cards, setCards] = useState<CardRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [index, setIndex] = useState<LessonIndex | null>(null);
+  // 各課補充單字(不計入進度);需載入全部課程內容,晚於其餘統計補上(null = 載入中)
+  const [supplementary, setSupplementary] = useState<SupplementaryWords | null>(null);
   const [forecastDays, setForecastDays] = useState<7 | 30>(7);
   // 進頁面時定格,聚合結果穩定不隨 render 飄移
   const [now] = useState(() => new Date());
@@ -180,7 +183,15 @@ export default function StatsPage() {
         setCards(cardRows);
         setLogs(logRows);
         setIndex(lessonIndex);
-        setPhase(cardRows.length === 0 && logRows.length === 0 ? "empty" : "ready");
+        const empty = cardRows.length === 0 && logRows.length === 0;
+        setPhase(empty ? "empty" : "ready");
+        if (empty) return;
+        // 各課進度不計補充單字(與課程列表的「已完成」一致);全課載入,各課分母同一口徑。
+        // 50 課內容較大,不擋其餘統計;讀不到的課照 index 總數計,不讓整頁失敗
+        const supplementaryWords = await getSupplementaryWords(
+          lessonIndex.lessons.map((l) => l.id),
+        ).catch(() => new Map<number, Set<string>>());
+        if (active) setSupplementary(supplementaryWords);
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : String(err));
@@ -213,8 +224,9 @@ export default function StatsPage() {
   // 最後一次評分:「重來」者不算已學會、歸入學習中
   const lastRating = useMemo(() => lastRatingByCard(logs), [logs]);
   const progress = useMemo(
-    () => (index ? lessonProgress(cards, index, lastRating) : []),
-    [cards, index, lastRating],
+    () =>
+      index && supplementary ? lessonProgress(cards, index, lastRating, supplementary) : null,
+    [cards, index, lastRating, supplementary],
   );
   const stages = useMemo(() => stageDistribution(cards, lastRating), [cards, lastRating]);
   // 單字 = 正向卡數(與首頁「累計單字」同口徑);卡片另含義→日回想卡
@@ -358,10 +370,12 @@ export default function StatsPage() {
         <p className="mb-2 text-xs text-muted-foreground">
           <ProgressSwatch cls={ADDED_CLS} /> 已加入複習,{" "}
           <ProgressSwatch cls={LEARNED_CLS} />{" "}
-          已學會(已複習且最近一次不是「重來」,或標為已會);右側為已加入/單字總數。
+          已學會(已複習且最近一次不是「重來」,或標為已會);右側為已加入/單字總數(補充單字選學,不計入)。
         </p>
+        {/* 補充單字名單(全課內容)晚於其餘統計載入:先顯示載入中,不閃出未扣除的分母 */}
+        {!progress && <Loading className="py-4" />}
         <ul className="flex flex-col gap-2">
-          {progress.map((lesson) => (
+          {progress?.map((lesson) => (
             <li key={lesson.lessonId} className="flex items-center gap-3">
               <span className="w-10 shrink-0 text-xs text-muted-foreground">
                 L{lesson.lessonId}

@@ -86,7 +86,8 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── srs.ts              # ts-fsrs 唯一入口
     │   ├── cardId.ts           # cardId / 方向工具(baseVocabId 等;不依賴 ts-fsrs,srs 轉匯出)
     │   ├── relearn.ts          # 複習 session 內重看的插入規則(純函式)
-    │   ├── notes.ts            # 單字 note 呈現:過濾段落標記(純函式)
+    │   ├── notes.ts            # 單字 note 呈現:段落標記過濾與徽章分類、補充單字判定(純函式)
+    │   ├── lessonHash.ts       # 課程內頁 URL hash:分頁與文法/單字錨點解析(純函式)
     │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)
     │   ├── quiz.ts             # 出題引擎(純函式)
     │   ├── stats.ts            # 統計聚合(純函式 + DB 查詢)

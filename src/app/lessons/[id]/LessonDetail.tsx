@@ -1,14 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Check, Eye, EyeOff, Plus } from "lucide-react";
 import { Loading } from "@/components/Loading";
 import { PitchAccent, hasPitch } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { SpeakButton } from "@/components/SpeakButton";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { getLesson } from "@/lib/content";
 import { jaLang } from "@/lib/lang";
+import { lessonTabHash, parseLessonHash, type LessonTab } from "@/lib/lessonHash";
+import { displayNote, isSupplementary, noteSection, type VocabSection } from "@/lib/notes";
 import { kanaHeadword } from "@/lib/pitch";
 import { addCards, existingCardIds, setWordSuspended, suspendedWordIds } from "@/lib/srs";
 import { speechText } from "@/lib/tts";
@@ -16,13 +19,31 @@ import { useSetting, useTtsEnabled } from "@/lib/useSetting";
 import { cn } from "@/lib/utils";
 import type { Lesson } from "@/schemas/lesson";
 
-type Tab = "vocab" | "grammar" | "dialogue";
+type Tab = LessonTab;
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "vocab", label: "単語" },
   { key: "grammar", label: "文型" },
   { key: "dialogue", label: "会話" },
 ];
+
+const LAST_LESSON = 50;
+
+/** 單字錨點(搜尋結果)捲到後的高亮時間 */
+const HIGHLIGHT_MS = 2000;
+
+/** 錨點捲動讓出黏在頂端的分頁列(按鈕 min-h-11 + 底框 1px):目標緊貼分頁列下緣,不露出上一列 */
+const ANCHOR_SCROLL_MARGIN = "scroll-mt-[calc(2.75rem_+_1px)]";
+
+/** 單字錨點的短暫高亮:淡底(10%,次要文字對比仍 ≥ 4.5:1)+ 左側色條(深色底上淡底不明顯,靠色條辨識) */
+const ANCHOR_HIGHLIGHT = "bg-link/10 shadow-[inset_3px_0_0_var(--color-link)]";
+
+/** 待捲動的錨點:目標分頁 commit 後才捲(見下方 effect) */
+interface PendingAnchor {
+  id: string;
+  tab: Tab;
+  highlight: boolean;
+}
 
 export function LessonDetail({ id }: { id: number }) {
   const [lesson, setLesson] = useState<Lesson | null>(null);
@@ -37,6 +58,11 @@ export function LessonDetail({ id }: { id: number }) {
   const ready = lesson !== null && globalFurigana !== undefined && ttsEnabled !== undefined;
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [suspended, setSuspendedIds] = useState<Set<string>>(new Set());
+  // 上兩者的初始值已讀到(讀取失敗也算):單字錨點等它才捲動(見下方)
+  const [cardStateLoaded, setCardStateLoaded] = useState(false);
+  // 整課加入後實際新加入的字數(顯示「已加入 N 字 · 開始複習 →」);未整課加入為 null
+  const [addedCount, setAddedCount] = useState<number | null>(null);
+  const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -62,8 +88,11 @@ export function LessonDetail({ id }: { id: number }) {
         if (!active) return;
         setAdded(new Set(addedIds));
         setSuspendedIds(new Set(suspIds));
+        setCardStateLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (active) setCardStateLoaded(true);
+      });
     return () => {
       active = false;
     };
@@ -79,21 +108,65 @@ export function LessonDetail({ id }: { id: number }) {
     });
   }, []);
 
-  // 文法錨點深連結(F4.1):#Lxx-Gxx → 切至文型分頁(內容渲染後),
-  // 待文型分頁 commit 後再捲動(rAF 不保證分頁已渲染,設定載入改變時序後常捲不到)
-  const [anchor, setAnchor] = useState<string | null>(null);
-  useEffect(() => {
+  // URL hash → 分頁與錨點(lessonHash.ts):內容就緒時套用一次,之後隨 hashchange(手改網址、前進/後退)。
+  // 文法點 #Lxx-Gxx → 文型並捲動(F4.1);單字 #Lxx-Vxxx → 単語、捲動並高亮;#grammar 等 → 還原分頁。
+  // layout effect:在繪製前切好分頁,不先閃出単語分頁
+  const [pendingAnchor, setPendingAnchor] = useState<PendingAnchor | null>(null);
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+
+  // 分頁列已黏在頂端(捲過標頭)時捲回內容開頭:換分頁後短分頁不致停在頁尾、長分頁從頭看起
+  const scrollToContentTop = useCallback(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const contentTop = header.getBoundingClientRect().bottom + window.scrollY;
+    if (window.scrollY > contentTop) window.scrollTo({ top: contentTop });
+  }, []);
+
+  useLayoutEffect(() => {
     if (!ready) return;
-    const hash = decodeURIComponent(window.location.hash.slice(1));
-    if (!/-G\d+$/.test(hash)) return;
-    setTab("grammar");
-    setAnchor(hash);
-  }, [ready]);
+    const apply = (fromHashChange: boolean) => {
+      const target = parseLessonHash(window.location.hash);
+      if (!target) return;
+      setTab(target.tab);
+      if (target.anchor) {
+        setPendingAnchor({ id: target.anchor, tab: target.tab, highlight: target.highlight });
+      } else if (fromHashChange) {
+        scrollToContentTop(); // 初次套用不捲:返回本頁時交給瀏覽器還原捲動位置
+      }
+    };
+    const onHashChange = () => apply(true);
+    apply(false);
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [ready, scrollToContentTop]);
+  // 待目標分頁 commit 後才捲動:client 導覽時 Next 的 hash 捲動早於內容載入,找不到錨點;
+  // 同一次 render 切分頁並設錨點,此時 DOM 已有目標元素(scroll-mt 讓出黏在頂端的分頁列)
+  useLayoutEffect(() => {
+    if (!pendingAnchor || pendingAnchor.tab !== tab) return;
+    // 單字列:初始加入狀態到了列內鈕才換寬(+ → ✓ 已會),上方的列可能因此換行而位移;
+    // 沒有 CSS scroll anchoring 的瀏覽器(Safari)先捲會停在錯位處,故等狀態讀到才捲
+    if (pendingAnchor.tab === "vocab" && !cardStateLoaded) return;
+    setPendingAnchor(null);
+    const el = document.getElementById(pendingAnchor.id);
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+    if (pendingAnchor.highlight) setHighlighted(pendingAnchor.id);
+  }, [pendingAnchor, tab, cardStateLoaded]);
   useEffect(() => {
-    if (!anchor || tab !== "grammar") return;
-    document.getElementById(anchor)?.scrollIntoView({ block: "start" });
-    setAnchor(null);
-  }, [anchor, tab]);
+    if (highlighted === null) return;
+    const timer = window.setTimeout(() => setHighlighted(null), HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [highlighted]);
+
+  const selectTab = useCallback(
+    (key: Tab) => {
+      setTab(key);
+      // 分頁存於 URL hash:replaceState 不新增歷史紀錄,返回本頁時由上方 effect 還原
+      window.history.replaceState(null, "", lessonTabHash(key));
+      scrollToContentTop();
+    },
+    [scrollToContentTop],
+  );
 
   const addOne = useCallback(
     async (cardId: string) => {
@@ -104,11 +177,20 @@ export function LessonDetail({ id }: { id: number }) {
     [lesson],
   );
 
+  // 同步防重入(state 要等重繪才生效):連點時第二次會得到「新加入 0 字」
+  const addingAll = useRef(false);
   const addAll = useCallback(async () => {
-    if (!lesson) return;
-    const ids = lesson.vocab.map((v) => v.id);
-    await addCards(ids, lesson.id);
-    setAdded(new Set(ids));
+    if (!lesson || addingAll.current) return;
+    addingAll.current = true;
+    try {
+      // 補充單字(自行練習發音)不整課加入(仍可單字加入);回傳值 = 實際新加入的字數
+      const ids = lesson.vocab.filter((v) => !isSupplementary(v)).map((v) => v.id);
+      const created = await addCards(ids, lesson.id);
+      setAdded((prev) => new Set([...prev, ...ids]));
+      setAddedCount(created);
+    } finally {
+      addingAll.current = false;
+    }
   }, [lesson]);
 
   if (error) {
@@ -123,41 +205,71 @@ export function LessonDetail({ id }: { id: number }) {
     return <Loading />;
   }
 
+  const navLink = buttonVariants({ variant: "ghost", size: "sm", className: "gap-1 font-normal" });
+
   return (
     <div>
-      <header className="flex items-start justify-between px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-xs text-muted-foreground">第 {lesson.id} 課</div>
-          <h1 lang={jaLang(lesson.title)} className="text-lg font-bold">
-            {lesson.title}
-          </h1>
+      <header ref={headerRef} className="px-4 pt-3 pb-2">
+        <div className="flex items-start justify-between">
+          <div className="min-w-0">
+            <div className="text-xs text-muted-foreground">第 {lesson.id} 課</div>
+            <h1 lang={jaLang(lesson.title)} className="text-lg font-bold">
+              {lesson.title}
+            </h1>
+          </div>
+          {/* 開關鈕:名稱固定「假名」,狀態只由 aria-pressed(與外觀、圖示)表示,不讓文字與狀態互相矛盾 */}
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={furigana === "show"}
+            onClick={() => setFuriganaOverride(furigana === "show" ? "hide" : "show")}
+            className="ml-3 gap-1.5 font-normal text-muted-foreground aria-pressed:border-link aria-pressed:bg-link/10 aria-pressed:text-link"
+          >
+            {furigana === "show" ? (
+              <Eye className="size-4" aria-hidden />
+            ) : (
+              <EyeOff className="size-4" aria-hidden />
+            )}
+            假名
+          </Button>
         </div>
-        {/* 開關鈕:名稱固定「假名」,狀態只由 aria-pressed(與外觀、圖示)表示,不讓文字與狀態互相矛盾 */}
-        <Button
-          variant="outline"
-          size="sm"
-          aria-pressed={furigana === "show"}
-          onClick={() => setFuriganaOverride(furigana === "show" ? "hide" : "show")}
-          className="ml-3 gap-1.5 font-normal text-muted-foreground aria-pressed:border-link aria-pressed:bg-link/10 aria-pressed:text-link"
-        >
-          {furigana === "show" ? (
-            <Eye className="size-4" aria-hidden />
-          ) : (
-            <EyeOff className="size-4" aria-hidden />
-          )}
-          假名
-        </Button>
+        {/* 流程互連:本課測驗、上/下一課(不必回列表找) */}
+        <nav aria-label="課程導覽" className="mt-2 flex items-center gap-2">
+          <Link
+            href={`/quiz/${lesson.id}`}
+            className={buttonVariants({ variant: "outline", size: "sm", className: "font-normal" })}
+          >
+            測驗本課
+          </Link>
+          <div className="ml-auto flex items-center">
+            {lesson.id > 1 && (
+              <Link href={`/lessons/${lesson.id - 1}`} className={navLink}>
+                <span aria-hidden>‹</span>上一課
+              </Link>
+            )}
+            {lesson.id < LAST_LESSON && (
+              <Link href={`/lessons/${lesson.id + 1}`} className={navLink}>
+                下一課<span aria-hidden>›</span>
+              </Link>
+            )}
+          </div>
+        </nav>
       </header>
 
-      {/* 分段按鈕(aria-pressed):一次只按下一個;不宣告 tablist(未實作 tabpanel 與方向鍵) */}
-      <div role="group" aria-label="課程內容" className="flex border-b border-border">
+      {/* 分段按鈕(aria-pressed):一次只按下一個;不宣告 tablist(未實作 tabpanel 與方向鍵)。
+          黏在頂端:長列表中也能直接切換分頁 */}
+      <div
+        role="group"
+        aria-label="課程內容"
+        className="sticky top-0 z-10 flex border-b border-border bg-background"
+      >
         {TABS.map(({ key, label }) => (
           <button
             key={key}
             type="button"
             lang="ja"
             aria-pressed={tab === key}
-            onClick={() => setTab(key)}
+            onClick={() => selectTab(key)}
             className={cn(
               "min-h-11 flex-1 text-sm transition-colors",
               tab === key
@@ -177,6 +289,8 @@ export function LessonDetail({ id }: { id: number }) {
           tts={ttsEnabled === true}
           added={added}
           suspended={suspended}
+          addedCount={addedCount}
+          highlighted={highlighted}
           onAddOne={addOne}
           onAddAll={addAll}
           onToggleSuspend={toggleSuspend}
@@ -206,12 +320,34 @@ const ROW_TEXT_BUTTON = cn(
 /** 列內換鈕後這段時間內忽略該列的點擊(同 /review 換卡後的點擊防護) */
 const ROW_CHANGE_GUARD_MS = 300;
 
+/** note 為段落標記的字:以小徽章標示出處,不當註解顯示(読み物/会話 為日文用語) */
+const SECTION_BADGES: Record<VocabSection, { label: string; lang?: "ja"; title?: string }> = {
+  supplementary: { label: "補充", title: "補充單字(自行練習發音),不含於整課加入" },
+  reading: { label: "読み物", lang: "ja" },
+  dialogue: { label: "会話", lang: "ja" },
+};
+
+function SectionBadge({ section }: { section: VocabSection }) {
+  const { label, lang, title } = SECTION_BADGES[section];
+  return (
+    <span
+      lang={lang}
+      title={title}
+      className="ml-1.5 inline-block rounded bg-muted px-1.5 align-[0.125em] text-[11px] leading-4 text-muted-foreground"
+    >
+      {label}
+    </span>
+  );
+}
+
 function VocabList({
   lesson,
   furigana,
   tts,
   added,
   suspended,
+  addedCount,
+  highlighted,
   onAddOne,
   onAddAll,
   onToggleSuspend,
@@ -222,11 +358,25 @@ function VocabList({
   tts: boolean;
   added: Set<string>;
   suspended: Set<string>;
+  /** 整課加入後新加入的字數(null = 尚未整課加入) */
+  addedCount: number | null;
+  /** 單字錨點捲到後短暫高亮的字 */
+  highlighted: string | null;
   onAddOne: (cardId: string) => Promise<void>;
-  onAddAll: () => void;
+  onAddAll: () => Promise<void>;
   onToggleSuspend: (cardId: string, next: boolean) => Promise<void>;
 }) {
-  const allAdded = lesson.vocab.every((v) => added.has(v.id));
+  // 補充單字不含於整課加入:其餘都已加入即視為整課已加入
+  const supplementaryCount = lesson.vocab.filter(isSupplementary).length;
+  const allAdded = lesson.vocab.every((v) => isSupplementary(v) || added.has(v.id));
+  // 整課加入後按鈕變 disabled、焦點會掉到 body:改移到結果訊息(其中有「開始複習 →」)
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const focusNotice = useRef(false);
+  useEffect(() => {
+    if (addedCount === null || !focusNotice.current) return;
+    focusNotice.current = false;
+    noticeRef.current?.focus();
+  }, [addedCount]);
   // 列內的鈕會換成同一位置的另一顆(+ → 已會 → 已會·恢復):
   // - 換鈕後 ROW_CHANGE_GUARD_MS 內忽略該列的點擊:連點兩下的第二下會落在新鈕上(剛加入就被標為已會)
   // - 焦點原在鈕上(鍵盤操作)時,換鈕後交給同一列的新鈕,不掉到 body
@@ -237,8 +387,11 @@ function VocabList({
   useEffect(() => {
     const id = refocusId.current;
     if (id === null) return;
+    const target = listRef.current?.querySelector<HTMLElement>(`[data-row-action="${id}"]`);
+    // 尚未換鈕(焦點仍在原鈕上):這次更新來自別處(如初始狀態晚到),等換鈕那次再接手
+    if (target && target === document.activeElement) return;
     refocusId.current = null;
-    listRef.current?.querySelector<HTMLElement>(`[data-row-action="${id}"]`)?.focus();
+    target?.focus();
   }, [added, suspended]);
 
   async function rowAction(id: string, button: HTMLElement, action: () => Promise<void>) {
@@ -258,15 +411,44 @@ function VocabList({
 
   return (
     <div>
-      <div className="flex justify-end px-4 py-2">
+      <div className="flex items-center justify-end gap-3 px-4 py-2">
+        {/* live region 先掛載、加入後再填入,螢幕閱讀器才會播報。
+            鍵盤操作移入焦點時顯示外框(focus-visible;滑鼠點擊不顯示) */}
+        <p
+          ref={noticeRef}
+          role="status"
+          tabIndex={-1}
+          className="mr-auto min-w-0 rounded-sm text-sm text-foreground/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {addedCount !== null && (
+            <>
+              {addedCount > 0 ? `已加入 ${addedCount} 字` : "本課單字皆已加入"} ·{" "}
+              <Link
+                href="/review"
+                className="inline-flex min-h-11 items-center font-medium text-link underline-offset-4 hover:underline"
+              >
+                開始複習 →
+              </Link>
+            </>
+          )}
+        </p>
         <Button
           variant="outline"
           size="sm"
-          onClick={onAddAll}
+          onClick={() => {
+            focusNotice.current = true;
+            onAddAll().catch(() => {
+              focusNotice.current = false;
+            });
+          }}
           disabled={allAdded}
           className="font-normal"
         >
-          {allAdded ? "整課已加入" : "整課加入複習"}
+          {allAdded
+            ? "整課已加入"
+            : supplementaryCount > 0
+              ? `整課加入複習(不含補充 ${supplementaryCount} 字)`
+              : "整課加入複習"}
         </Button>
       </div>
       <ul ref={listRef}>
@@ -277,8 +459,20 @@ function VocabList({
           const spoken = speechText(v); // 名稱與實際朗讀一致(同複習/練習的 SpeakButton)
           // 純假名字:重音標記本身就是標題,不再重複列一份相同的假名
           const pitchHead = kanaHeadword(v);
+          // 段落標記(読み物/会話/補充單字)改徽章;其餘 note(搭配、說明)照常顯示
+          const section = noteSection(v.note);
+          const note = displayNote(v.note);
           return (
-            <li key={v.id} className="border-b border-border px-4 py-3">
+            <li
+              key={v.id}
+              id={v.id}
+              className={cn(
+                ANCHOR_SCROLL_MARGIN,
+                // 高亮淡出用過場;減少動態效果時直接消失
+                "border-b border-border px-4 py-3 motion-safe:transition-[background-color,box-shadow] motion-safe:duration-500",
+                highlighted === v.id && ANCHOR_HIGHLIGHT,
+              )}
+            >
               <div className="flex items-baseline justify-between gap-3">
                 <span className="flex flex-wrap items-center gap-2 text-lg">
                   {pitchHead !== null ? (
@@ -349,10 +543,11 @@ function VocabList({
                   )}
                 </div>
               </div>
-              <div className="text-sm text-foreground/70">{v.meaning}</div>
-              {v.note && (
-                <div className="text-xs text-muted-foreground">{v.note}</div>
-              )}
+              <div className="text-sm text-foreground/70">
+                {v.meaning}
+                {section && <SectionBadge section={section} />}
+              </div>
+              {note && <div className="text-xs text-muted-foreground">{note}</div>}
             </li>
           );
         })}
@@ -377,7 +572,7 @@ function GrammarList({
         <section
           key={g.id}
           id={g.id}
-          className="scroll-mt-4 border-b border-border px-4 py-3"
+          className={cn(ANCHOR_SCROLL_MARGIN, "border-b border-border px-4 py-3")}
         >
           <h2 lang={jaLang(g.pattern)} className="font-medium">
             {g.pattern}

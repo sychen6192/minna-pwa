@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, vi } from "vitest";
-import { clearContentCache, getLesson, getLessonIndex } from "./content";
+import {
+  clearContentCache,
+  getLesson,
+  getLessonIndex,
+  getSupplementaryWords,
+} from "./content";
 
 const validLesson = {
   id: 13,
@@ -122,5 +127,44 @@ describe("getLesson", () => {
     await expect(getLesson(13)).rejects.toThrow(
       /第 13 課資料格式錯誤.*vocab\.0\.id/,
     );
+  });
+});
+
+describe("getSupplementaryWords", () => {
+  const supplementLesson = {
+    ...validLesson,
+    id: 4,
+    vocab: [
+      { ...validLesson.vocab[0], id: "L04-V001" },
+      { ...validLesson.vocab[0], id: "L04-V002", note: "補充單字(自行練習發音)" },
+      { ...validLesson.vocab[0], id: "L04-V003", note: "読み物" },
+      { ...validLesson.vocab[0], id: "L04-V004", note: "補充單字(自行練習發音)" },
+    ],
+  };
+
+  it("只載入指定的課(去重、沿用快取),回傳各課補充單字 id;沒有者為空集合", async () => {
+    const fn = mockFetch((url) =>
+      jsonResponse(url.endsWith("L04.json") ? supplementLesson : validLesson),
+    );
+    const map = await getSupplementaryWords([4, 13, 4]);
+    expect(map).toEqual(
+      new Map([
+        [4, new Set(["L04-V002", "L04-V004"])],
+        [13, new Set()],
+      ]),
+    );
+    expect(fn).toHaveBeenCalledTimes(2);
+    await getSupplementaryWords([13]);
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("載入失敗的課不列入,其餘照常", async () => {
+    mockFetch((url) =>
+      url.endsWith("L04.json")
+        ? jsonResponse(supplementLesson)
+        : jsonResponse(undefined, { ok: false, status: 404 }),
+    );
+    const map = await getSupplementaryWords([4, 13]);
+    expect([...map.keys()]).toEqual([4]);
   });
 });

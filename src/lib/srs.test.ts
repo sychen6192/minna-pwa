@@ -80,6 +80,21 @@ describe("addCards", () => {
     expect(await db.cards.count()).toBe(2);
   });
 
+  it("回傳實際新建的正向卡數(已存在者與補建的 @r 不計;重複 id 只算一次)", async () => {
+    expect(await addCards(["L13-V001", "L13-V002"], 13, NOW)).toBe(2);
+    expect(await addCards(["L13-V001", "L13-V002", "L13-V003"], 13, NOW)).toBe(1);
+    expect(await addCards(["L13-V001"], 13, NOW)).toBe(0);
+    expect(await addCards([], 13, NOW)).toBe(0);
+    expect(await addCards(["L13-V004", "L13-V004"], 13, NOW)).toBe(1);
+    expect(await db.cards.count()).toBe(4);
+
+    // 回想卡開啟:既有正向卡只補建 @r → 新加入 0 字;新字建兩張卡仍算 1 字
+    await setSetting("reverseCards", true);
+    expect(await addCards(["L13-V001", "L13-V005"], 13, NOW)).toBe(1);
+    expect(await db.cards.get("L13-V001@r")).toBeDefined();
+    expect(await db.cards.count()).toBe(7);
+  });
+
   it("冪等:不重置既有卡的進度", async () => {
     await addCards(["L13-V001"], 13, NOW);
     await rate("L13-V001", 3, NOW); // 評分後 reps=1、離開 New

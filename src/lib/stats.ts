@@ -24,10 +24,14 @@ export interface WeekRate {
 export interface LessonProgress {
   lessonId: number;
   title: string;
-  total: number; // 該課單字總數(index.json)
-  added: number; // 已加入複習的字數(正向卡數)
+  total: number; // 該課計入進度的單字數(index.json 總數,扣除補充單字;見 lessonProgress)
+  added: number; // 已加入複習的字數(正向卡數,不含補充單字)
   learned: number; // 已學會的字數(定義見 lessonProgress)
+  supplementaryAdded: number; // 單字加入複習的補充單字數(不計入進度;只用於判定是否已開始)
 }
+
+/** 各課的補充單字 id(lessonId → vocab id;T10.11)。只列出已載入內容的課。 */
+export type SupplementaryWords = ReadonlyMap<number, ReadonlySet<string>>;
 
 export interface StudySummary {
   startedLessons: number; // 至少加入 1 張卡的相異課數
@@ -184,18 +188,26 @@ export function cardTotals(cards: CardRow[]): CardTotals {
 /**
  * 各課進度:index 全課列出,join 卡片計數。已學會 = 已會(任一方向暫停),或已進入
  * Review(state 2)且最後一次評分不是「重來」。`lastRating` 省略時不看評分紀錄。
+ * 補充單字(自行練習發音)為選學:`supplementary` 列出的字不計入該課的總數、已加入與已學會,
+ * 整課加入不含它們也能「已完成」;單字加入複習者照常排程(T10.11)。未列出的課照 index 總數計。
  */
 export function lessonProgress(
   cards: CardRow[],
   index: LessonIndex,
   lastRating: LastRatings = new Map(),
+  supplementary: SupplementaryWords = new Map(),
 ): LessonProgress[] {
   const added = new Map<number, number>();
   const learned = new Map<number, number>();
+  const supplementaryAdded = new Map<number, number>();
   const suspendedWords = suspendedWordSet(cards);
   // 只計正向卡:進度以「相異單字」為準,義→日回想卡(direction rev)不重複計
   for (const c of cards) {
     if (cardDirection(c) !== "fwd") continue;
+    if (supplementary.get(c.lessonId)?.has(c.cardId)) {
+      supplementaryAdded.set(c.lessonId, (supplementaryAdded.get(c.lessonId) ?? 0) + 1);
+      continue;
+    }
     added.set(c.lessonId, (added.get(c.lessonId) ?? 0) + 1);
     const isLearned =
       suspendedWords.has(c.cardId) || (c.state === 2 && lastRating.get(c.cardId) !== 1);
@@ -204,18 +216,19 @@ export function lessonProgress(
   return index.lessons.map((lesson) => ({
     lessonId: lesson.id,
     title: lesson.title,
-    total: lesson.vocabCount,
+    total: lesson.vocabCount - (supplementary.get(lesson.id)?.size ?? 0),
     added: added.get(lesson.id) ?? 0,
     learned: learned.get(lesson.id) ?? 0,
+    supplementaryAdded: supplementaryAdded.get(lesson.id) ?? 0,
   }));
 }
 
 /**
- * 課程學習狀態:未開始(未加入任何卡)/ 已完成(全部單字皆已學會,含已會;見 lessonProgress)/
- * 進行中(其餘)。
+ * 課程學習狀態:未開始(未加入任何卡,含補充單字)/ 已完成(計入進度的單字皆已學會,含已會;
+ * 補充單字不計,見 lessonProgress)/ 進行中(其餘)。
  */
 export function lessonStatus(p: LessonProgress): LessonStatus {
-  if (p.added === 0) return "not-started";
+  if (p.added === 0 && p.supplementaryAdded === 0) return "not-started";
   if (p.total > 0 && p.learned >= p.total) return "done";
   return "in-progress";
 }

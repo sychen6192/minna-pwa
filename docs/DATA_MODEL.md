@@ -220,5 +220,6 @@ settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAl
 6. **進度與統計語意**(T10.7):一律由 `cards` + `logs` 即時推導(`stats.ts` 純函式),不另存欄位。
    - 單字 vs 卡片:「單字」= 正向卡數(首頁「累計單字」、統計頁「單字」、各課「已加入」同口徑);「卡片」另含 `@r` 回想卡(統計頁附註、階段分布以卡片計)。「已會」以字計:任一方向暫停即算、雙向不重複。
    - 已學會(各課進度、課程列表「已完成」):正向卡所屬的字已會,或 state = Review 且最後一次評分(`lastRatingByCard`,依 `reviewedAt` 最新)不是「重來」。
+   - 補充單字(T10.11):note 恰為「補充單字(自行練習發音)」的字為選學——整課加入不含(`addCards` 回傳實際新建的正向卡數,即「已加入 N 字」)、測驗不出題,但可單字加入並照常排程。各課進度不計補充單字:`lessonProgress` 的 `supplementary`(`getSupplementaryWords` 由課程 JSON 取得的各課補充單字 id)從總數、已加入、已學會中扣除,故整課加入後全部學會即「已完成」;單字加入的補充單字只計入 `supplementaryAdded`(只加了補充單字的課算「進行中」)。課程列表只載入已有卡片的課,統計頁載入全部課;讀不到的課退回 index 總數。
    - 階段分布:已會(暫停)優先;學習中 = Review 且最後一次評分為「重來」(long-term scheduler 答錯後仍為 Review;state Learning/Relearning 僅可能來自匯入的舊資料,同歸學習中);其餘 Review 依 stability 分未成熟 / 已成熟(≥ `MATURE_STABILITY` = 21 天)。
    - 頑固卡:`lapses ≥ LEECH_THRESHOLD`(4)且 stability < `MATURE_STABILITY`;`lapses` 只增不減,成熟即解除,再遺忘而 stability 掉回門檻下時再次列入。

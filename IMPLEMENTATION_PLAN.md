@@ -238,6 +238,6 @@
   做什麼:icon/文字按鈕觸控區 ≥ 44px(負 margin 保持版面);翻卡按鈕不以 aria-label 覆蓋內容、翻面後焦點移至答案;評分鍵 accessible name 含間隔、快捷鍵數字僅桌面顯示;課程頁分頁改 aria-pressed 分段按鈕(或補齊 tabpanel);回饋加 `role="status"`;輸入框 ≥ 16px(避免 iOS 放大)。安裝提示拆為首頁內嵌卡片(非 fixed,不遮擋操作),`ensurePersistentStorage` 仍於每頁啟動執行。新增繁中 `not-found.tsx`;載入文字抽成共用 `Loading`(role=status)。
   驗收:PwaSetup/InstallPrompt 測試(每頁 persist、首頁才顯示提示、standalone 或已關閉不顯示);RatingButtons/review 無障礙名稱測試;Playwright 量測主要互動元素 ≥ 44px;`pnpm verify` 全綠。
 
-- [ ] **T10.11 導覽與流程**
+- [x] **T10.11 導覽與流程**
   做什麼:課程內頁標頭加「測驗本課」「‹ 上一課」「下一課 ›」;「整課加入複習」預設排除補充單字(按鈕註明「不含補充 N 字」),加入後以 role=status 顯示「已加入 N 字 · 開始複習 →」(`addCards` 回傳新建數);note 段落標記(読み物/会話/補充)改小徽章。文法速查錨點改於分頁 commit 後捲動(修 client 導覽不捲動)、單字搜尋結果帶單字錨點並短暫高亮;分頁與搜尋字串以 `history.replaceState` 存於 URL;分頁列與搜尋框 sticky。課程列表先渲染索引再補狀態,返回時捲動位置可還原。
   驗收:LessonDetail 測試(上/下一課連結、整課加入排除補充並顯示數量、分頁 hash 同步、錨點捲動被呼叫、單字錨點);search 測試(單字 anchor);lessons 列表 db pending 時已渲染;`pnpm verify` 全綠。

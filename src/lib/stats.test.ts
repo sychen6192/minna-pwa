@@ -234,9 +234,50 @@ describe("lessonProgress", () => {
     ];
 
     expect(lessonProgress(cards, index)).toEqual([
-      { lessonId: 1, title: "第一課", total: 10, added: 3, learned: 2 },
-      { lessonId: 2, title: "第二課", total: 5, added: 0, learned: 0 },
+      { lessonId: 1, title: "第一課", total: 10, added: 3, learned: 2, supplementaryAdded: 0 },
+      { lessonId: 2, title: "第二課", total: 5, added: 0, learned: 0, supplementaryAdded: 0 },
     ]);
+  });
+
+  it("補充單字不計入進度(T10.11):整課加入不含補充單字也能完成;單字加入的補充單字不影響", () => {
+    // 第二課 5 字,其中 L02-V004、L02-V005 為補充單字
+    const supplementary = new Map([[2, new Set(["L02-V004", "L02-V005"])]]);
+    const core = ["L02-V001", "L02-V002", "L02-V003"].map((cardId) =>
+      card({ cardId, lessonId: 2, state: 2 }),
+    );
+
+    const [l1, l2] = lessonProgress(core, index, new Map(), supplementary);
+    expect(l2).toMatchObject({ total: 3, added: 3, learned: 3, supplementaryAdded: 0 });
+    expect(lessonStatus(l2)).toBe("done");
+    expect(l1.total).toBe(10); // 未列出的課照 index 總數
+
+    // 不傳 supplementary(舊行為):5 字只學會 3 → 進行中
+    expect(lessonStatus(lessonProgress(core, index)[1])).toBe("in-progress");
+
+    // 補充單字單字加入(新卡、尚未學會):不拉低進度,仍為已完成
+    const withExtra = [...core, card({ cardId: "L02-V004", lessonId: 2, state: 0 })];
+    const [, l2b] = lessonProgress(withExtra, index, new Map(), supplementary);
+    expect(l2b).toMatchObject({ total: 3, added: 3, learned: 3, supplementaryAdded: 1 });
+    expect(lessonStatus(l2b)).toBe("done");
+
+    // 核心字未學完時,已學會的補充單字不能補足
+    const partial = [
+      card({ cardId: "L02-V001", lessonId: 2, state: 2 }),
+      card({ cardId: "L02-V002", lessonId: 2, state: 2 }),
+      card({ cardId: "L02-V004", lessonId: 2, state: 2 }),
+      card({ cardId: "L02-V005", lessonId: 2, state: 2 }),
+    ];
+    const [, l2c] = lessonProgress(partial, index, new Map(), supplementary);
+    expect(l2c).toMatchObject({ total: 3, added: 2, learned: 2, supplementaryAdded: 2 });
+    expect(lessonStatus(l2c)).toBe("in-progress");
+  });
+
+  it("只單字加入補充單字的課:不計進度但已開始(進行中)", () => {
+    const supplementary = new Map([[2, new Set(["L02-V005"])]]);
+    const cards = [card({ cardId: "L02-V005", lessonId: 2, state: 2 })];
+    const [, l2] = lessonProgress(cards, index, new Map(), supplementary);
+    expect(l2).toMatchObject({ total: 4, added: 0, learned: 0, supplementaryAdded: 1 });
+    expect(lessonStatus(l2)).toBe("in-progress");
   });
 
   it("已會(暫停)的字計為已學會,不論 state:標為已會的新卡也能讓該課完成", () => {
@@ -489,16 +530,18 @@ describe("computeStreak", () => {
 });
 
 describe("lessonStatus", () => {
-  const p = (added: number, learned: number, total = 5) => ({
+  const p = (added: number, learned: number, total = 5, supplementaryAdded = 0) => ({
     lessonId: 1,
     title: "課",
     total,
     added,
     learned,
+    supplementaryAdded,
   });
 
-  it("未加入任何卡 → not-started", () => {
+  it("未加入任何卡 → not-started;只加入補充單字 → in-progress", () => {
     expect(lessonStatus(p(0, 0))).toBe("not-started");
+    expect(lessonStatus(p(0, 0, 5, 1))).toBe("in-progress");
   });
 
   it("已加入但未全部學會 → in-progress", () => {
