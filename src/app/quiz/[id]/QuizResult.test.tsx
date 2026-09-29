@@ -114,6 +114,27 @@ describe("QuizResult", () => {
       await screen.findByRole("button", { name: "已加入複習" }),
     ).toBeInTheDocument();
   });
+
+  it("按下錯題加入複習後焦點留在按鈕上(aria-disabled,不掉到 body),再按不重複執行", async () => {
+    const user = userEvent.setup();
+    render(<QuizResult results={oneWrong} lessonId={13} />);
+    const button = screen.getByRole("button", { name: "錯題加入複習" });
+
+    await user.click(button);
+    await waitFor(() => expect(button).toHaveAccessibleName("已加入複習"));
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveFocus();
+
+    await user.click(button);
+    expect(await db.cards.count()).toBe(1); // 只建立一次
+    expect(screen.getByRole("status")).toHaveTextContent("新加入 1");
+  });
+
+  it("進結果頁時焦點移到標題(「看結果」鈕已卸載)", () => {
+    render(<QuizResult results={oneWrong} lessonId={13} />);
+    expect(screen.getByRole("heading", { name: "測驗完成" })).toHaveFocus();
+  });
 });
 
 describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
@@ -162,7 +183,7 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
 
     expect(
       await screen.findByRole("button", { name: "已在複習中" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     const status = screen.getByRole("status");
     expect(status).toHaveTextContent("待學新卡 1");
     expect(status).toHaveTextContent("新卡依每日新卡上限陸續出現");
@@ -179,7 +200,7 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
 
     expect(
       await screen.findByRole("button", { name: "已在複習中" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("status")).toHaveTextContent(
       "錯題皆已在今日複習佇列中",
     );
@@ -196,7 +217,7 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
 
     expect(
       await screen.findByRole("button", { name: "已加入複習" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     const status = screen.getByRole("status");
     expect(status).toHaveTextContent("明天複習 1");
     expect(status).toHaveTextContent("今天已複習過的字,明天再出現");

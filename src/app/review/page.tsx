@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PitchAccent } from "@/components/PitchAccent";
-import { RatingButtons } from "@/components/RatingButtons";
+import { RatingButtons, ShortcutHint } from "@/components/RatingButtons";
+import { Loading } from "@/components/Loading";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { SpeakButton } from "@/components/SpeakButton";
 import { buttonVariants } from "@/components/ui/button";
@@ -135,6 +136,11 @@ const EMPTY_SESSION: Session = {
   skipped: 0,
 };
 
+/** 翻卡區:未翻面為按鈕、翻面後為答案區,外觀相同 */
+const CARD_CLASS = "flex flex-1 flex-col items-center justify-center gap-4 rounded-xl px-4 text-center";
+/** 翻卡鈕的鍵盤焦點框:畫在卡片內側,不被螢幕邊緣裁掉 */
+const CARD_FOCUS = "focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-ring";
+
 /** 上一步(只保留一步):復原時先還原 DB,再放回動作前的 session 快照 */
 interface UndoEntry {
   session: Session;
@@ -210,6 +216,12 @@ export default function ReviewPage() {
   const [busy, setBusy] = useState(false);
   // 換卡/進結算的時刻(CHANGE_GUARD_MS)
   const shownAt = useRef(0);
+  // 焦點接手:翻面、換卡、復原、進結算時,原本聚焦的元素(翻卡鈕、評分鍵、復原鈕)會被卸載,
+  // 焦點會掉到 body;改移到新內容(答案區/下一張卡/結算標題)。只在這些動作後接手,首次載入不搶焦點
+  const cardRef = useRef<HTMLButtonElement>(null);
+  const answerRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLHeadingElement>(null);
+  const moveFocus = useRef(false);
 
   // 載入佇列與卡片內容
   useEffect(() => {
@@ -335,6 +347,7 @@ export default function ReviewPage() {
   /** 前往 next.index;超出即進結算(結算資料載入失敗不擋結算) */
   const goTo = useCallback(
     async (next: Session) => {
+      moveFocus.current = true;
       if (next.index >= next.items.length) {
         const info = await loadSummaryInfo(Date.now()).catch(() => null);
         setSummary(info);
@@ -419,16 +432,32 @@ export default function ReviewPage() {
         setSession(entry.session);
         setFlipped(true);
         setPreviews(null);
+        moveFocus.current = true;
         setPhase("review");
       }),
     [run, undoRef, setUndo, setSession, setFlipped, setPhase],
   );
 
+  const flip = useCallback(() => {
+    moveFocus.current = true;
+    setFlipped(true);
+  }, [setFlipped]);
+
   // 點擊卡片翻面(換卡後 CHANGE_GUARD_MS 內忽略)
   const flipByClick = useCallback(() => {
     if (flippedRef.current || Date.now() - shownAt.current < CHANGE_GUARD_MS) return;
-    setFlipped(true);
-  }, [flippedRef, setFlipped]);
+    flip();
+  }, [flippedRef, flip]);
+
+  useEffect(() => {
+    if (!moveFocus.current) return;
+    moveFocus.current = false;
+    // preventScroll:卡片本來就在畫面上,不因移焦而捲動(小螢幕上會跳動)
+    if (phase === "summary") summaryRef.current?.focus();
+    else if (phase === "review") {
+      (flipped ? answerRef.current : cardRef.current)?.focus({ preventScroll: true });
+    }
+  }, [phase, flipped, session]);
 
   // 結算頁剛出現(CHANGE_GUARD_MS 內)的點擊不觸發連結與復原:capture 階段攔下,
   // preventDefault 擋掉 <a> 的導覽、stopPropagation 擋掉 Link/按鈕的 onClick
@@ -445,8 +474,14 @@ export default function ReviewPage() {
     function onKey(e: KeyboardEvent) {
       if (phaseRef.current !== "review") return;
       if (e.code === "Space") {
+        // 焦點在其他按鈕/表單元件上(評分鍵、復原、頁外的更新提示等):交給它本身的空白鍵啟動。
+        // 連結不在此列:空白鍵本來就不會啟動連結,而從底部導覽點進本頁時焦點常留在該連結上
+        const target = e.target instanceof Element ? e.target : null;
+        if (target?.closest("button, input, select, textarea") && target !== cardRef.current) {
+          return;
+        }
         e.preventDefault();
-        if (!e.repeat && !flippedRef.current) setFlipped(true);
+        if (!e.repeat && !flippedRef.current) flip();
         return;
       }
       if (e.repeat || !flippedRef.current) return;
@@ -464,10 +499,14 @@ export default function ReviewPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phaseRef, flippedRef, sessionRef, setFlipped, handleRate, handleRelearn]);
+  }, [phaseRef, flippedRef, sessionRef, flip, handleRate, handleRelearn]);
 
   if (phase === "loading") {
-    return <Centered>載入中…</Centered>;
+    return (
+      <Centered>
+        <Loading className="p-0" />
+      </Centered>
+    );
   }
 
   if (phase === "error") {
@@ -518,7 +557,13 @@ export default function ReviewPage() {
         <div className="flex min-h-11 items-center justify-end">
           {undo && <UndoButton onClick={() => void handleUndo()} disabled={busy} />}
         </div>
-        <h1 className="mt-2 text-center text-lg font-bold">本次複習結算</h1>
+        <h1
+          ref={summaryRef}
+          tabIndex={-1}
+          className="mt-2 text-center text-lg font-bold outline-none"
+        >
+          本次複習結算
+        </h1>
         <p className="mt-4 text-center text-3xl font-bold">{total}</p>
         <p className="text-center text-sm text-muted-foreground">張卡片</p>
         <dl className="mx-auto mt-6 max-w-xs space-y-1 text-sm">
@@ -584,9 +629,58 @@ export default function ReviewPage() {
     ) : (
       <RubyText segments={item.vocab.ruby} furigana={furigana} />
     );
+  const cardFace = (
+    <>
+      {/* 提示面:回想卡(rev)給中文 + 詞性・課號(同義詞消歧,不洩漏讀音),辨識卡(fwd)給日文 */}
+      {isRev ? (
+        <div>
+          <div className="text-2xl font-medium">{item.vocab.meaning}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {item.vocab.pos}・第 {item.card.lessonId} 課
+          </div>
+        </div>
+      ) : (
+        <div className="text-3xl">
+          {flipped ? answerHead : <RubyText segments={item.vocab.ruby} furigana={furigana} />}
+        </div>
+      )}
+      {flipped && (
+        <div className="space-y-1">
+          {isRev ? (
+            <>
+              <div className="text-3xl">{answerHead}</div>
+              {!kanaOnly && (
+                <div className="text-base text-foreground/70">
+                  <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {!kanaOnly && (
+                <div className="text-base text-foreground/70">
+                  <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
+                </div>
+              )}
+              <div className="text-lg">{item.vocab.meaning}</div>
+            </>
+          )}
+          {/* 搭配提示(〔電車に〜〕等);回想卡只在翻面後顯示,以免洩題 */}
+          {note && <div className="text-sm text-foreground/70">{note}</div>}
+          {!isRev && (
+            <div className="text-xs text-muted-foreground">
+              {item.vocab.pos}・<span lang={jaLang(item.lessonTitle)}>{item.lessonTitle}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="flex min-h-[80vh] flex-col">
-      <div className="flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
+      {/* 頂列至少 44px:復原鈕的點擊區完整落在列內(不超出頁首、不被下方卡片蓋住) */}
+      <div className="flex min-h-11 items-center justify-between px-4 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <span className="rounded bg-muted px-1.5 py-0.5">
             {isRev ? "中 → 日" : "日 → 中"}
@@ -605,56 +699,25 @@ export default function ReviewPage() {
         </div>
       </div>
 
-      <button
-        type="button"
-        aria-label={flipped ? "複習卡片" : "顯示答案"}
-        onClick={flipByClick}
-        className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center"
-      >
-        {/* 提示面:回想卡(rev)給中文 + 詞性・課號(同義詞消歧,不洩漏讀音),辨識卡(fwd)給日文 */}
-        {isRev ? (
-          <div>
-            <div className="text-2xl font-medium">{item.vocab.meaning}</div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {item.vocab.pos}・第 {item.card.lessonId} 課
-            </div>
-          </div>
-        ) : (
-          <div className="text-3xl">
-            {flipped ? answerHead : <RubyText segments={item.vocab.ruby} furigana={furigana} />}
-          </div>
-        )}
-        {flipped && (
-          <div className="space-y-1">
-            {isRev ? (
-              <>
-                <div className="text-3xl">{answerHead}</div>
-                {!kanaOnly && (
-                  <div className="text-base text-foreground/70">
-                    <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                {!kanaOnly && (
-                  <div className="text-base text-foreground/70">
-                    <PitchAccent kana={item.vocab.kana} accent={item.vocab.accent} />
-                  </div>
-                )}
-                <div className="text-lg">{item.vocab.meaning}</div>
-              </>
-            )}
-            {/* 搭配提示(〔電車に〜〕等);回想卡只在翻面後顯示,以免洩題 */}
-            {note && <div className="text-sm text-foreground/70">{note}</div>}
-            {!isRev && (
-              <div className="text-xs text-muted-foreground">
-                {item.vocab.pos}・<span lang={jaLang(item.lessonTitle)}>{item.lessonTitle}</span>
-              </div>
-            )}
-          </div>
-        )}
-      </button>
+      {/*
+        卡片:未翻面為按鈕(名稱 = 題面內容 + 「顯示答案」,不以 aria-label 蓋掉題目);
+        翻面後改為可聚焦的答案區(tabIndex -1),焦點移入,螢幕閱讀器接著念出答案
+      */}
+      {flipped ? (
+        <div ref={answerRef} tabIndex={-1} className={cn(CARD_CLASS, "outline-none")}>
+          {cardFace}
+        </div>
+      ) : (
+        <button
+          ref={cardRef}
+          type="button"
+          onClick={flipByClick}
+          className={cn(CARD_CLASS, CARD_FOCUS)}
+        >
+          {cardFace}{" "}
+          <span className="sr-only">顯示答案</span>
+        </button>
+      )}
 
       {/* 揭曉後的發音與例句(置於 flip button 外,避免 button 巢狀) */}
       {flipped && (
@@ -680,6 +743,7 @@ export default function ReviewPage() {
                   <SpeakButton
                     text={speechText(plainText(item.example.ruby))}
                     ariaLabel="播放例句發音"
+                    className="-m-3"
                   />
                 )}
               </div>
@@ -691,7 +755,7 @@ export default function ReviewPage() {
       <div className="pb-4">
         {!flipped ? (
           <p className="text-center text-sm text-muted-foreground">
-            點擊卡片或按空白鍵顯示答案
+            點擊卡片<span className="hidden pointer-fine:inline">或按空白鍵</span>顯示答案
           </p>
         ) : isRelearn ? (
           <>
@@ -730,14 +794,14 @@ export default function ReviewPage() {
   );
 }
 
-/** 復原上一步(頂列/結算頁) */
+/** 復原上一步(頂列/結算頁;兩處的列高皆為 min-h-11,容得下 44px 點擊區) */
 function UndoButton({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="-my-3 inline-flex min-h-11 items-center gap-1 rounded px-2 text-sm text-link disabled:opacity-40"
+      className="inline-flex min-h-11 items-center gap-1 rounded px-2 text-sm text-link disabled:opacity-40"
     >
       <span aria-hidden="true">↶</span>復原
     </button>
@@ -757,7 +821,7 @@ function RelearnButtons({
   disabled: boolean;
 }) {
   const base =
-    "flex flex-col items-center gap-0.5 rounded border border-input py-3 disabled:opacity-40";
+    "flex min-h-11 flex-col items-center justify-center gap-0.5 rounded border border-input py-3 disabled:opacity-40";
   return (
     <div className="grid grid-cols-2 gap-2 px-4">
       <button
@@ -767,9 +831,7 @@ function RelearnButtons({
         className={cn(base, "text-rating-again")}
       >
         <span className="text-sm font-medium">{last ? "還不熟,明天再練" : "還不熟,再一次"}</span>
-        <span aria-hidden="true" className="text-[10px] text-muted-foreground">
-          1
-        </span>
+        <ShortcutHint>1</ShortcutHint>
       </button>
       <button
         type="button"
@@ -778,9 +840,7 @@ function RelearnButtons({
         className={cn(base, "text-rating-good")}
       >
         <span className="text-sm font-medium">記住了</span>
-        <span aria-hidden="true" className="text-[10px] text-muted-foreground">
-          3
-        </span>
+        <ShortcutHint>3</ShortcutHint>
       </button>
     </div>
   );

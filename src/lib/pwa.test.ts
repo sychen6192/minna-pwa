@@ -1,5 +1,13 @@
 import { afterEach, vi } from "vitest";
-import { ensurePersistentStorage, getDisplayMode, isIOS } from "./pwa";
+import {
+  captureInstallPrompt,
+  ensurePersistentStorage,
+  getDisplayMode,
+  getInstallPromptEvent,
+  isIOS,
+  promptInstall,
+  subscribeInstallPrompt,
+} from "./pwa";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -136,5 +144,50 @@ describe("isIOS", () => {
       userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36",
     });
     expect(isIOS()).toBe(false);
+  });
+});
+
+describe("beforeinstallprompt(一鍵安裝)", () => {
+  function installEvent(prompt: () => Promise<unknown>, outcome: "accepted" | "dismissed") {
+    return Object.assign(new Event("beforeinstallprompt", { cancelable: true }), {
+      prompt: vi.fn(prompt),
+      userChoice: Promise.resolve({ outcome, platform: "web" }),
+    });
+  }
+
+  it("沒有保存的事件:promptInstall 回 'unavailable'", async () => {
+    expect(getInstallPromptEvent()).toBeNull();
+    expect(await promptInstall()).toBe("unavailable");
+  });
+
+  it("攔截後保存並通知訂閱者;prompt 回傳使用者選擇,用過即清除", async () => {
+    const release = captureInstallPrompt();
+    const listener = vi.fn();
+    const unsubscribe = subscribeInstallPrompt(listener);
+    const event = installEvent(async () => {}, "dismissed");
+
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true); // 不出瀏覽器自帶橫幅
+    expect(getInstallPromptEvent()).toBe(event);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    expect(await promptInstall()).toBe("dismissed");
+    expect(event.prompt).toHaveBeenCalledTimes(1);
+    expect(getInstallPromptEvent()).toBeNull();
+    expect(await promptInstall()).toBe("unavailable"); // 事件只能用一次
+
+    unsubscribe();
+    release();
+  });
+
+  it("prompt 丟例外:回 'unavailable' 不外洩錯誤", async () => {
+    const release = captureInstallPrompt();
+    window.dispatchEvent(
+      installEvent(async () => {
+        throw new Error("NotAllowedError");
+      }, "accepted"),
+    );
+    expect(await promptInstall()).toBe("unavailable");
+    release();
   });
 });

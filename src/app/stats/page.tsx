@@ -14,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import { Heatmap } from "@/components/Heatmap";
+import { Loading } from "@/components/Loading";
 import { buttonVariants } from "@/components/ui/button";
 import { getLessonIndex } from "@/lib/content";
 import { db, type CardRow, type LogRow } from "@/lib/db";
@@ -48,14 +49,18 @@ function StageBar({ counts }: { counts: StageCounts }) {
   }
   return (
     <div>
-      <div className="flex h-3 overflow-hidden rounded-full">
+      {/* 無語意的 div 上的 aria-label 不會被念出:整條以 role="img" 給一句摘要 */}
+      <div
+        role="img"
+        aria-label={`卡片階段分布:${STAGES.map((s) => `${s.label} ${counts[s.key]} 張`).join("、")}`}
+        className="flex h-3 overflow-hidden rounded-full"
+      >
         {STAGES.map((s) =>
           counts[s.key] > 0 ? (
             <div
               key={s.key}
               className={s.cls}
               style={{ width: `${(counts[s.key] / total) * 100}%` }}
-              aria-label={`${s.label} ${counts[s.key]} 張`}
             />
           ) : null,
         )}
@@ -218,7 +223,7 @@ export default function StatsPage() {
   const todayCount = daily.length ? daily[daily.length - 1].count : 0;
 
   if (phase === "loading") {
-    return <p className="p-6 text-center text-sm text-muted-foreground">載入中…</p>;
+    return <Loading className="p-6" />;
   }
 
   if (phase === "error") {

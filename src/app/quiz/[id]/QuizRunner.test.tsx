@@ -137,6 +137,40 @@ describe("QuizRunner", () => {
   });
 });
 
+describe("QuizRunner 無障礙:回饋 live region 與焦點(T10.10)", () => {
+  it("回饋為先掛載的 role=status;選擇題作答後焦點移到「下一題」,換題後移到題幹", async () => {
+    const user = userEvent.setup();
+    render(<QuizRunner id={13} />);
+    await screen.findByText("第 1 / 2 題");
+
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    expect(document.body).toHaveFocus(); // 首次載入不搶焦點
+
+    await user.click(screen.getByRole("button", { name: "貓" }));
+    expect(screen.getByRole("status")).toBe(status); // 同一個 live region,內容更新才會播報
+    expect(status).toHaveTextContent(/答錯.*いぬ/);
+    // 被選的選項已 disabled:焦點不掉到 body,移到下一步
+    expect(screen.getByRole("button", { name: "下一題" })).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    expect(screen.getByText("第 2 / 2 題")).toBeInTheDocument();
+    expect(screen.getByText("貓").closest("[tabindex]")).toHaveFocus(); // 新題幹
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("輸入題:作答後輸入框停用,焦點移到「看結果」", async () => {
+    const user = userEvent.setup();
+    generateQuiz.mockReturnValue([inputQ]);
+    render(<QuizRunner id={13} />);
+    await screen.findByText("第 1 / 1 題");
+
+    await user.type(screen.getByLabelText("輸入假名"), "neko{Enter}");
+    expect(screen.getByRole("status")).toHaveTextContent("答對 ✓");
+    expect(screen.getByRole("button", { name: "看結果" })).toHaveFocus();
+  });
+});
+
 describe("QuizRunner 判分、提示與再測(T10.4)", () => {
   const mail: QuizCandidate = {
     id: "L26-V042",

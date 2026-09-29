@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ChangeEvent } from "react";
+import { Loading } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
 import { exportData, importData, parseBackup, resetAll, type BackupFile } from "@/lib/backup";
 import { getAllSettings, setSetting, type Settings } from "@/lib/db";
@@ -17,9 +18,14 @@ function SectionCard({ title, children }: { title: string; children: React.React
   );
 }
 
+// 輸入框/下拉選單字級 16px(text-base):小於 16px 時 iOS Safari 在 focus 時會放大頁面且不縮回
+const NUMBER_INPUT = "h-9 w-20 rounded border border-input bg-transparent px-2 text-right text-base";
+const SELECT = "h-9 rounded border border-input bg-transparent px-2 text-base";
+
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex items-center justify-between gap-3 py-1.5 text-sm">
+    // 整列為 label:點列上任何位置即操作欄位(checkbox 本身只有 16px),列高 ≥ 44px
+    <label className="flex min-h-11 items-center justify-between gap-3 py-1.5 text-sm">
       {label}
       {children}
     </label>
@@ -118,7 +124,7 @@ export default function SettingsPage() {
   }
 
   if (!settings) {
-    return <p className="p-6 text-center text-sm text-muted-foreground">載入中…</p>;
+    return <Loading className="p-6" />;
   }
 
   return (
@@ -147,7 +153,7 @@ export default function SettingsPage() {
               aria-label="每日新卡上限"
               defaultValue={settings.newPerDay}
               onChange={(e) => updateNumber("newPerDay", e.target.value)}
-              className="w-20 rounded border border-input bg-transparent px-2 py-1 text-right"
+              className={NUMBER_INPUT}
             />
           </FieldRow>
           <FieldRow label="每日複習上限">
@@ -157,7 +163,7 @@ export default function SettingsPage() {
               aria-label="每日複習上限"
               defaultValue={settings.maxReviewsPerDay}
               onChange={(e) => updateNumber("maxReviewsPerDay", e.target.value)}
-              className="w-20 rounded border border-input bg-transparent px-2 py-1 text-right"
+              className={NUMBER_INPUT}
             />
           </FieldRow>
           <FieldRow label="每日目標張數">
@@ -167,7 +173,7 @@ export default function SettingsPage() {
               aria-label="每日目標張數"
               defaultValue={settings.dailyGoal}
               onChange={(e) => updateNumber("dailyGoal", e.target.value)}
-              className="w-20 rounded border border-input bg-transparent px-2 py-1 text-right"
+              className={NUMBER_INPUT}
             />
           </FieldRow>
           <FieldRow label="TTS 發音">
@@ -193,7 +199,7 @@ export default function SettingsPage() {
               aria-label="目標保留率"
               defaultValue={String(settings.desiredRetention)}
               onChange={(e) => void setSetting("desiredRetention", Number(e.target.value))}
-              className="rounded border border-input bg-transparent px-2 py-1"
+              className={SELECT}
             >
               <option value="0.8">80%(複習較少)</option>
               <option value="0.85">85%</option>
@@ -207,7 +213,7 @@ export default function SettingsPage() {
               aria-label="Furigana 預設"
               defaultValue={settings.furigana}
               onChange={(e) => void setSetting("furigana", e.target.value as Settings["furigana"])}
-              className="rounded border border-input bg-transparent px-2 py-1"
+              className={SELECT}
             >
               <option value="show">顯示</option>
               <option value="hide">隱藏</option>

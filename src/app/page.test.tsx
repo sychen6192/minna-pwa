@@ -55,6 +55,22 @@ describe("Home(今日儀表板)", () => {
     expect(screen.getByText(/已開始課程/).parentElement).toHaveTextContent("0 / 2 課");
   });
 
+  it("首次造訪:安裝提示為 Hero 下方的一般卡片(不論有無單字);關閉過即不顯示", async () => {
+    const { unmount } = render(<Home />);
+
+    const hero = (await screen.findByText(/還沒有加入任何單字/)).closest("section")!;
+    const prompt = await screen.findByRole("region", { name: "安裝到主畫面" });
+    expect(hero.nextElementSibling).toBe(prompt);
+    expect(prompt.className).not.toMatch(/\bfixed\b/);
+    unmount();
+
+    await setSetting("installPromptDismissed", true);
+    render(<Home />);
+    await screen.findByText(/還沒有加入任何單字/);
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(screen.queryByRole("region", { name: "安裝到主畫面" })).not.toBeInTheDocument();
+  });
+
   it("有到期卡:顯示到期數與開始複習 CTA(→ /review)", async () => {
     await db.cards.bulkAdd([
       card({ cardId: "L01-V001", lessonId: 1, due: Date.now() - DAY, state: 2 }),

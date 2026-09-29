@@ -114,6 +114,12 @@ describe("StatsPage", () => {
     // 階段分布以卡片計(雙向卡各一張),並說明
     expect(screen.getByText(/以卡片計/)).toHaveTextContent("回想卡另計一張");
     expect(screen.getByText("已會").closest("li")).toHaveTextContent("已會2張");
+    // 分布條:role=img 一句摘要(無語意 div 上的 aria-label 不會被念出)
+    expect(
+      screen.getByRole("img", {
+        name: "卡片階段分布:新卡 1 張、學習中 0 張、未成熟 2 張、已成熟 0 張、已會 2 張",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("最後一次評「重來」的卡:歸入學習中,各課進度不算已學會", async () => {

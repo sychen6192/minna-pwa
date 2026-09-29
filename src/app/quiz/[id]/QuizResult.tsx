@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -49,9 +49,17 @@ export function QuizResult({
   const correct = results.length - wrong.length;
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<RequeueResult | null>(null);
+  // 進結果頁時「看結果」鈕已卸載:焦點移到標題(不掉到 body),螢幕閱讀器從成績開始念
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
+  // 同步防重入(state 要等重繪才生效)
+  const submitting = useRef(false);
 
   async function addWrongToReview() {
-    if (busy || outcome) return;
+    if (submitting.current || outcome) return;
+    submitting.current = true;
     setBusy(true);
     try {
       setOutcome(
@@ -61,13 +69,19 @@ export function QuizResult({
         ),
       );
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
+  // 以 aria-disabled 取代 disabled:按下後焦點留在按鈕上(disabled 會把焦點丟到 body),
+  // 結果由下方 live region 播報
+  const requeueLocked = busy || outcome !== null;
 
   return (
     <div className="px-4 py-8">
-      <h1 className="text-center text-lg font-bold">測驗完成</h1>
+      <h1 ref={headingRef} tabIndex={-1} className="text-center text-lg font-bold outline-none">
+        測驗完成
+      </h1>
       <p className="mt-4 text-center text-3xl font-bold">
         {correct} / {results.length}
       </p>
@@ -83,8 +97,8 @@ export function QuizResult({
                 variant="outline"
                 size="sm"
                 onClick={() => void addWrongToReview()}
-                disabled={busy || outcome !== null}
-                className="font-normal"
+                aria-disabled={requeueLocked}
+                className="font-normal aria-disabled:cursor-default aria-disabled:opacity-50"
               >
                 {outcome === null
                   ? "錯題加入複習"

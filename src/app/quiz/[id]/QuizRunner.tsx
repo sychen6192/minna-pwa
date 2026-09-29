@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Loading } from "@/components/Loading";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { Button } from "@/components/ui/button";
 import { getLesson } from "@/lib/content";
@@ -39,6 +40,27 @@ export function QuizRunner({ id }: { id: number }) {
   const [checked, setChecked] = useState(false);
   const [lastCorrect, setLastCorrect] = useState<boolean | null>(null);
   const [results, setResults] = useState<Result[]>([]);
+  // 焦點接手:作答後被選的選項/輸入框會 disabled(焦點掉到 body)→ 移到「下一題」;
+  // 換題後移到新題幹(螢幕閱讀器先念題目)。首次載入不搶焦點
+  const nextRef = useRef<HTMLButtonElement>(null);
+  const stemRef = useRef<HTMLDivElement>(null);
+  const focusStem = useRef(false);
+  const answered =
+    phase === "quiz" && questions[index] !== undefined
+      ? questions[index].type === "input"
+        ? checked
+        : selectedId !== null
+      : false;
+
+  useEffect(() => {
+    if (answered) nextRef.current?.focus();
+  }, [answered]);
+
+  useEffect(() => {
+    if (!focusStem.current) return;
+    focusStem.current = false;
+    stemRef.current?.focus();
+  }, [index, questions]);
 
   useEffect(() => {
     let active = true;
@@ -71,7 +93,12 @@ export function QuizRunner({ id }: { id: number }) {
     };
   }, [id]);
 
-  if (phase === "loading") return <Centered>載入中…</Centered>;
+  if (phase === "loading")
+    return (
+      <Centered>
+        <Loading className="p-0" />
+      </Centered>
+    );
   if (phase === "error")
     return (
       <Centered>
@@ -82,6 +109,7 @@ export function QuizRunner({ id }: { id: number }) {
   // 再測一次:同一課重新出題(題目與題型重新抽),作答狀態歸零
   function restart() {
     const qs = generateQuiz(id, pool, { count: QUIZ_COUNT });
+    focusStem.current = true;
     setQuestions(qs);
     setIndex(0);
     setSelectedId(null);
@@ -104,7 +132,6 @@ export function QuizRunner({ id }: { id: number }) {
   }
 
   const q = questions[index];
-  const answered = q.type === "input" ? checked : selectedId !== null;
   const note = displayNote(q.answer.note);
 
   function recordResult(correct: boolean) {
@@ -129,6 +156,7 @@ export function QuizRunner({ id }: { id: number }) {
       setPhase("done");
       return;
     }
+    focusStem.current = true;
     setIndex((i) => i + 1);
     setSelectedId(null);
     setInput("");
@@ -152,8 +180,8 @@ export function QuizRunner({ id }: { id: number }) {
       </div>
 
       <div className="flex flex-1 flex-col justify-center gap-6 px-4">
-        {/* 題幹 */}
-        <div className="text-center text-2xl">
+        {/* 題幹(換題後接手焦點) */}
+        <div ref={stemRef} tabIndex={-1} className="text-center text-2xl outline-none">
           {q.type === "zh-to-jp" ? (
             q.answer.meaning
           ) : q.type === "jp-to-zh" ? (
@@ -185,31 +213,36 @@ export function QuizRunner({ id }: { id: number }) {
           />
         )}
 
-        {/* 回饋(答錯列出可接受的讀音;搭配 note 如〔電車に〜〕一併提示) */}
-        {answered && (
-          <div className="space-y-1 text-center">
-            <p
-              className={
-                lastCorrect
-                  ? "font-medium text-success"
-                  : "font-medium text-destructive"
-              }
-            >
-              {lastCorrect ? (
-                "答對 ✓"
-              ) : (
-                <>
-                  答錯 ✗(<span lang="ja">{answerLabel(q.answer)}</span>)
-                </>
-              )}
-            </p>
-            {note && <p className="text-sm text-foreground/70">{note}</p>}
-          </div>
-        )}
+        {/*
+          回饋(答錯列出可接受的讀音;搭配 note 如〔電車に〜〕一併提示)。
+          live region 先掛載、作答後再填入內容,螢幕閱讀器才會播報
+        */}
+        <div role="status" className="space-y-1 text-center">
+          {answered && (
+            <>
+              <p
+                className={
+                  lastCorrect
+                    ? "font-medium text-success"
+                    : "font-medium text-destructive"
+                }
+              >
+                {lastCorrect ? (
+                  "答對 ✓"
+                ) : (
+                  <>
+                    答錯 ✗(<span lang="ja">{answerLabel(q.answer)}</span>)
+                  </>
+                )}
+              </p>
+              {note && <p className="text-sm text-foreground/70">{note}</p>}
+            </>
+          )}
+        </div>
       </div>
 
       <div className="px-4 pb-4">
-        <Button onClick={next} disabled={!answered} className="h-12 w-full">
+        <Button ref={nextRef} onClick={next} disabled={!answered} className="h-12 w-full">
           {index + 1 >= questions.length ? "看結果" : "下一題"}
         </Button>
       </div>
@@ -292,7 +325,8 @@ function InputArea({
         value={value}
         disabled={checked}
         onChange={(e) => onChange(e.target.value)}
-        className="flex-1 rounded border border-input bg-transparent px-3 py-2"
+        // 16px 以上:iOS Safari 不會在 focus 時放大頁面
+        className="h-11 min-w-0 flex-1 rounded border border-input bg-transparent px-3 text-base"
         autoComplete="off"
         // 羅馬字作答:避免行動鍵盤自動大寫/自動校正把 koohii 改成別的字
         autoCapitalize="none"

@@ -36,17 +36,18 @@ describe("Button", () => {
     for (const cls of hasNot) expect(btn).not.toHaveClass(cls);
   });
 
+  // 觸控區 ≥ 44px:sm 只縮小字級與留白,高度同 default
   it.each([
-    ["default", "h-11"],
-    ["sm", "h-9"],
-    ["icon", "size-11"],
+    ["default", ["h-11", "px-5", "text-base"]],
+    ["sm", ["h-11", "px-3", "text-sm"]],
+    ["icon", ["size-11"]],
   ] as const)("size=%s → %s", (size, cls) => {
     render(
       <Button size={size} aria-label="按鈕">
         x
       </Button>,
     );
-    expect(screen.getByRole("button", { name: "按鈕" })).toHaveClass(cls);
+    expect(screen.getByRole("button", { name: "按鈕" })).toHaveClass(...cls);
   });
 
   it("className 可覆寫同類 utility(tailwind-merge)", () => {
@@ -57,7 +58,7 @@ describe("Button", () => {
     );
     const btn = screen.getByRole("button", { name: "下一題" });
     expect(btn).toHaveClass("h-12", "w-full");
-    expect(btn).not.toHaveClass("h-9");
+    expect(btn).not.toHaveClass("h-11");
   });
 
   it("disabled 時不觸發 onClick", async () => {

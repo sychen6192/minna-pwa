@@ -234,7 +234,7 @@
   做什麼:globals.css 以 shadcn 命名建立語意 token(background/foreground/card/muted/muted-foreground/border/input/primary/link/success/warning/destructive/rating-*/pitch/heat-0..4),深色值放在 `@media (prefers-color-scheme: dark)`(不用 `.dark` class、不跑 `shadcn init`),`@theme inline` 映射為 Tailwind 色彩;`color-scheme: light dark`;themeColor 依配色。全站替換寫死的 bg-white/neutral-*/sky-*/text-foreground/50 等(stats、settings、PwaSetup、UpdatePrompt、Heatmap、Recharts 顏色與 Tooltip)。新增 shadcn 樣式 `src/components/ui/button.tsx`(`buttonVariants`,不含 asChild/radix)統一主/次/ghost 按鈕與 Link 按鈕。BottomNav active 態加顏色與指示條。所有文字對比 ≥ 4.5:1(兩種配色)。
   驗收:Button 測試;既有測試全綠;light/dark 截圖回歸(統計/設定無白塊);首頁 gzip JS 仍 < 200 KB;`pnpm verify` 全綠。
 
-- [ ] **T10.10 觸控、無障礙與提示**
+- [x] **T10.10 觸控、無障礙與提示**
   做什麼:icon/文字按鈕觸控區 ≥ 44px(負 margin 保持版面);翻卡按鈕不以 aria-label 覆蓋內容、翻面後焦點移至答案;評分鍵 accessible name 含間隔、快捷鍵數字僅桌面顯示;課程頁分頁改 aria-pressed 分段按鈕(或補齊 tabpanel);回饋加 `role="status"`;輸入框 ≥ 16px(避免 iOS 放大)。安裝提示拆為首頁內嵌卡片(非 fixed,不遮擋操作),`ensurePersistentStorage` 仍於每頁啟動執行。新增繁中 `not-found.tsx`;載入文字抽成共用 `Loading`(role=status)。
   驗收:PwaSetup/InstallPrompt 測試(每頁 persist、首頁才顯示提示、standalone 或已關閉不顯示);RatingButtons/review 無障礙名稱測試;Playwright 量測主要互動元素 ≥ 44px;`pnpm verify` 全綠。
 

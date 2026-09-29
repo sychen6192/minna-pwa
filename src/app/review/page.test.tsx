@@ -132,7 +132,7 @@ function passTapGuard() {
 /** 點擊卡片翻面(先越過點擊防護) */
 async function clickFlip(user: ReturnType<typeof userEvent.setup>) {
   passTapGuard();
-  await user.click(screen.getByRole("button", { name: "顯示答案" }));
+  await user.click(screen.getByRole("button", { name: /顯示答案/ }));
 }
 
 /** PitchAccent 的 sr-only 說明(「讀音、重音 n 型(…)」;中文說明不掛 aria-label) */
@@ -330,7 +330,7 @@ describe("ReviewPage", () => {
     expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
 
     // 評分「良好」→ rate 以 rating=3 呼叫
-    await user.click(screen.getByRole("button", { name: "良好" }));
+    await user.click(screen.getByRole("button", { name: /^良好/ }));
     expect(rate).toHaveBeenCalledWith("L13-V001", 3, expect.any(Number));
 
     // 結算頁
@@ -589,11 +589,11 @@ describe("ReviewPage:session 內重看(T10.3)", () => {
     expect(await screen.findByText("3 / 3")).toBeInTheDocument();
     // 重看項:徽章、同一張卡的正面
     expect(screen.getByText("重看")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "顯示答案" })).toHaveTextContent("遊");
+    expect(screen.getByRole("button", { name: /顯示答案/ })).toHaveTextContent("遊");
     flipByKey();
     expect(await screen.findByRole("button", { name: "記住了" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "還不熟,再一次" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "良好" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^良好/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "已會·略過" })).not.toBeInTheDocument();
     expect(previewIntervals).toHaveBeenCalledTimes(2); // 只有兩張一般卡
 
@@ -649,7 +649,7 @@ describe("ReviewPage:復原與防重入(T10.3)", () => {
     );
     expect(await screen.findByText("1 / 2")).toBeInTheDocument(); // 重看項已移除
     expect(screen.getByText("玩、遊玩")).toBeInTheDocument(); // 已翻面
-    expect(screen.getByRole("button", { name: "良好" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^良好/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "復原" })).not.toBeInTheDocument(); // 只保留一步
 
     // 改評良好 → 結算不含先前的重來
@@ -710,7 +710,7 @@ describe("ReviewPage:復原與防重入(T10.3)", () => {
 
     fireEvent.keyDown(window, { key: "3" });
     fireEvent.keyDown(window, { key: "3" });
-    const good = await screen.findByRole("button", { name: "良好" });
+    const good = await screen.findByRole("button", { name: /^良好/ });
     fireEvent.click(good);
     expect(rate).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(good).toBeDisabled());
@@ -729,7 +729,7 @@ describe("ReviewPage:復原與防重入(T10.3)", () => {
     render(<ReviewPage />);
     await screen.findByText("1 / 1");
     flipByKey();
-    await screen.findByRole("button", { name: "良好" });
+    await screen.findByRole("button", { name: /^良好/ });
     fireEvent.keyDown(window, { key: "3", repeat: true });
     await act(async () => {});
     expect(rate).not.toHaveBeenCalled();
@@ -742,14 +742,14 @@ describe("ReviewPage:復原與防重入(T10.3)", () => {
     render(<ReviewPage />);
     await screen.findByText("1 / 2");
     flipByKey();
-    fireEvent.click(await screen.findByRole("button", { name: "良好" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^良好/ }));
     expect(await screen.findByText("2 / 2")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "顯示答案" }));
+    fireEvent.click(screen.getByRole("button", { name: /顯示答案/ }));
     expect(screen.queryByText("第二個字")).not.toBeInTheDocument();
 
     vi.setSystemTime(new Date(2026, 8, 1, 20, 0, 1));
-    fireEvent.click(screen.getByRole("button", { name: "顯示答案" }));
+    fireEvent.click(screen.getByRole("button", { name: /顯示答案/ }));
     expect(screen.getByText("第二個字")).toBeInTheDocument();
   });
 
@@ -760,11 +760,11 @@ describe("ReviewPage:復原與防重入(T10.3)", () => {
     render(<ReviewPage />);
     await screen.findByText("1 / 1");
 
-    fireEvent.click(screen.getByRole("button", { name: "顯示答案" }));
+    fireEvent.click(screen.getByRole("button", { name: /顯示答案/ }));
     expect(screen.queryByText("玩、遊玩")).not.toBeInTheDocument();
 
     vi.setSystemTime(new Date(2026, 8, 1, 20, 0, 1));
-    fireEvent.click(screen.getByRole("button", { name: "顯示答案" }));
+    fireEvent.click(screen.getByRole("button", { name: /顯示答案/ }));
     expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
   });
 
@@ -775,7 +775,7 @@ describe("ReviewPage:復原與防重入(T10.3)", () => {
     render(<ReviewPage />);
     await screen.findByText("1 / 1");
     flipByKey();
-    fireEvent.click(await screen.findByRole("button", { name: "良好" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^良好/ }));
     expect(await screen.findByText("本次複習結算")).toBeInTheDocument();
 
     // 連結上的原生 listener:收到即代表點擊生效(並擋下 jsdom 導覽)
@@ -821,5 +821,96 @@ describe("ReviewPage:結算頁(T10.3)", () => {
     expect(screen.getByRole("link", { name: "課程列表" })).toHaveAttribute("href", "/lessons");
     // 今日 2 筆、佇列剩 0 → 有效目標 2;昨日也有紀錄 → 連續 2 天
     expect(screen.getByText("今日 2/2 · 🔥 2")).toBeInTheDocument();
+  });
+});
+
+describe("ReviewPage:無障礙與焦點(T10.10)", () => {
+  it("翻卡按鈕的名稱來自題面內容 + 「顯示答案」(不以 aria-label 覆蓋)", async () => {
+    setupOneCard();
+    render(<ReviewPage />);
+    await screen.findByText("1 / 1");
+
+    const card = screen.getByRole("button", { name: /顯示答案/ });
+    expect(card).not.toHaveAttribute("aria-label");
+    expect(card).toHaveAccessibleName(/遊.*顯示答案/);
+    // 看得到的操作提示仍在;「或按空白鍵」只在精確指標(桌面)顯示
+    expect(screen.getByText(/點擊卡片/)).toHaveTextContent("點擊卡片或按空白鍵顯示答案");
+    expect(screen.getByText("或按空白鍵")).toHaveClass("hidden", "pointer-fine:inline");
+  });
+
+  it("翻面後焦點移到答案區(可聚焦、不掉到 body);評分後移到下一張卡", async () => {
+    setupTwoCards();
+    const user = userEvent.setup();
+    render(<ReviewPage />);
+    await screen.findByText("1 / 2");
+
+    await clickFlip(user);
+    const answer = screen.getByText("玩、遊玩").closest("[tabindex]") as HTMLElement;
+    expect(answer).toHaveAttribute("tabindex", "-1");
+    expect(answer).toHaveFocus();
+    expect(screen.queryByRole("button", { name: /顯示答案/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^良好/ }));
+    expect(await screen.findByText("2 / 2")).toBeInTheDocument();
+    const next = screen.getByRole("button", { name: /顯示答案/ });
+    expect(next).toHaveTextContent("ほしい");
+    expect(next).toHaveFocus();
+  });
+
+  it("鍵盤翻面也移焦;最後一張評分後焦點移到結算標題,復原後回到答案區", async () => {
+    setupOneCard();
+    const user = userEvent.setup();
+    render(<ReviewPage />);
+    await screen.findByText("1 / 1");
+
+    flipByKey();
+    expect(screen.getByText("玩、遊玩").closest("[tabindex]")).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: "3" });
+    const heading = await screen.findByRole("heading", { name: "本次複習結算" });
+    await waitFor(() => expect(heading).toHaveFocus());
+
+    passTapGuard();
+    await user.click(screen.getByRole("button", { name: "復原" }));
+    expect(await screen.findByText("1 / 1")).toBeInTheDocument();
+    expect(screen.getByText("玩、遊玩").closest("[tabindex]")).toHaveFocus();
+  });
+
+  it("首次載入不搶焦點", async () => {
+    setupOneCard();
+    render(<ReviewPage />);
+    await screen.findByText("1 / 1");
+    expect(document.body).toHaveFocus();
+  });
+
+  it("空白鍵:焦點在評分鍵等其他按鈕上時交給按鈕本身(不攔截),在卡片上才翻面", async () => {
+    setupOneCard();
+    render(<ReviewPage />);
+    await screen.findByText("1 / 1");
+
+    const card = screen.getByRole("button", { name: /顯示答案/ });
+    expect(fireEvent.keyDown(card, { code: "Space", key: " " })).toBe(false); // 攔下並翻面
+    const good = await screen.findByRole("button", { name: /^良好/ });
+    expect(fireEvent.keyDown(good, { code: "Space", key: " " })).toBe(true); // 預設行為保留
+    expect(rate).not.toHaveBeenCalled();
+  });
+
+  it("空白鍵:焦點留在頁外的連結(從底部導覽點進來)時仍翻面並攔下捲動", async () => {
+    setupOneCard();
+    render(
+      <>
+        <ReviewPage />
+        <nav aria-label="主導覽">
+          <a href="/review">複習</a>
+        </nav>
+      </>,
+    );
+    await screen.findByText("1 / 1");
+    const navLink = screen.getByRole("link", { name: "複習" });
+    navLink.focus();
+
+    expect(fireEvent.keyDown(navLink, { code: "Space", key: " " })).toBe(false);
+    expect(await screen.findByText("玩、遊玩")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^良好/ })).toBeInTheDocument();
   });
 });

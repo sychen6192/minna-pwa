@@ -1,63 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { getSetting, setSetting } from "@/lib/db";
-import { ensurePersistentStorage, getDisplayMode, isIOS } from "@/lib/pwa";
+import { useEffect } from "react";
+import { captureInstallPrompt, ensurePersistentStorage } from "@/lib/pwa";
 
 /**
- * PWA 啟動例行:要求持久化儲存(防 IndexedDB 被清)+ 未安裝時顯示
- * 加入主畫面提示(SPEC N3)。初次 render 一律為空,useEffect 後才判定,
- * 避免 SSG hydration 不一致。
+ * PWA 啟動例行(layout,每一頁都執行):要求持久化儲存(防 IndexedDB 被清,SPEC N3),
+ * 並攔截 Chromium 的 beforeinstallprompt 供首頁安裝卡片使用。不渲染任何 UI——
+ * 安裝提示只在首頁以一般排版的卡片顯示(InstallPrompt),不以浮層蓋住各頁操作。
  */
 export function PwaSetup() {
-  const [prompt, setPrompt] = useState<"ios" | "generic" | null>(null);
-
   useEffect(() => {
-    let cancelled = false;
     // 結果不影響 UI;lib 保證不 throw,失敗即靜默降級
     void ensurePersistentStorage();
-    if (getDisplayMode() === "standalone") return;
-    void getSetting("installPromptDismissed").then((dismissed) => {
-      if (!cancelled && !dismissed) setPrompt(isIOS() ? "ios" : "generic");
-    });
-    return () => {
-      cancelled = true;
-    };
+    return captureInstallPrompt();
   }, []);
 
-  if (!prompt) return null;
-
-  const dismiss = () => {
-    setPrompt(null);
-    void setSetting("installPromptDismissed", true);
-  };
-
-  return (
-    <section
-      aria-label="安裝提示"
-      className="fixed inset-x-0 bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-50 mx-auto max-w-screen-sm px-4 pb-2"
-    >
-      <div className="rounded-lg border border-border bg-card p-3 shadow-lg">
-        <p className="text-sm leading-relaxed">
-          {prompt === "ios" ? (
-            <>
-              安裝到主畫面:點 Safari 的<strong>分享</strong>按鈕,選「
-              <strong>加入主畫面</strong>」。安裝後可完全離線使用,學習紀錄也不會被系統清除。
-            </>
-          ) : (
-            <>
-              從瀏覽器選單將此 App <strong>安裝到主畫面</strong>
-              ,可完全離線使用,學習紀錄也不會被系統清除。
-            </>
-          )}
-        </p>
-        <div className="mt-2 text-right">
-          <Button variant="ghost" size="sm" onClick={dismiss} className="text-link">
-            知道了
-          </Button>
-        </div>
-      </div>
-    </section>
-  );
+  return null;
 }

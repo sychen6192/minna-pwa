@@ -23,9 +23,11 @@ const variants = cva(
         ghost: "hover:bg-muted active:bg-muted",
         link: "text-link underline underline-offset-4",
       },
+      // 觸控區一律 ≥ 44px(h-11 / size-11);sm 只縮小字級與左右留白。
+      // 列內小鈕要維持版面高度時,由呼叫端加負 margin 抵銷(例:size=icon + -m-3.5 佔位 16px)
       size: {
         default: "h-11 px-5 text-base",
-        sm: "h-9 px-3 text-sm",
+        sm: "h-11 px-3 text-sm",
         icon: "size-11",
       },
     },

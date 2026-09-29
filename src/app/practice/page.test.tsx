@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, vi } from "vitest";
 import { db, setSetting, type CardRow } from "@/lib/db";
@@ -98,10 +98,30 @@ describe("PracticePage", () => {
 
     await screen.findByText("1 / 1");
     expect(container.querySelector("[data-mora]")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    await user.click(screen.getByRole("button", { name: /顯示答案/ }));
     expect(container.querySelectorAll("[data-mora]")).toHaveLength(3);
     expect(container.querySelector(".sr-only")).toHaveTextContent("ほしい、重音 2 型(中高)");
     expect(visibleText(container).match(/ほしい/g)).toHaveLength(1);
+  });
+
+  it("翻卡:名稱來自題面(無 aria-label 覆蓋);翻面焦點移到答案區,下一張移到新卡", async () => {
+    await db.cards.bulkAdd([leechCard("L13-V001", 5), leechCard("L13-V002", 4)]);
+    const user = userEvent.setup();
+    render(<PracticePage />);
+    await screen.findByText("1 / 2");
+
+    const card = screen.getByRole("button", { name: /顯示答案/ });
+    expect(card).not.toHaveAttribute("aria-label");
+    expect(card).toHaveAccessibleName(/遊.*顯示答案/);
+
+    await user.click(card);
+    const answer = screen.getByText("玩、遊玩").closest("[tabindex]");
+    expect(answer).toHaveAttribute("tabindex", "-1");
+    expect(answer).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "下一張" }));
+    await screen.findByText("2 / 2");
+    expect(screen.getByRole("button", { name: /顯示答案/ })).toHaveFocus();
   });
 
   it("無頑固卡:顯示空狀態", async () => {
@@ -124,19 +144,21 @@ describe("PracticePage", () => {
     // 第一張 = lapses 最多者(遊びます,5 次)
     await screen.findByText("1 / 2");
     expect(screen.queryByText("〔公園で〜〕")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    await user.click(screen.getByRole("button", { name: /顯示答案/ }));
     expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
     expect(screen.getByText(/答錯 5 次/)).toBeInTheDocument();
     expect(screen.getByText("〔公園で〜〕")).toBeInTheDocument(); // 搭配 note
 
     await user.click(screen.getByRole("button", { name: "下一張" }));
     await screen.findByText("2 / 2");
-    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    await user.click(screen.getByRole("button", { name: /顯示答案/ }));
     expect(screen.getByText("書")).toBeInTheDocument();
     expect(screen.queryByText("読み物")).not.toBeInTheDocument(); // 段落標記不顯示
 
     await user.click(screen.getByRole("button", { name: "完成" }));
-    expect(await screen.findByText(/頑固卡練習完成/)).toBeInTheDocument();
+    // 「完成」鈕卸載後焦點移到完成標題(不掉到 body)
+    const done = await screen.findByRole("heading", { name: /頑固卡練習完成/ });
+    await waitFor(() => expect(done).toHaveFocus());
   });
 
   it("發音鈕:以清理過的讀音朗讀(Web Speech 為 mock)", async () => {
@@ -146,7 +168,7 @@ describe("PracticePage", () => {
     render(<PracticePage />);
 
     await screen.findByText("1 / 1");
-    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    await user.click(screen.getByRole("button", { name: /顯示答案/ }));
     await user.click(screen.getByRole("button", { name: "播放 おっと 的發音" }));
     expect(synthSpeak).toHaveBeenCalledTimes(1);
     expect(synthSpeak.mock.calls[0][0]).toMatchObject({ text: "おっと", lang: "ja-JP" });
@@ -160,7 +182,7 @@ describe("PracticePage", () => {
     render(<PracticePage />);
 
     await screen.findByText("1 / 1");
-    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    await user.click(screen.getByRole("button", { name: /顯示答案/ }));
     expect(screen.getByText("丈夫")).toBeInTheDocument();
     expect(screen.queryAllByRole("button", { name: /播放/ })).toHaveLength(0);
     expect(synthSpeak).not.toHaveBeenCalled();
@@ -174,7 +196,7 @@ describe("PracticePage", () => {
     await screen.findByText("1 / 1");
     expect(screen.getByText("動I・第 13 課")).toBeInTheDocument();
     expect(screen.queryByText("〔公園で〜〕")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "顯示答案" }));
+    await user.click(screen.getByRole("button", { name: /顯示答案/ }));
     expect(screen.getByText("〔公園で〜〕")).toBeInTheDocument();
   });
 });

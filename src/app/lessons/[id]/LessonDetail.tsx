@@ -1,14 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Check, Plus, Volume2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Eye, EyeOff, Plus } from "lucide-react";
+import { Loading } from "@/components/Loading";
 import { PitchAccent, hasPitch } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
+import { SpeakButton } from "@/components/SpeakButton";
+import { Button } from "@/components/ui/button";
 import { getLesson } from "@/lib/content";
 import { jaLang } from "@/lib/lang";
 import { kanaHeadword } from "@/lib/pitch";
 import { addCards, existingCardIds, setWordSuspended, suspendedWordIds } from "@/lib/srs";
-import { speak, speechText } from "@/lib/tts";
+import { speechText } from "@/lib/tts";
 import { useSetting, useTtsEnabled } from "@/lib/useSetting";
 import { cn } from "@/lib/utils";
 import type { Lesson } from "@/schemas/lesson";
@@ -117,11 +120,7 @@ export function LessonDetail({ id }: { id: number }) {
   }
 
   if (!lesson || !ready) {
-    return (
-      <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-        載入中…
-      </p>
-    );
+    return <Loading />;
   }
 
   return (
@@ -133,27 +132,34 @@ export function LessonDetail({ id }: { id: number }) {
             {lesson.title}
           </h1>
         </div>
-        <button
-          type="button"
+        {/* 開關鈕:名稱固定「假名」,狀態只由 aria-pressed(與外觀、圖示)表示,不讓文字與狀態互相矛盾 */}
+        <Button
+          variant="outline"
+          size="sm"
           aria-pressed={furigana === "show"}
           onClick={() => setFuriganaOverride(furigana === "show" ? "hide" : "show")}
-          className="ml-3 shrink-0 rounded border border-input px-2 py-1 text-xs"
+          className="ml-3 gap-1.5 font-normal text-muted-foreground aria-pressed:border-link aria-pressed:bg-link/10 aria-pressed:text-link"
         >
-          {furigana === "show" ? "隱藏假名" : "顯示假名"}
-        </button>
+          {furigana === "show" ? (
+            <Eye className="size-4" aria-hidden />
+          ) : (
+            <EyeOff className="size-4" aria-hidden />
+          )}
+          假名
+        </Button>
       </header>
 
-      <div role="tablist" className="flex border-b border-border">
+      {/* 分段按鈕(aria-pressed):一次只按下一個;不宣告 tablist(未實作 tabpanel 與方向鍵) */}
+      <div role="group" aria-label="課程內容" className="flex border-b border-border">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
             type="button"
-            role="tab"
             lang="ja"
-            aria-selected={tab === key}
+            aria-pressed={tab === key}
             onClick={() => setTab(key)}
             className={cn(
-              "flex-1 py-2 text-sm transition-colors",
+              "min-h-11 flex-1 text-sm transition-colors",
               tab === key
                 ? "border-b-2 border-foreground font-medium"
                 : "text-muted-foreground",
@@ -184,6 +190,22 @@ export function LessonDetail({ id }: { id: number }) {
   );
 }
 
+/*
+ * 單字列的小鈕:點擊區 44×44,以負 margin 抵銷、列高與版面不變(圖示佔 16px、text-xs 佔一行 16px);
+ * relative 讓延伸的點擊區疊在相鄰文字之上(否則後方的非定位元素會蓋住它)。
+ * 不用 rounded-full:圓角會裁掉點擊判定,四角點不到(維持 Button 的 rounded-lg)。
+ * 不畫 ghost 的 hover/按下底色:44px 的底色會蓋住相鄰的單字與讀音,改以文字色回饋。
+ */
+const ROW_BUTTON_FEEDBACK = "hover:bg-transparent active:bg-transparent";
+const ROW_ICON_BUTTON = cn("relative -m-3.5", ROW_BUTTON_FEEDBACK);
+const ROW_TEXT_BUTTON = cn(
+  "relative -mx-2 -my-3.5 min-w-11 px-2 text-xs font-normal underline underline-offset-2",
+  ROW_BUTTON_FEEDBACK,
+);
+
+/** 列內換鈕後這段時間內忽略該列的點擊(同 /review 換卡後的點擊防護) */
+const ROW_CHANGE_GUARD_MS = 300;
+
 function VocabList({
   lesson,
   furigana,
@@ -200,24 +222,54 @@ function VocabList({
   tts: boolean;
   added: Set<string>;
   suspended: Set<string>;
-  onAddOne: (cardId: string) => void;
+  onAddOne: (cardId: string) => Promise<void>;
   onAddAll: () => void;
-  onToggleSuspend: (cardId: string, next: boolean) => void;
+  onToggleSuspend: (cardId: string, next: boolean) => Promise<void>;
 }) {
   const allAdded = lesson.vocab.every((v) => added.has(v.id));
+  // 列內的鈕會換成同一位置的另一顆(+ → 已會 → 已會·恢復):
+  // - 換鈕後 ROW_CHANGE_GUARD_MS 內忽略該列的點擊:連點兩下的第二下會落在新鈕上(剛加入就被標為已會)
+  // - 焦點原在鈕上(鍵盤操作)時,換鈕後交給同一列的新鈕,不掉到 body
+  const listRef = useRef<HTMLUListElement>(null);
+  const changedAt = useRef(new Map<string, number>());
+  const refocusId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const id = refocusId.current;
+    if (id === null) return;
+    refocusId.current = null;
+    listRef.current?.querySelector<HTMLElement>(`[data-row-action="${id}"]`)?.focus();
+  }, [added, suspended]);
+
+  async function rowAction(id: string, button: HTMLElement, action: () => Promise<void>) {
+    const last = changedAt.current.get(id);
+    if (last !== undefined && Date.now() - last < ROW_CHANGE_GUARD_MS) return;
+    changedAt.current.set(id, Date.now());
+    if (document.activeElement === button) refocusId.current = id;
+    try {
+      await action();
+    } catch (e) {
+      refocusId.current = null;
+      throw e;
+    } finally {
+      changedAt.current.set(id, Date.now());
+    }
+  }
+
   return (
     <div>
       <div className="flex justify-end px-4 py-2">
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={onAddAll}
           disabled={allAdded}
-          className="rounded border border-input px-3 py-1 text-xs disabled:opacity-40"
+          className="font-normal"
         >
           {allAdded ? "整課已加入" : "整課加入複習"}
-        </button>
+        </Button>
       </div>
-      <ul>
+      <ul ref={listRef}>
         {lesson.vocab.map((v) => {
           const isAdded = added.has(v.id);
           // 隱藏假名時,含漢字讀音的字不顯示重音列(它寫出完整讀音);純假名字照常顯示
@@ -234,16 +286,7 @@ function VocabList({
                   ) : (
                     <RubyText segments={v.ruby} furigana={furigana} />
                   )}
-                  {tts && (
-                    <button
-                      type="button"
-                      aria-label={`播放 ${spoken} 的發音`}
-                      onClick={() => speak(spoken)}
-                      className="shrink-0 text-muted-foreground transition-colors active:text-foreground"
-                    >
-                      <Volume2 className="size-4" aria-hidden />
-                    </button>
-                  )}
+                  {tts && <SpeakButton text={spoken} />}
                   {pitchHead === null && hasPitch(v.kana, v.accent) && !readingHidden && (
                     <PitchAccent
                       kana={v.kana}
@@ -255,36 +298,53 @@ function VocabList({
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="text-xs text-muted-foreground">{v.pos}</span>
                   {!isAdded ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       aria-label={`加入複習:${v.kana}`}
-                      onClick={() => onAddOne(v.id)}
-                      className="text-muted-foreground transition-colors active:text-foreground"
+                      data-row-action={v.id}
+                      onClick={(e) => void rowAction(v.id, e.currentTarget, () => onAddOne(v.id))}
+                      className={cn(
+                        ROW_ICON_BUTTON,
+                        "text-muted-foreground hover:text-foreground active:text-foreground",
+                      )}
                     >
                       <Plus className="size-4" aria-hidden />
-                    </button>
+                    </Button>
                   ) : suspended.has(v.id) ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       aria-label={`恢復複習:${v.kana}`}
-                      onClick={() => onToggleSuspend(v.id, false)}
-                      className="text-xs text-warning underline"
+                      data-row-action={v.id}
+                      onClick={(e) =>
+                        void rowAction(v.id, e.currentTarget, () => onToggleSuspend(v.id, false))
+                      }
+                      className={cn(ROW_TEXT_BUTTON, "text-warning")}
                     >
                       已會·恢復
-                    </button>
+                    </Button>
                   ) : (
                     <span className="flex items-center gap-2">
-                      <span aria-label={`${v.kana} 已加入複習`} className="text-success">
+                      <span className="text-success">
                         <Check className="size-4" aria-hidden />
+                        <span className="sr-only">已加入複習</span>
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         aria-label={`標記已會:${v.kana}`}
-                        onClick={() => onToggleSuspend(v.id, true)}
-                        className="text-xs text-muted-foreground underline transition-colors active:text-foreground"
+                        data-row-action={v.id}
+                        onClick={(e) =>
+                          void rowAction(v.id, e.currentTarget, () => onToggleSuspend(v.id, true))
+                        }
+                        className={cn(
+                          ROW_TEXT_BUTTON,
+                          "text-muted-foreground hover:text-foreground active:text-foreground",
+                        )}
                       >
                         已會
-                      </button>
+                      </Button>
                     </span>
                   )}
                 </div>

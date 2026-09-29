@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Loading } from "@/components/Loading";
 import { getLesson, getLessonIndex } from "@/lib/content";
 import { jaLang } from "@/lib/lang";
 import {
@@ -91,18 +92,15 @@ export default function GrammarPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           disabled={!data}
-          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+          // 16px 以上:iOS Safari 不會在 focus 時放大頁面
+          className="h-11 w-full rounded-lg border border-input bg-background px-3 text-base"
         />
       </div>
 
       {error && (
         <p className="px-4 py-8 text-center text-sm text-destructive">載入失敗:{error}</p>
       )}
-      {!error && !data && (
-        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-          載入全部課程資料中…
-        </p>
-      )}
+      {!error && !data && <Loading label="載入全部課程資料中…" />}
 
       {/* 搜尋結果 */}
       {data && hits && (

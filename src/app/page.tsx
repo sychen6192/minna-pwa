@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { InstallPrompt } from "@/components/InstallPrompt";
+import { Loading } from "@/components/Loading";
 import { buttonVariants } from "@/components/ui/button";
 import type { QueueCounts } from "@/lib/srs";
 import type { GoalProgress, StudySummary } from "@/lib/stats";
@@ -225,13 +227,14 @@ export default function Home() {
         <p className="py-8 text-center text-sm text-destructive">載入失敗:{error}</p>
       )}
 
-      {phase === "loading" && (
-        <p className="py-8 text-center text-sm text-muted-foreground">載入中…</p>
-      )}
+      {phase === "loading" && <Loading className="px-0" />}
 
       {phase === "ready" && data && (
         <div className="space-y-6">
           <HeroCard queue={data.queue} hasCards={data.hasCards} />
+
+          {/* 安裝提示:一般排版(不以浮層蓋住操作),首次造訪即顯示,直到安裝或按「知道了」 */}
+          <InstallPrompt />
 
           {data.hasCards && (
             <StreakGoalCard

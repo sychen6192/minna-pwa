@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 import { db, getSetting, setSetting } from "@/lib/db";
@@ -138,6 +138,11 @@ function queryPitchLabel(label: string | RegExp): HTMLElement | null {
   return screen.queryByText((_, el) => isPitchLabel(el, label));
 }
 
+/** 單字列(以釋義找) */
+function vocabRow(meaning: string): HTMLElement {
+  return screen.getByText(meaning).closest("li") as HTMLElement;
+}
+
 /** 畫面上看得到的文字(去除 sr-only) */
 function visibleText(el: Element): string {
   const clone = el.cloneNode(true) as Element;
@@ -155,7 +160,14 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
+
+/** 把時鐘撥過列內換鈕後的點擊防護(300ms);之後 Date 停在 fake 時間 */
+function passRowGuard() {
+  if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 1_000);
+}
 
 describe("LessonDetail", () => {
   it("預設顯示単語分頁,含釋義與 furigana", async () => {
@@ -215,19 +227,19 @@ describe("LessonDetail", () => {
 
     expect(screen.getByRole("heading", { name: "〜が ほしいです" })).toHaveAttribute("lang", "ja");
     for (const name of ["単語", "文型", "会話"]) {
-      expect(screen.getByRole("tab", { name })).toHaveAttribute("lang", "ja");
+      expect(screen.getByRole("button", { name })).toHaveAttribute("lang", "ja");
     }
     // 單字標題(RubyText)
     expect(screen.getByText("遊").closest("[lang]")).toHaveAttribute("lang", "ja");
 
-    await user.click(screen.getByRole("tab", { name: "文型" }));
+    await user.click(screen.getByRole("button", { name: "文型" }));
     expect(screen.getByRole("heading", { name: "(名詞)が ほしいです" })).toHaveAttribute(
       "lang",
       "ja",
     );
     expect(screen.getByRole("heading", { name: "動詞的活用" })).not.toHaveAttribute("lang");
 
-    await user.click(screen.getByRole("tab", { name: "会話" }));
+    await user.click(screen.getByRole("button", { name: "会話" }));
     expect(screen.getByText("ミラー")).toHaveAttribute("lang", "ja");
   });
 
@@ -252,8 +264,8 @@ describe("LessonDetail", () => {
     render(<LessonDetail id={13} />);
 
     expect(await screen.findByText("(名詞)が ほしいです")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "文型" })).toHaveAttribute(
-      "aria-selected",
+    expect(screen.getByRole("button", { name: "文型" })).toHaveAttribute(
+      "aria-pressed",
       "true",
     );
     // 文型分頁渲染後才捲動到該文法點
@@ -268,10 +280,39 @@ describe("LessonDetail", () => {
     render(<LessonDetail id={13} />);
     await screen.findByText("玩、遊玩");
 
-    await user.click(screen.getByRole("tab", { name: "文型" }));
+    await user.click(screen.getByRole("button", { name: "文型" }));
     expect(screen.getByText("(名詞)が ほしいです")).toBeInTheDocument();
     expect(screen.getByText("我想要車子。")).toBeInTheDocument();
     expect(screen.queryByText("玩、遊玩")).not.toBeInTheDocument();
+  });
+
+  it("分頁為 aria-pressed 分段按鈕:一次只按下一個,不宣告 tab 語意", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    // 未實作 tabpanel 與方向鍵,就不宣告 tablist/tab(避免輔助技術期待不存在的行為)
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    const group = screen.getByRole("group", { name: "課程內容" });
+    const pressed = () =>
+      within(group)
+        .getAllByRole("button")
+        .map((b) => [b.textContent, b.getAttribute("aria-pressed")]);
+    expect(pressed()).toEqual([
+      ["単語", "true"],
+      ["文型", "false"],
+      ["会話", "false"],
+    ]);
+
+    await user.click(within(group).getByRole("button", { name: "会話" }));
+    expect(pressed()).toEqual([
+      ["単語", "false"],
+      ["文型", "false"],
+      ["会話", "true"],
+    ]);
+    expect(screen.getByText("要不要去京都?")).toBeInTheDocument();
   });
 
   it("切換到会話分頁:顯示說話者與翻譯", async () => {
@@ -280,7 +321,7 @@ describe("LessonDetail", () => {
     render(<LessonDetail id={13} />);
     await screen.findByText("玩、遊玩");
 
-    await user.click(screen.getByRole("tab", { name: "会話" }));
+    await user.click(screen.getByRole("button", { name: "会話" }));
     expect(screen.getByText("ミラー")).toBeInTheDocument();
     expect(screen.getByText("要不要去京都?")).toBeInTheDocument();
   });
@@ -295,9 +336,9 @@ describe("LessonDetail", () => {
     render(<LessonDetail id={13} />);
     await screen.findByText("玩、遊玩");
 
-    await user.click(screen.getByRole("tab", { name: "文型" }));
+    await user.click(screen.getByRole("button", { name: "文型" }));
     expect(screen.getByText("本課沒有文型")).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "会話" }));
+    await user.click(screen.getByRole("button", { name: "会話" }));
     expect(screen.getByText("本課沒有会話")).toBeInTheDocument();
   });
 
@@ -353,7 +394,8 @@ describe("LessonDetail", () => {
 
     expect(rt.container.querySelectorAll("rt")).toHaveLength(0);
     expect(rt.sawRt()).toBe(false);
-    expect(screen.getByRole("button", { name: "顯示假名" })).toHaveAttribute(
+    // 開關鈕名稱固定「假名」,狀態只看 aria-pressed(未按下 = 隱藏中)
+    expect(screen.getByRole("button", { name: "假名" })).toHaveAttribute(
       "aria-pressed",
       "false",
     );
@@ -367,7 +409,8 @@ describe("LessonDetail", () => {
     const { container } = render(<LessonDetail id={13} />);
     await screen.findByText("玩、遊玩");
 
-    await user.click(screen.getByRole("button", { name: "顯示假名" }));
+    await user.click(screen.getByRole("button", { name: "假名" }));
+    expect(screen.getByRole("button", { name: "假名" })).toHaveAttribute("aria-pressed", "true");
     expect(container.querySelectorAll("rt").length).toBeGreaterThan(0);
     expect(await getSetting("furigana")).toBe("hide");
   });
@@ -383,7 +426,7 @@ describe("LessonDetail", () => {
     expect(getPitchLabel(/^すきな、重音 2 型/)).toBeInTheDocument();
     expect(getPitchLabel("ほしい、重音 2 型(中高)")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "隱藏假名" }));
+    await user.click(screen.getByRole("button", { name: "假名" }));
     expect(queryPitchLabel(/^くるま、重音/)).not.toBeInTheDocument();
     expect(queryPitchLabel(/^すきな、重音/)).not.toBeInTheDocument();
     expect(screen.queryByText("くるま")).not.toBeInTheDocument(); // 讀音不以任何形式出現
@@ -412,9 +455,8 @@ describe("LessonDetail", () => {
       screen.getByRole("button", { name: "加入複習:あそびます" }),
     );
     expect(addCards).toHaveBeenCalledWith(["L13-V001"], 13);
-    expect(
-      await screen.findByLabelText("あそびます 已加入複習"),
-    ).toBeInTheDocument();
+    // 勾勾圖示旁的 sr-only 文字(不把 aria-label 掛在無語意的 span 上)
+    expect(await within(vocabRow("玩、遊玩")).findByText("已加入複習")).toHaveClass("sr-only");
   });
 
   it("整課加入複習:以全部 id 呼叫 addCards", async () => {
@@ -436,9 +478,7 @@ describe("LessonDetail", () => {
     render(<LessonDetail id={13} />);
     await screen.findByText("玩、遊玩");
 
-    expect(
-      await screen.findByLabelText("あそびます 已加入複習"),
-    ).toBeInTheDocument();
+    expect(await within(vocabRow("玩、遊玩")).findByText("已加入複習")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "加入複習:あそびます" }),
     ).not.toBeInTheDocument();
@@ -449,13 +489,57 @@ describe("LessonDetail", () => {
     existingCardIds.mockResolvedValue(["L13-V001"]);
     const user = userEvent.setup();
     render(<LessonDetail id={13} />);
-    await screen.findByLabelText("あそびます 已加入複習");
+    await screen.findByRole("button", { name: "標記已會:あそびます" });
 
     // 標記已會 → setWordSuspended(true)(以字為單位)→ 轉為恢復鈕
     await user.click(screen.getByRole("button", { name: "標記已會:あそびます" }));
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
-    await user.click(await screen.findByRole("button", { name: "恢復複習:あそびます" }));
+    const restore = await screen.findByRole("button", { name: "恢復複習:あそびます" });
+    passRowGuard();
+    await user.click(restore);
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", false);
+  });
+
+  it("連點兩下 +:第二下落在換上的「已會」也不生效(換鈕後 300ms 內忽略該列點擊)", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    await user.click(screen.getByRole("button", { name: "加入複習:あそびます" }));
+    const known = await screen.findByRole("button", { name: "標記已會:あそびます" });
+    await user.click(known); // 連點的第二下
+    expect(setWordSuspended).not.toHaveBeenCalled();
+    expect(within(vocabRow("玩、遊玩")).getByText("已加入複習")).toBeInTheDocument();
+
+    // 其他列不受影響;同一列過了防護時間即可操作
+    await user.click(screen.getByRole("button", { name: "加入複習:ほしい" }));
+    expect(addCards).toHaveBeenLastCalledWith(["L13-V002"], 13);
+    passRowGuard();
+    await user.click(known);
+    expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
+  });
+
+  it("鍵盤操作列內鈕:換鈕後焦點交給同一列的新鈕(不掉到 body)", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    screen.getByRole("button", { name: "加入複習:あそびます" }).focus();
+    await user.keyboard("{Enter}");
+    expect(addCards).toHaveBeenCalledWith(["L13-V001"], 13);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "標記已會:あそびます" })).toHaveFocus(),
+    );
+
+    passRowGuard();
+    await user.keyboard("{Enter}");
+    expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "恢復複習:あそびます" })).toHaveFocus(),
+    );
   });
 
   it("已暫停的單字初始顯示恢復鈕(以字查詢暫停狀態)", async () => {

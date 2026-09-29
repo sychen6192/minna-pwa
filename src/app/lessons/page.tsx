@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Loading } from "@/components/Loading";
 import { getLessonIndex } from "@/lib/content";
 import { db } from "@/lib/db";
 import { jaLang } from "@/lib/lang";
@@ -60,11 +61,7 @@ export default function LessonsPage() {
         </p>
       )}
 
-      {!error && !index && (
-        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-          載入中…
-        </p>
-      )}
+      {!error && !index && <Loading />}
 
       {index && (
         <ul>
