@@ -72,11 +72,11 @@ describe("content-lint × 真實資料:error 規則", () => {
     },
   );
 
-  // T12.2 已修 L04-V050、L41-G04、L43-D08、L48-V011(fix-content);T12.3 修 L47-V004..006;
+  // T12.2 已修 L04-V050、L41-G04、L43-D08、L48-V011,T12.3 已修 L47-V004..006(fix-content);
   // T12.4 修会話標題行並移除待修機制。每修一筆,這裡與 PENDING_FIXES 同步刪除。
-  // 連訊息一起釘:待修清單以 id 比對,同一欄位新增的問題(如 L47-V004 被改成另一個形狀仍不符的詞)
-  // 只會改變訊息,不釘訊息就會被待修項目蓋掉。
-  it("待修命中恰為 7 id / 7 筆,待修清單沒有多餘項", () => {
+  // 連訊息一起釘:待修清單以 id 比對,同一 id 新增的問題(如 L23-D01 被改成另一句仍缺 speaker
+  // 的行)只會改變訊息,不釘訊息就會被待修項目蓋掉。
+  it("待修命中恰為 4 id / 4 筆,待修清單沒有多餘項", () => {
     expect(result.stalePending).toEqual([]);
     expect(
       Object.fromEntries(
@@ -88,11 +88,6 @@ describe("content-lint × 真實資料:error 規則", () => {
           ]),
       ),
     ).toEqual({
-      "verb-class-shape": [
-        "L47-V004 動I「します」末詞為します,應為動III",
-        "L47-V005 動I「します」末詞為します,應為動III",
-        "L47-V006 動I「します」末詞為します,應為動III",
-      ],
       "dialogue-speaker": [
         "L15-D01 speaker=「（標題）」 ご家族は?",
         "L23-D01 speaker=(無) どうやって 行きますか",
@@ -100,7 +95,7 @@ describe("content-lint × 真實資料:error 規則", () => {
         "L41-D01 speaker=(無) 荷物を 預かって いただけませんか",
       ],
     });
-    expect(result.pendingCount).toBe(7);
+    expect(result.pendingCount).toBe(4);
     expect(result.errorCount).toBe(0);
   });
 });
@@ -162,12 +157,11 @@ const WARNING_IDS: Record<string, string[]> = {
     "L44-V008",
     "L44-V009",
   ],
-  // 每組以首個 id 代表;L06-V010 します 組於 T12.3 消失
+  // 每組以首個 id 代表;L06-V010 します 組(L47-V004..006 誤標動I)已於 T12.3 修正
   "pos-inconsistent": [
     "L03-V005",
     "L03-V006",
     "L05-V037",
-    "L06-V010",
     "L10-V027",
     "L14-V030",
     "L36-V038",

@@ -106,6 +106,45 @@ export const CORRECTIONS: readonly Correction[] = [
     reason:
       "自譯中文人名的日文中點・(U+30FB)→ ·(U+00B7),與 L01「邁克·米勒」一致",
   },
+  // ---- T12.3:資料修正清單 1(動詞分類) ----
+  {
+    kind: "field",
+    lesson: 7,
+    id: "L07-V006",
+    field: "pos",
+    from: "動I",
+    to: "動II",
+    reason:
+      "借ります(辞書形 借りる)為Ⅱ類;誤標為動I 會推導出「借らない」「借って」(形狀規則無法區分い段的動I/動II,只靠資料測試釘住)",
+  },
+  {
+    kind: "field",
+    lesson: 47,
+    id: "L47-V004",
+    field: "pos",
+    from: "動I",
+    to: "動III",
+    reason:
+      "〔音／声が〜〕します 即 する,為Ⅲ類(與 L06-V010 します 同一動詞);誤標為動I 會推導出「さない」「す」",
+  },
+  {
+    kind: "field",
+    lesson: 47,
+    id: "L47-V005",
+    field: "pos",
+    from: "動I",
+    to: "動III",
+    reason: "〔味が〜〕します:同上",
+  },
+  {
+    kind: "field",
+    lesson: 47,
+    id: "L47-V006",
+    field: "pos",
+    from: "動I",
+    to: "動III",
+    reason: "〔においが〜〕します:同上",
+  },
 ];
 
 // ---------- 宣告檢查 ----------

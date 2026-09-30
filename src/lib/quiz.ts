@@ -274,7 +274,7 @@ export function pickDistractors(
   pool: QuizCandidate[],
   count: number,
   rng: Rng = Math.random,
-  /** 選項顯示的文字:給定時選項間(含正解)此值也不重複(聽力的中文、填空的日文表面形) */
+  /** 選項顯示的文字:給定時選項間(含正解)此值也不重複(日→中與聽力的中文、中→日與填空的日文表面形) */
   distinctBy?: (c: QuizCandidate) => string,
 ): QuizCandidate[] {
   const usable = pool.filter(
@@ -576,7 +576,15 @@ function makeMcq(
   rng: Rng,
 ): McqQuestion {
   if (type !== "listen") {
-    const distractors = pickDistractors(answer, pool, optionCount - 1, rng);
+    // 選項顯示的文字不重複(F3.2):日→中顯示中文;中→日只顯示 ruby、不顯示 note,
+    // 同表面不同義的字(L47 します〔音／声が〜〕〔味が〜〕〔においが〜〕、出ます)看起來一樣
+    const distractors = pickDistractors(
+      answer,
+      pool,
+      optionCount - 1,
+      rng,
+      type === "jp-to-zh" ? (c) => c.meaning : surfaceOf,
+    );
     return { type, answer, options: withOptions(answer, distractors, rng) };
   }
   // 聽力:選項為中文,彼此不重複;讀音相同的字(平/片假名寫法不同亦同)聽不出差別、

@@ -1375,6 +1375,41 @@ describe("pickDistractors distinctBy / parseQuizTypes(T11.8)", () => {
     expect(d.map((c) => c.meaning).sort()).toEqual(["貓", "鳥"]);
   });
 
+  it("日→中、中→日:選項顯示的文字(中文 / 日文表面形)不重複(F3.2)", () => {
+    // L47 的動III:3 個「します」〔音／声が〜〕〔味が〜〕〔においが〜〕的 ruby 相同(中→日不顯示 note)
+    const pool = [
+      cand("L47-V003", 47, "動III", "長壽", "長生きします"),
+      cand("L47-V004", 47, "動III", "有〔響動／聲音〕", "します"),
+      cand("L47-V005", 47, "動III", "有〔味道〕", "します"),
+      cand("L47-V006", 47, "動III", "有〔氣味〕", "します"),
+      cand("L47-V031", 47, "動III", "訂婚", "婚約します"),
+      cand("L47-V040", 47, "名", "狗", "いぬ"),
+      cand("L47-V041", 47, "名", "狗", "こいぬ"), // 與 いぬ 同中文
+      cand("L47-V042", 47, "名", "貓", "ねこ"),
+      cand("L47-V043", 47, "名", "鳥", "とり"),
+    ];
+    const shownBy = {
+      "jp-to-zh": (c: QuizCandidate) => c.meaning,
+      "zh-to-jp": (c: QuizCandidate) => c.ruby.map((s) => s.b).join(""),
+    };
+    for (const type of ["jp-to-zh", "zh-to-jp"] as const) {
+      for (let seed = 1; seed <= 20; seed++) {
+        const qs = generateQuiz(47, pool, {
+          types: [type],
+          count: pool.length,
+          rng: seeded(seed),
+        });
+        expect(qs).toHaveLength(pool.length);
+        for (const q of qs) {
+          const shown = (q as McqQuestion).options.map((o) =>
+            shownBy[type](o.candidate),
+          );
+          expect(new Set(shown).size, `${type} ${shown.join(" / ")}`).toBe(4);
+        }
+      }
+    }
+  });
+
   it("parseQuizTypes:只留已知題型、依固定順序;無效時 null", () => {
     expect(parseQuizTypes(["listen", "cloze", "jp-to-zh", "jp-to-zh"])).toEqual(
       ["jp-to-zh", "cloze", "listen"],

@@ -110,6 +110,16 @@ const lessons: Lesson[] = readdirSync(lessonsDir)
 const surface = (segs: RubySeg[]) => segs.map((s) => s.b).join("");
 /** 出題對象:補充單字不出題 */
 const targets = (l: Lesson) => l.vocab.filter((v) => !isSupplementary(v));
+/** 同 QuizRunner:目標課 + 前後兩課 */
+const poolFor = (id: number): QuizCandidate[] =>
+  lessons
+    .filter((l) => Math.abs(l.id - id) <= 2)
+    .flatMap((l) => l.vocab.map((v) => ({ ...v, lessonId: l.id })));
+/** 可重現的偽亂數(Park–Miller) */
+const seeded = (seed: number) => {
+  let x = seed;
+  return () => ((x = (x * 16807) % 2147483647) - 1) / 2147483646;
+};
 
 describe("例句填空 × 全部教材(T11.8)", () => {
   const clozes = lessons.flatMap((l) =>
@@ -215,11 +225,6 @@ describe("聽力題 × 全部教材(T11.8)", () => {
 });
 
 describe("聽力、填空的干擾項 × 教材:可互換的字不同時出現(T11.8)", () => {
-  /** 同 QuizRunner:目標課 + 前後兩課 */
-  const poolFor = (id: number): QuizCandidate[] =>
-    lessons
-      .filter((l) => Math.abs(l.id - id) <= 2)
-      .flatMap((l) => l.vocab.map((v) => ({ ...v, lessonId: l.id })));
   /** 同時當選項會都算對的字(中譯分不出來、禮貌形、同義) */
   const pairs: [number, string, string][] = [
     [2, "それ", "あれ"],
@@ -243,13 +248,11 @@ describe("聽力、填空的干擾項 × 教材:可互換的字不同時出現(T
         const lesson = lessons.find((l) => l.id === lessonId);
         const pool = poolFor(lessonId);
         for (let seed = 1; seed <= 30; seed++) {
-          let x = seed;
-          const rng = () => ((x = (x * 16807) % 2147483647) - 1) / 2147483646;
           const qs = generateQuiz(lessonId, pool, {
             types: [type],
             lesson,
             listenAvailable: true,
-            rng,
+            rng: seeded(seed),
           });
           for (const q of qs) {
             if (q.type === "input") continue;
@@ -267,6 +270,40 @@ describe("聽力、填空的干擾項 × 教材:可互換的字不同時出現(T
         }
       }
       expect(checked).toBeGreaterThan(100);
+    },
+    SLOW_TEST_TIMEOUT,
+  );
+});
+
+describe("日→中、中→日的選項 × 全部教材:顯示的文字不重複(F3.2)", () => {
+  // 中→日只顯示 ruby、不顯示 note:同表面不同義的字(L47 的 3 個 します、出ます〔バスが〜〕〔本が〜〕…)
+  // 不同時當選項;T12.3 詞性修正後 L47 的 します 與 長生きします、婚約します 同為動III
+  it.each([["jp-to-zh"], ["zh-to-jp"]] as QuestionType[][])(
+    "%s",
+    (type) => {
+      const shown = (c: QuizCandidate) =>
+        type === "jp-to-zh" ? c.meaning : surface(c.ruby);
+      const dups: string[] = [];
+      let checked = 0;
+      for (const l of lessons) {
+        const pool = poolFor(l.id);
+        for (let seed = 1; seed <= 5; seed++) {
+          const qs = generateQuiz(l.id, pool, {
+            types: [type],
+            count: pool.length,
+            rng: seeded(seed),
+          });
+          for (const q of qs) {
+            if (q.type === "input") continue;
+            checked++;
+            const texts = q.options.map((o) => shown(o.candidate));
+            if (new Set(texts).size !== texts.length)
+              dups.push(`${q.answer.id} ${texts.join(" / ")}`);
+          }
+        }
+      }
+      expect(checked).toBeGreaterThan(10000);
+      expect([...new Set(dups)]).toEqual([]);
     },
     SLOW_TEST_TIMEOUT,
   );

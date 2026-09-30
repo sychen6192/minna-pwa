@@ -746,11 +746,10 @@ export const RULES: readonly LintRule[] = [
 
 /**
  * 待修清單(2026-09-30 實測 11 id / 12 筆;T12.2 修正 L04-V050、L41-G04、L43-D08、
- * L48-V011 後剩 7 id / 7 筆)。修正任務每完成一項就刪掉對應 id:T12.3 刪 L47-V004..006;
- * T12.4 刪会話標題行並移除本機制。
+ * L48-V011 後剩 7 id / 7 筆;T12.3 修正 L47-V004..006 後剩 4 id / 4 筆)。修正任務每完成
+ * 一項就刪掉對應 id:T12.4 刪会話標題行並移除本機制。
  */
 export const PENDING_FIXES: PendingFixes = {
-  "verb-class-shape": ["L47-V004", "L47-V005", "L47-V006"], // します 動I → 動III
   "dialogue-speaker": ["L15-D01", "L23-D01", "L24-D01", "L41-D01"], // 会話標題行
 };
 
