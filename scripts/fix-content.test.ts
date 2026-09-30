@@ -227,6 +227,37 @@ describe("fixLesson:狀態與拒絕", () => {
       "L01:寫入核對失敗(有 LessonSchema 不認得、會被丟棄的 key)",
     );
   });
+
+  it("parseLesson:JSON 語法錯誤與不符 LessonSchema 皆丟一行訊息(欄位路徑:訊息),不丟原始 ZodError", () => {
+    expect(() => parseLesson(RAW.replace('"id": 1,', '"id": 1,,'))).toThrow(
+      /^JSON 解析失敗:/,
+    );
+    const bad = RAW.replace('"pos": "名"', '"pos": "名詞"');
+    expect(() => parseLesson(bad)).toThrow(
+      /^不符 LessonSchema:vocab\.1\.pos:[^\n]+$/,
+    );
+    expect(() => fixLesson(bad, [])).toThrow(
+      /^不符 LessonSchema:vocab\.1\.pos:/,
+    );
+  });
+
+  it("CRLF 課程檔:有待套用項即明確報換行格式(不寫入);全部已套用則原文不變", () => {
+    const crlf = RAW.replace(/\n/g, "\r\n");
+    const c = fc({
+      id: "L01-V001",
+      field: "kana",
+      from: "え―と",
+      to: "えーと",
+    });
+    expect(() => fixLesson(crlf, [c])).toThrow("課程檔為 CRLF 換行,請轉為 LF");
+    const applied = fc({
+      id: "L01-V002",
+      field: "meaning",
+      from: "x",
+      to: "再入境簽証",
+    });
+    expect(fixLesson(crlf, [applied]).text).toBe(crlf);
+  });
 });
 
 /** 合成課程檔:会話第一行是標題(L24 寫法:speaker「標題」);台詞有逐段換行與單行兩種 ruby 排版 */

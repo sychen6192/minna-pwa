@@ -9,7 +9,6 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import type { ZodError, ZodType } from "zod";
 import {
   LessonIndexSchema,
@@ -22,7 +21,6 @@ import {
   formatReport,
   lintContent,
   parseReportArgs,
-  punctuationSummary,
 } from "./content-lint";
 
 const DATA_DIR = "public/data";
@@ -156,26 +154,17 @@ function main(): void {
   });
   console.log("");
   for (const line of formatReport(lint, args)) console.log(line);
-  // T12.6 起中文欄位標點全為全形(error 規則 zh-punct 把關):有半形時才列比例(如 PDF 重新抽取後)
-  const punct = args.rule === undefined ? punctuationSummary(lessons) : [];
-  if (punct.length > 0) {
-    console.log("\n中文欄位標點(半形:全形):");
-    for (const line of punct) console.log(`  ${line}`);
-  }
   if (lint.errorCount > 0) {
     process.exitCode = 1;
   }
 }
 
-// 直接執行才跑 main(測試只 import 純函式的 content-lint.ts,不 import 本檔)
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
-  try {
-    main();
-  } catch (e: unknown) {
-    console.error(e instanceof Error ? e.message : e);
-    process.exit(1);
-  }
+// 無條件執行:本檔只作為 CLI(測試 import 的是純函式的 content-lint.ts,CLI 行為由
+// scripts/cli.test.ts 以子行程驗證)。不加「直接執行才跑」的守門——守門判斷失準時驗證關卡
+// 會靜默 exit 0。
+try {
+  main();
+} catch (e: unknown) {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
 }

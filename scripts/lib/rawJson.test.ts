@@ -101,6 +101,15 @@ describe("objectSpanAt / findObjectById", () => {
       "找不到結尾",
     );
   });
+
+  it("CRLF 檔(以「\\n」切行後每行尾端留有 \\r)明確報換行格式,不誤報「不是物件開頭」", () => {
+    const crlf = RAW.replace(/\n/g, "\r\n").split("\n");
+    expect(() => findObjectById(crlf, "L01-V001")).toThrow(
+      "第 4 行以 CR 結尾:課程檔為 CRLF 換行,請轉為 LF",
+    );
+    const title = crlf.indexOf('  "dialogueTitle": {\r');
+    expect(() => objectSpanAt(crlf, title)).toThrow("CRLF 換行");
+  });
 });
 
 describe("replaceStringValue", () => {

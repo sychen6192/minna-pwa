@@ -21,14 +21,15 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import type { ZodError } from "zod";
 import {
   LessonSchema,
   type Lesson,
   type RubySeg,
   type Sentence,
 } from "../src/schemas/lesson";
+import { inFile, isMain } from "./lib/cli";
 import {
   findObjectById,
   replaceStringValue,
@@ -896,11 +897,28 @@ function applyCorrection(lines: string[], model: Lesson, c: Correction): void {
 
 // ---------- 套用 ----------
 
-/** 解析課程檔並以 LessonSchema 驗證;回傳 JSON.parse 的結果(保留原檔 key 順序) */
+/** Zod 錯誤的一行摘要:「欄位路徑:訊息」以「; 」串接 */
+const issuesOf = (error: ZodError) =>
+  error.issues.map((i) => `${i.path.join(".")}:${i.message}`).join("; ");
+
+/**
+ * 解析課程檔並以 LessonSchema 驗證;回傳 JSON.parse 的結果(保留原檔 key 順序)。
+ * 失敗時丟出一行的錯誤訊息(JSON 語法錯誤或「欄位路徑:訊息」),檔名由呼叫端的 inFile 加上。
+ */
 export function parseLesson(raw: string): Lesson {
-  const json: unknown = JSON.parse(raw);
-  LessonSchema.parse(json);
-  return json as Lesson; // 型別由上一行的 parse 保證;不用 Zod 輸出,因其 key 依 schema 順序
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (e: unknown) {
+    throw new Error(
+      `JSON 解析失敗:${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  const parsed = LessonSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new Error(`不符 LessonSchema:${issuesOf(parsed.error)}`);
+  }
+  return json as Lesson; // 型別由上面的 safeParse 保證;不用 Zod 輸出,因其 key 依 schema 順序
 }
 
 export interface CorrectionResult {
@@ -935,10 +953,9 @@ export function verifyWritten(
   }
   const parsed = LessonSchema.safeParse(actual);
   if (!parsed.success) {
-    const issues = parsed.error.issues
-      .map((i) => `${i.path.join(".")}:${i.message}`)
-      .join("; ");
-    throw new Error(`${tag}:寫入核對失敗(不符 LessonSchema:${issues})`);
+    throw new Error(
+      `${tag}:寫入核對失敗(不符 LessonSchema:${issuesOf(parsed.error)})`,
+    );
   }
   if (!isDeepStrictEqual(parsed.data, actual)) {
     throw new Error(
@@ -1064,12 +1081,14 @@ function main(): void {
   // 全部課程核對通過才寫檔,不留下只改一半的資料
   const fixes = lessons.map((n) => {
     const file = join(LESSONS_DIR, `L${String(n).padStart(2, "0")}.json`);
-    const raw = readFileSync(file, "utf8");
-    const fix = fixLesson(
-      raw,
-      CORRECTIONS.filter((c) => c.lesson === n),
-    );
-    return { file, raw, fix };
+    return inFile(file, () => {
+      const raw = readFileSync(file, "utf8");
+      const fix = fixLesson(
+        raw,
+        CORRECTIONS.filter((c) => c.lesson === n),
+      );
+      return { file, raw, fix };
+    });
   });
   if (!args.check) {
     for (const { file, raw, fix } of fixes) {
@@ -1085,10 +1104,7 @@ function main(): void {
 }
 
 // 直接執行才跑 main(測試 import 純函式時不觸發)
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   try {
     main();
   } catch (e: unknown) {

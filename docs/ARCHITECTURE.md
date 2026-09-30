@@ -78,6 +78,7 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
 │   ├── normalize-zh-punct.ts   # pnpm normalize:zh-punct(中文標點全形化,手術式寫回 public/data)
 │   ├── lib/rawJson.ts          # 課程 JSON 手術式字串替換(不整檔重寫;fix-content、normalize-zh-punct 共用)
 │   ├── lib/zhPunct.ts          # 中文標點規則 normalizeZhPunct 與中文欄位清單(normalize-zh-punct、content-lint 共用)
+│   ├── lib/cli.ts              # 內容腳本 CLI 共用:isMain(以真實路徑判斷直接執行)、inFile(錯誤訊息標上檔名)
 │   └── precache-entries.ts     # SW precache 條目(/data/**、public/)
 └── src/
     ├── app/

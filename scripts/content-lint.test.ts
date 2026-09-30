@@ -13,7 +13,6 @@ import {
   JA_GLYPH_BLACKLIST,
   lintContent,
   parseReportArgs,
-  punctuationSummary,
   RULES,
   stripQuotedJapanese,
   type LintContext,
@@ -1032,19 +1031,5 @@ describe("parseReportArgs", () => {
     ]) {
       expect(parseReportArgs(argv)).toHaveProperty("error");
     }
-  });
-});
-
-describe("punctuationSummary", () => {
-  it("各中文欄位的半形:全形個數;逗號不計千分位,只列有半形的標點", () => {
-    const l = withVocab({ meaning: "書,本(冊)" });
-    l.grammar[0].explanation = "表示;斷定：例如 1,000。";
-    l.grammar[0].examples[0].translation = "是書，1,000日圓,好嗎?";
-    l.dialogues[0].translation = "是的！";
-    expect(punctuationSummary([l])).toEqual([
-      "meaning:逗號 1:0、括號 2:0",
-      "explanation:分號 1:0",
-      "translation:逗號 1:1、問號 1:0",
-    ]);
   });
 });

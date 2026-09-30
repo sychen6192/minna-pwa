@@ -30,12 +30,13 @@ describe("normalizeZhPunct", () => {
     ]);
   });
 
-  it("R2 ; → ；、R3 : → ：(數字之間的時刻 10:00 保留)、R4 ? ! → ？ ！", () => {
+  it("R2 ; → ；、R3 : → ：(左右皆為數字的時刻 10:00 才保留)、R4 ? ! → ？ ！", () => {
     expectAll([
       ["現在;過去", "現在；過去"],
       ["過去:肯定", "過去：肯定"],
       ["10:00 出發", "10:00 出發"],
       ["例:1", "例：1"],
+      ["句1:表示", "句1：表示"],
       ["好嗎?", "好嗎？"],
       ["那可不行啊!", "那可不行啊！"],
       ["呢?(第26課)", "呢？（第26課）"],
@@ -55,11 +56,12 @@ describe("normalizeZhPunct", () => {
     ]);
   });
 
-  it("R6 刪除轉換標點兩側的 ASCII 空白;分かち書き、數字旁與既有全形標點旁的空白保留", () => {
+  it("R6 刪除轉換標點兩側的 ASCII 空白(含連續空白);分かち書き、數字旁與既有全形標點旁的空白保留", () => {
     expectAll([
       ["形容詞有 1) 成為受詞,和 2) 修飾", "形容詞有 1）成為受詞，和 2）修飾"],
       ["動詞。 (2) お動詞", "動詞。（2）お動詞"],
       ["好嗎 ? 是 , 的", "好嗎？是，的"],
+      ["是書   ,   也是筆", "是書，也是筆"],
       ["動詞て形 あげます:表現", "動詞て形 あげます：表現"],
       ["的形式。 「できます」", "的形式。 「できます」"],
       ["利用 ﹐ 用", "利用，用"],
@@ -85,10 +87,11 @@ describe("normalizeZhPunct", () => {
     ]);
   });
 
-  it("R9 ～(U+FF5E)→ 〜(U+301C)", () => {
+  it("R9 ～(U+FF5E)→ 〜(U+301C);不算 R6 的轉換標點,兩側空白保留", () => {
     expectAll([
       ["表示“作為～的證明”", "表示“作為〜的證明”"],
       ["將「～だ」改成「～な」", "將「〜だ」改成「〜な」"],
+      ["作為 ～ 的證明", "作為 〜 的證明"],
     ]);
   });
 
@@ -246,6 +249,21 @@ describe("normalizeLesson:原始 JSON 手術式改寫", () => {
       '"pos": "名",\n      "memo": "x"\n',
     );
     expect(() => normalizeLesson(extra)).toThrow("會被丟棄的 key");
+  });
+
+  it("CRLF 課程檔:有待改項即明確報換行格式(含只有会話標題待改);全部已正規化則原文不變", () => {
+    const crlf = (text: string) => text.replace(/\n/g, "\r\n");
+    expect(() => normalizeLesson(crlf(RAW))).toThrow(
+      "課程檔為 CRLF 換行,請轉為 LF",
+    );
+    const titleOnly = result.text.replace('"您的家人呢？"', '"您的家人呢?"');
+    expect(changesOf(normalizeLesson(titleOnly)).map((v) => v.id)).toEqual([
+      "L01:dialogueTitle",
+    ]);
+    expect(() => normalizeLesson(crlf(titleOnly))).toThrow(
+      "課程檔為 CRLF 換行,請轉為 LF",
+    );
+    expect(normalizeLesson(crlf(result.text)).text).toBe(crlf(result.text));
   });
 });
 

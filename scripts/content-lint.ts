@@ -10,7 +10,7 @@
  * - warning:需人工判斷(多半要對照 PDF),只列出、永不影響結束碼。
  */
 import type { Lesson, LessonIndex, RubySeg } from "../src/schemas/lesson";
-import { normalizeZhPunct, zhValues } from "./lib/zhPunct";
+import { dialogueTitleId, normalizeZhPunct, zhValues } from "./lib/zhPunct";
 
 export type Severity = "error" | "warning";
 
@@ -59,12 +59,13 @@ interface Line extends RubyItem {
 }
 
 const examplesOf = (l: Lesson): Line[] => l.grammar.flatMap((g) => g.examples);
-/** 会話標題沒有 id:以「L15:dialogueTitle」回報 */
-const dialogueTitleId = (l: Lesson) => `${lessonTag(l.id)}:dialogueTitle`;
 /** 帶中譯的句子:文法例句、会話標題(有標題的課才有)、会話 */
 const sentencesOf = (l: Lesson): Line[] => [
   ...examplesOf(l),
-  ...(l.dialogueTitle ? [{ id: dialogueTitleId(l), ...l.dialogueTitle }] : []),
+  // 会話標題沒有 id:以「L15:dialogueTitle」回報(與 zhPunct、normalize-zh-punct 共用)
+  ...(l.dialogueTitle
+    ? [{ id: dialogueTitleId(l.id), ...l.dialogueTitle }]
+    : []),
   ...l.dialogues,
 ];
 /** 所有帶 ruby 的項目:單字、文法例句、会話標題、会話 */
@@ -903,36 +904,4 @@ export function formatReport(
       `;warning ${nRules("warning")} 條 ${result.warningCount} 筆(不影響結束碼)`,
   );
   return lines;
-}
-
-/**
- * 中文欄位(meaning、explanation、translation)的標點「半形:全形」個數,每個欄位一行
- * (彙總,不逐筆列;只列有半形的標點;逗號不計千分位)。
- */
-export function punctuationSummary(lessons: readonly Lesson[]): string[] {
-  const pairs: [string, RegExp, RegExp][] = [
-    ["逗號", /,(?!\d{3})/g, /，/g],
-    ["括號", /[()]/g, /[（）]/g],
-    ["問號", /\?/g, /？/g],
-    ["驚嘆號", /!/g, /！/g],
-    ["冒號", /:/g, /：/g],
-    ["分號", /;/g, /；/g],
-  ];
-  const byField = new Map<string, string[]>();
-  for (const l of lessons) {
-    for (const f of textFields(l)) {
-      if (f.lang === "zh")
-        byField.set(f.field, [...(byField.get(f.field) ?? []), f.text]);
-    }
-  }
-  const countAll = (texts: string[], re: RegExp) =>
-    texts.reduce((n, t) => n + (t.match(re)?.length ?? 0), 0);
-  return [...byField].flatMap(([field, texts]) => {
-    const parts = pairs.flatMap(([name, half, full]) => {
-      const h = countAll(texts, half);
-      const w = countAll(texts, full);
-      return h > 0 ? [`${name} ${h}:${w}`] : [];
-    });
-    return parts.length === 0 ? [] : [`${field}:${parts.join("、")}`];
-  });
 }

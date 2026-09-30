@@ -13,15 +13,15 @@
  *
  * 寫法比照 fix-content.ts:純函式核心、直接執行才跑 main;課程檔排版不一,不得整檔重寫——
  * 以 scripts/lib/rawJson.ts 定位物件、只替換目標字串值;寫入前重新 parse,與「記憶體中
- * 正規化的預期模型」核對值與 key 順序並以 LessonSchema 驗證(fix-content 的 verifyWritten),
- * 另核對行數不變;50 課全部核對通過才寫檔。先印摘要(各欄位筆數、各規則字數、保留的千分位
+ * 正規化的預期模型」核對值與 key 順序並以 LessonSchema 驗證(fix-content 的 verifyWritten);
+ * 50 課全部核對通過才寫檔。先印摘要(各欄位筆數、各規則字數、保留的千分位
  * 與特例);--check 不寫檔,有待改項 exit 1;--list 另逐筆列出改動。
  */
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import type { Lesson } from "../src/schemas/lesson";
 import { parseLesson, verifyWritten } from "./fix-content";
+import { inFile, isMain } from "./lib/cli";
 import {
   findObjectById,
   objectSpanAt,
@@ -62,9 +62,12 @@ function targetOf(l: Lesson, id: string): Record<string, unknown> {
   return hits[0] as Record<string, unknown>;
 }
 
-const DIALOGUE_TITLE_LINE_RE = /^\s*"dialogueTitle": \{$/;
+const DIALOGUE_TITLE_LINE_RE = /^\s*"dialogueTitle": \{\r?$/;
 
-/** 原文中值所在物件的行範圍:以 id 行定位;会話標題以唯一的 `"dialogueTitle": {` 行定位 */
+/**
+ * 原文中值所在物件的行範圍:以 id 行定位;会話標題以唯一的 `"dialogueTitle": {` 行定位
+ * (行尾容許 CR,讓 CRLF 檔由 objectSpanAt 報出明確的換行錯誤)
+ */
 function spanOf(
   lines: readonly string[],
   lesson: number,
@@ -103,8 +106,8 @@ const lessonTag = (id: number) => `L${String(id).padStart(2, "0")}`;
 
 /**
  * 對一課的原文正規化中文標點(純函式,不寫檔)。改動的值以 rawJson 手術式替換(物件範圍內
- * 恰好一處 `"key": "原值"`),同時改記憶體模型;改好的原文須與模型的值與 key 順序完全相同、
- * 通過 LessonSchema(verifyWritten)、行數不變,否則丟錯。
+ * 恰好一處 `"key": "原值"`,只改該行;JSON.stringify 不產生換行,行數不變),同時改記憶體模型;
+ * 改好的原文須與模型的值與 key 順序完全相同、通過 LessonSchema(verifyWritten),否則丟錯。
  */
 export function normalizeLesson(raw: string): LessonNormalization {
   const lesson = parseLesson(raw);
@@ -134,9 +137,6 @@ export function normalizeLesson(raw: string): LessonNormalization {
   }
   const text = lines.join("\n");
   verifyWritten(tag, text, expected);
-  if (lines.length !== raw.split("\n").length) {
-    throw new Error(`${tag}:寫入核對失敗(行數改變)`);
-  }
   const skippedMarkers = lesson.vocab.filter(
     (v) => v.note !== undefined && isSectionMarker(v.note),
   ).length;
@@ -316,8 +316,10 @@ function main(): void {
   // 全部課程核對通過才寫檔,不留下只改一半的資料
   const all = files.map((name) => {
     const file = join(LESSONS_DIR, name);
-    const raw = readFileSync(file, "utf8");
-    return { file, raw, result: normalizeLesson(raw) };
+    return inFile(file, () => {
+      const raw = readFileSync(file, "utf8");
+      return { file, raw, result: normalizeLesson(raw) };
+    });
   });
   const { lines, exitCode } = report(
     all.map((a) => a.result),
@@ -333,10 +335,7 @@ function main(): void {
 }
 
 // 直接執行才跑 main(測試 import 純函式時不觸發)
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   try {
     main();
   } catch (e: unknown) {

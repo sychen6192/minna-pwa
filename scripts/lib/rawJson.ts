@@ -20,7 +20,12 @@ export function objectSpanAt(
   lines: readonly string[],
   open: number,
 ): ObjectSpan {
-  const m = OPEN_RE.exec(lines[open] ?? "");
+  const line = lines[open] ?? "";
+  // 以「\n」切行後 CRLF 檔的每行尾端留有 \r,開頭與結尾都比對不到:明確指出換行格式
+  if (line.endsWith("\r")) {
+    throw new Error(`第 ${open + 1} 行以 CR 結尾:課程檔為 CRLF 換行,請轉為 LF`);
+  }
+  const m = OPEN_RE.exec(line);
   if (!m) throw new Error(`第 ${open + 1} 行不是物件開頭「{」`);
   const indent = m[1];
   for (let i = open + 1; i < lines.length; i++) {

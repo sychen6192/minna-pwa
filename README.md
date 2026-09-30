@@ -54,7 +54,7 @@ GitHub Actions:push `main` → verify + build → `wrangler pages deploy` 至 Cl
 
 - 首頁 JS(gzip)**165.3 KB** < N4 預算 200 KB(`next build` First Load 122 kB);預算只約束首頁,其他頁 First Load(未壓縮)如 `/stats` 284 kB(Recharts)、`/quiz/[id]` 202 kB、`/drill` 200 kB 不在範圍。量測方式見 `docs/reports/bundle.md`
 - Lighthouse(2026-07):PWA 類別滿分(lighthouse@11)、Accessibility **100**、Performance 97、SEO 100
-- 測試:75 檔 1592 例(lib 純函式全覆蓋 + 教材全資料測試(含 content-lint、資料修正與標點的釘住測試)+ 內容腳本 + UI 關鍵路徑;時間相關的測試以 `src/test/` 的共用 helper 明確控制時鐘與計時器)
+- 測試:76 檔 1601 例(lib 純函式全覆蓋 + 教材全資料測試(含 content-lint、資料修正與標點的釘住測試)+ 內容腳本(含 CLI 結束碼的子行程測試)+ UI 關鍵路徑;時間相關的測試以 `src/test/` 的共用 helper 明確控制時鐘與計時器)
 
 ## 已知限制
 
