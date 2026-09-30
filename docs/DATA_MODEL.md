@@ -122,7 +122,7 @@ export type GrammarPoint = z.infer<typeof GrammarPointSchema>;
     {
       "id": "L13-G01",
       "pattern": "(名詞)が ほしいです",
-      "explanation": "表達說話者想要某物。否定形:ほしくないです。",
+      "explanation": "表達說話者想要某物。否定形：ほしくないです。",
       "examples": [
         {
           "id": "L13-S01",
