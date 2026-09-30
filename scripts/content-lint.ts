@@ -306,6 +306,18 @@ const rubyRules: LintRule[] = [
         : null,
     ),
   },
+  {
+    // T12.1 為 warning;T12.5 以 fix-content 的 ruby 分段修正 9 段後升為 error
+    id: "ruby-r-scope",
+    severity: "error",
+    description:
+      "帶 r 的 ruby 段只含漢字或數字(furigana 不跨越記號與送り仮名:〜、…、「、います。不併入帶 r 的段)",
+    check: eachSegment((s) =>
+      s.r !== undefined && /[^\p{Script=Han}々〆ヶ0-9０-９,]/u.test(s.b)
+        ? segText(s)
+        : null,
+    ),
+  },
 ];
 
 // ---------- error:字元 ----------
@@ -623,16 +635,6 @@ const warningRules: LintRule[] = [
     ),
   },
   {
-    id: "ruby-r-scope",
-    severity: "warning",
-    description: "帶 r 的 ruby 段只含漢字或數字(記號、送り仮名應獨立成段)",
-    check: eachSegment((s) =>
-      s.r !== undefined && /[^\p{Script=Han}々〆ヶ0-9０-９,]/u.test(s.b)
-        ? segText(s)
-        : null,
-    ),
-  },
-  {
     id: "verb-not-masu",
     severity: "warning",
     description: "動詞 kana 不是ます形",
@@ -738,7 +740,7 @@ const warningRules: LintRule[] = [
   },
 ];
 
-/** error 15 條在前(T12.5 把 ruby-r-scope 升為 error、T12.6 加 zh-punct),warning 10 條在後 */
+/** error 16 條在前(T12.5 把 ruby-r-scope 升為 error;T12.6 加 zh-punct),warning 9 條在後 */
 export const RULES: readonly LintRule[] = [
   ...idRules,
   ...rubyRules,

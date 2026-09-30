@@ -96,6 +96,31 @@ describe("例句重組(全資料)", () => {
     }
   });
 
+  // T12.5 fix-content 把 furigana 跨越的「…」「「」切成獨立段(無讀音):切塊與可否出題不變
+  it.each([
+    ["L11-S05", false, ["…8つ", "買いました。"]],
+    ["L11-S07", false, ["…5人", "います。"]],
+    ["L11-S09", false, ["…2時間", "勉強します。"]],
+    ["L11-S11", false, ["…3年", "勉強しました。"]],
+    [
+      "L21-S12",
+      true,
+      ["ミラーさんは", "「来週", "東京へ", "出張します」と", "言いました。"],
+    ],
+  ] as const)(
+    "%s(ruby 分段,T12.5):可出題 %s,切塊不變",
+    (id, reorderable, texts) => {
+      const s = grammarExamples.find((x) => x.id === id);
+      if (!s) throw new Error(`找不到 ${id}`);
+      expect(
+        s.ruby.some((seg) => seg.b === "…" || seg.b === "「"),
+        "已分段",
+      ).toBe(true);
+      expect(isReorderable(s)).toBe(reorderable);
+      expect(chunkRuby(s.ruby).map(chunkText)).toEqual(texts);
+    },
+  );
+
   it("「→」活用對照行(12 行)不出題;会話標題(4 課)不在 dialogues、不在出題池", () => {
     const arrows = grammarExamples.filter((s) =>
       surfaceText(s.ruby).includes("→"),

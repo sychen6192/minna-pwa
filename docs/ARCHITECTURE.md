@@ -46,7 +46,7 @@ PDF 皆含文字層,原規劃的 PyMuPDF + Claude Message Batches 改為下表(A
 | 文字層抽取 | `pdftotext -layout`(poppler) |
 | 結構化抽取 | Claude Code 依 `docs/PIPELINE.md` 慣例直抽為 JSON;讀音由使用者人工校讀 |
 | 重音回填 | `pnpm enrich:accents`(kanjium,`scripts/enrich-accents.ts`) |
-| 資料修正 | `pnpm fix:content`(`scripts/fix-content.ts`):不需 PDF 的修正以宣告式清單 `CORRECTIONS`(現值 from → 修正值 to + 理由;另有会話標題行移入 `dialogueTitle` 並遞補 D id)手術式寫回(`scripts/lib/rawJson.ts` 以 id 行定位物件、只換目標字串,不整檔重寫),冪等;`--check` 只列狀態,有待套用項 exit 1。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住 |
+| 資料修正 | `pnpm fix:content`(`scripts/fix-content.ts`):不需 PDF 的修正以宣告式清單 `CORRECTIONS`(現值 from → 修正值 to + 理由;另有会話標題行移入 `dialogueTitle` 並遞補 D id,以及 ruby 分段——一段換成多段,串接的表面與讀音不變)手術式寫回(`scripts/lib/rawJson.ts` 以 id 行定位物件、只換目標字串,不整檔重寫),冪等;`--check` 只列狀態,有待套用項 exit 1。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住 |
 | 最終驗證 | `pnpm validate:content`(Zod,單一真相;通過後跑 content-lint `scripts/content-lint.ts`:error 規則失敗 exit 1,warning 只列出,`--all`/`--rule <id>` 印完整清單)。error 規則另由 `scripts/content-lint.data.test.ts` 在 `pnpm verify` 對真實資料執行 |
 
 ### 部署

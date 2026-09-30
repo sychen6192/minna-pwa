@@ -129,13 +129,23 @@ describe("例句填空 × 全部教材(T11.8)", () => {
   );
 
   it("可出填空的字數(記錄於 commit)與每課至少一字", () => {
-    expect(clozes).toHaveLength(370);
+    // T12.5 ruby 分段後 370 → 371:L11-V012(見下一個測試)
+    expect(clozes).toHaveLength(371);
     for (const l of lessons) {
       expect(
         clozes.filter((c) => c.l.id === l.id).length,
         `第 ${l.id} 課`,
       ).toBeGreaterThan(0);
     }
+  });
+
+  it("L11-V012 8つ 挖 L11-S05:T12.5 把「…8」(r=やっ)分成 {…}{8/やっ} 後,挖空不再切開帶讀音的段", () => {
+    expect(clozes.find((c) => c.v.id === "L11-V012")?.cloze).toEqual({
+      sentenceId: "L11-S05",
+      before: [{ b: "…" }],
+      after: [{ b: " " }, { b: "買", r: "か" }, { b: "いました。" }],
+      translation: "…買了 8 個。",
+    });
   });
 
   it("挖空處恰為單字表面形、同句只出現一次;前後段接回即原句", () => {
@@ -223,6 +233,53 @@ describe("聽力題 × 全部教材(T11.8)", () => {
       ["何", "方", "降ります", "開きます"].sort(),
     );
     for (const v of homographs) expect(listenText(v), v.id).toBe(speechText(v));
+  });
+});
+
+describe("ruby 分段的 4 個單字(T12.5):可答讀音、出題判定與朗讀文字不變", () => {
+  // fix-content 把 furigana 跨越的 〜 與送り仮名切成獨立段;讀音只取假名後不變,這些結果也不該變
+  it.each([
+    {
+      id: "L02-V036",
+      answers: ["ご"],
+      input: false,
+      listen: false,
+      listenAs: "ご",
+      speech: "ご",
+    },
+    {
+      id: "L02-V039",
+      answers: ["ちがいます"],
+      input: true,
+      listen: true,
+      listenAs: "違います。",
+      speech: "ちがいます",
+    },
+    {
+      id: "L23-V013",
+      answers: ["や"],
+      input: false,
+      listen: false,
+      listenAs: "や",
+      speech: "や",
+    },
+    {
+      id: "L37-V030",
+      answers: ["じゅう"],
+      input: false,
+      listen: false,
+      listenAs: "じゅう",
+      speech: "じゅう",
+    },
+  ])("$id", ({ id, answers, input, listen, listenAs, speech }) => {
+    const v = vocab.find((w) => w.id === id);
+    if (!v) throw new Error(`找不到 ${id}`);
+    expect(v.ruby, "已分段").toHaveLength(2);
+    expect(acceptedAnswers(v)).toEqual(answers);
+    expect(canInput(v)).toBe(input);
+    expect(canListen(v)).toBe(listen);
+    expect(listenText(v)).toBe(listenAs);
+    expect(speechText(v)).toBe(speech);
   });
 });
 

@@ -151,7 +151,7 @@ const seg = (b: string, r?: string): RubySeg =>
   r === undefined ? { b } : { b, r };
 
 describe("RULES", () => {
-  it("error 15 條、warning 10 條(T12.5 把 ruby-r-scope 升為 error、T12.6 加 zh-punct)", () => {
+  it("error 16 條、warning 9 條(T12.5 把 ruby-r-scope 升為 error;T12.6 加 zh-punct)", () => {
     const of = (s: string) =>
       RULES.filter((r) => r.severity === s).map((r) => r.id);
     expect(of("error")).toEqual([
@@ -163,6 +163,7 @@ describe("RULES", () => {
       "ruby-han-has-r",
       "ruby-r-hiragana",
       "ruby-r-target",
+      "ruby-r-scope",
       "text-hygiene",
       "ja-lookalike-dash",
       "kana-no-han-latin",
@@ -174,7 +175,6 @@ describe("RULES", () => {
     expect(of("warning")).toEqual([
       "kana-symbols",
       "kana-vs-ruby",
-      "ruby-r-scope",
       "verb-not-masu",
       "na-adjective-marker",
       "cross-lesson-duplicate",
@@ -333,6 +333,39 @@ describe("error:ruby", () => {
     expect(
       ids("ruby-r-target", withTitle({ ruby: [seg("は", "わ")] })),
     ).toEqual(["L01:dialogueTitle"]);
+  });
+
+  it("ruby-r-scope:帶 r 的段只含漢字或數字(furigana 不跨越記號與送り仮名)", () => {
+    expect(
+      ids(
+        "ruby-r-scope",
+        withVocab(
+          { ruby: [seg("違", "ちが"), seg("います。")] },
+          { ruby: [seg("〜"), seg("語", "ご")] },
+          { ruby: [seg("1,000", "せん")] },
+          { ruby: [seg("人々", "ひとびと")] },
+        ),
+        withExamples({ ruby: [seg("…"), seg("8", "やっ"), seg("つ")] }),
+      ),
+    ).toEqual([]);
+    expect(
+      messages(
+        "ruby-r-scope",
+        withVocab(
+          { ruby: [seg("違います。", "ちがいます")] },
+          { ruby: [seg("〜語", "ご")] },
+        ),
+        withExamples({ ruby: [seg("…8", "やっ"), seg("つ")] }),
+        withDialogues({ ruby: [seg("「来週", "らいしゅう")] }),
+        withTitle({ ruby: [seg("行き", "いき")] }),
+      ),
+    ).toEqual([
+      "L01-V001 「違います。」r=ちがいます",
+      "L01-V002 「〜語」r=ご",
+      "L01-S01 「…8」r=やっ",
+      "L01-D01 「「来週」r=らいしゅう",
+      "L01:dialogueTitle 「行き」r=いき",
+    ]);
   });
 });
 
@@ -714,32 +747,6 @@ describe("warning", () => {
     ).toEqual([
       "L01-V001 kana=しごと ruby=［お］しごと",
       "L01-V002 kana=ほんや ruby=ほん",
-    ]);
-  });
-
-  it("ruby-r-scope:帶 r 的段只含漢字或數字", () => {
-    expect(
-      ids(
-        "ruby-r-scope",
-        withVocab(
-          { ruby: [seg("違", "ちが"), seg("います。")] },
-          { ruby: [seg("1,000", "せん")] },
-        ),
-      ),
-    ).toEqual([]);
-    expect(
-      messages(
-        "ruby-r-scope",
-        withVocab(
-          { ruby: [seg("違います。", "ちがいます")] },
-          { ruby: [seg("〜語", "ご")] },
-        ),
-        withExamples({ ruby: [seg("…8", "やっ"), seg("つ")] }),
-      ),
-    ).toEqual([
-      "L01-V001 「違います。」r=ちがいます",
-      "L01-V002 「〜語」r=ご",
-      "L01-S01 「…8」r=やっ",
     ]);
   });
 

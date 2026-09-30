@@ -73,6 +73,41 @@ describe("fix-content × 真實資料", () => {
     ]);
   });
 
+  it("ruby 分段(T12.5):恰為 content-lint ruby-r-scope 原列的 9 段,串接的表面不變", () => {
+    const splits = CORRECTIONS.flatMap((c) =>
+      c.kind === "rubySplit" ? [c] : [],
+    );
+    expect(splits.map((c) => `${c.id} ${c.field}`)).toEqual([
+      "L02-V036 ruby.0",
+      "L02-V039 ruby.0",
+      "L11-S05 ruby.0",
+      "L11-S07 ruby.0",
+      "L11-S09 ruby.0",
+      "L11-S11 ruby.0",
+      "L21-S12 ruby.1",
+      "L23-V013 ruby.0",
+      "L37-V030 ruby.0",
+    ]);
+    const surfaces = splits.map((c) => {
+      const l = lessonOf(c.lesson);
+      const item = [...l.vocab, ...l.grammar.flatMap((g) => g.examples)].find(
+        (x) => x.id === c.id,
+      );
+      return `${c.id} ${item?.ruby.map((s) => s.b).join("")}`;
+    });
+    expect(surfaces).toEqual([
+      "L02-V036 〜語",
+      "L02-V039 違います。",
+      "L11-S05 …8つ 買いました。",
+      "L11-S07 …5人 います。",
+      "L11-S09 …2時間 勉強します。",
+      "L11-S11 …3年 勉強しました。",
+      "L21-S12 ミラーさんは 「来週 東京へ 出張します」と 言いました。",
+      "L23-V013 〜屋",
+      "L37-V030 〜中",
+    ]);
+  });
+
   it("L43-D08 只改中譯:speaker 與日文 ruby 的渡辺不動", () => {
     const d = lessonOf(43).dialogues.find((x) => x.id === "L43-D08");
     expect(d?.speaker).toBe("渡辺");

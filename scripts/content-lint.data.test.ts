@@ -73,8 +73,9 @@ describe("content-lint × 真實資料:error 規則", () => {
     },
   );
 
-  it("error 15 條全過", () => {
-    expect(RULES.filter((r) => r.severity === "error")).toHaveLength(15);
+  // ruby-r-scope 於 T12.5 由 warning 升為 error(fix-content 的 ruby 分段修正 9 段後為 0 筆)
+  it("error 16 條全過", () => {
+    expect(RULES.filter((r) => r.severity === "error")).toHaveLength(16);
     expect(result.errorCount).toBe(0);
   });
 
@@ -131,18 +132,6 @@ const WARNING_IDS: Record<string, string[]> = {
     "L25-V015",
     "L38-V022",
     "L42-V053",
-  ],
-  // furigana 跨越記號(PDF 清單 4;T12.5 重新分段並升為 error)
-  "ruby-r-scope": [
-    "L02-V036",
-    "L02-V039",
-    "L11-S05",
-    "L11-S07",
-    "L11-S09",
-    "L11-S11",
-    "L21-S12",
-    "L23-V013",
-    "L37-V030",
   ],
   "verb-not-masu": ["L40-V055"],
   "na-adjective-marker": [

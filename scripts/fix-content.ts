@@ -10,6 +10,8 @@
  * 会話標題(kind "dialogueTitle",T12.4):会話第一行完全等於宣告的 D01 且尚無 dialogueTitle
  * = 套用——ruby 與 translation 移入 `Lesson.dialogueTitle`(置於 dialogues 前)、刪除該行、
  * 後續 D id 自 D01 遞補;dialogueTitle 等於預期、D 自 01 連號且会話不含該句 = 已套用。
+ * ruby 分段(kind "rubySplit",T12.5):一段換成多段(furigana 不跨越記號與送り仮名),宣告時
+ * 須串接的 b 不變、讀音只取假名後不變;第 i 段完全等於 from = 套用,自第 i 段起等於 to = 已套用。
  *
  * 寫法比照 enrich-accents.ts:純函式核心、直接執行才跑 main。課程檔排版不一,不得整檔
  * 重寫:以 scripts/lib/rawJson.ts 定位物件、只替換目標字串;套用後每筆須呈已套用(冪等);
@@ -67,8 +69,31 @@ export interface DialogueTitleCorrection {
   reason: string;
 }
 
-/** 修正種類(T12.5 加 ruby 分段) */
-export type Correction = FieldCorrection | DialogueTitleCorrection;
+/**
+ * ruby 分段:第 i 段(from)換成多段(to),讀音不變——furigana 只標在漢字/數字上,記號與
+ * 送り仮名不併入帶 r 的段({違います。/ちがいます} → {違/ちが}{います。})。宣告檢查
+ * (validateCorrections):to 至少兩段、串接的 b 等於 from.b、讀音只取假名後相同(有 r 取 r,
+ * 否則取 b 中的假名),且各段合 content-lint 的 ruby 規則(含漢字者帶 r、帶 r 者只含漢字或數字)。
+ * 分段使其後的段號位移:同一項目的 ruby 只能有這一筆修正(不與其他分段或 ruby.<i>.b 並用)。
+ */
+export interface RubySplitCorrection {
+  kind: "rubySplit";
+  lesson: number;
+  /** VocabItem 或 Sentence(例句、会話)的 id */
+  id: string;
+  /** 被分段的是 ruby 第幾段(0 起算) */
+  field: `ruby.${number}`;
+  from: RubySeg;
+  to: RubySeg[];
+  /** 修正理由(commit 逐筆列出) */
+  reason: string;
+}
+
+/** 修正種類 */
+export type Correction =
+  | FieldCorrection
+  | DialogueTitleCorrection
+  | RubySplitCorrection;
 
 export const CORRECTIONS: readonly Correction[] = [
   // ---- T12.2:資料修正清單 2、3 + 偵察補列 1 筆 ----
@@ -222,6 +247,94 @@ export const CORRECTIONS: readonly Correction[] = [
     reason:
       "会話標題(無 speaker)不是台詞:移入 dialogueTitle,D02..D13 遞補為 D01..D12",
   },
+  // ---- T12.5:PDF 校讀清單第 4 項(furigana 跨越記號;content-lint ruby-r-scope 的 9 段) ----
+  {
+    kind: "rubySplit",
+    lesson: 2,
+    id: "L02-V036",
+    field: "ruby.0",
+    from: { b: "〜語", r: "ご" },
+    to: [{ b: "〜" }, { b: "語", r: "ご" }],
+    reason:
+      "furigana 跨越接尾記號〜:〜 獨立成段(無讀音),ご 只標在「語」上(同 L01-V009 〜人 的分段)",
+  },
+  {
+    kind: "rubySplit",
+    lesson: 2,
+    id: "L02-V039",
+    field: "ruby.0",
+    from: { b: "違います。", r: "ちがいます" },
+    to: [{ b: "違", r: "ちが" }, { b: "います。" }],
+    reason:
+      "furigana 蓋住送り仮名與句號(全部單字中唯一):ちが 只標在「違」上,います。獨立成段",
+  },
+  {
+    kind: "rubySplit",
+    lesson: 11,
+    id: "L11-S05",
+    field: "ruby.0",
+    from: { b: "…8", r: "やっ" },
+    to: [{ b: "…" }, { b: "8", r: "やっ" }],
+    reason:
+      "furigana 跨越答句開頭的「…」:… 獨立成段(無讀音),讀音只標在數字上(同 L01-V023 …歳 的分段)",
+  },
+  {
+    kind: "rubySplit",
+    lesson: 11,
+    id: "L11-S07",
+    field: "ruby.0",
+    from: { b: "…5", r: "ご" },
+    to: [{ b: "…" }, { b: "5", r: "ご" }],
+    reason: "同上",
+  },
+  {
+    kind: "rubySplit",
+    lesson: 11,
+    id: "L11-S09",
+    field: "ruby.0",
+    from: { b: "…2", r: "に" },
+    to: [{ b: "…" }, { b: "2", r: "に" }],
+    reason: "同上",
+  },
+  {
+    kind: "rubySplit",
+    lesson: 11,
+    id: "L11-S11",
+    field: "ruby.0",
+    from: { b: "…3", r: "さん" },
+    to: [{ b: "…" }, { b: "3", r: "さん" }],
+    reason: "同上",
+  },
+  {
+    kind: "rubySplit",
+    lesson: 21,
+    id: "L21-S12",
+    field: "ruby.1",
+    from: { b: "「来週", r: "らいしゅう" },
+    to: [{ b: "「" }, { b: "来週", r: "らいしゅう" }],
+    reason:
+      "furigana 跨越引號「:「 獨立成段(無讀音),らいしゅう 只標在「来週」上(同 L37-S10「源氏物語」的分段)",
+  },
+  {
+    kind: "rubySplit",
+    lesson: 23,
+    id: "L23-V013",
+    field: "ruby.0",
+    from: { b: "〜屋", r: "や" },
+    to: [{ b: "〜" }, { b: "屋", r: "や" }],
+    reason:
+      "furigana 跨越接尾記號〜:〜 獨立成段(無讀音),や 只標在「屋」上(同 L10-V027 〜屋)",
+  },
+  {
+    kind: "rubySplit",
+    lesson: 37,
+    id: "L37-V030",
+    field: "ruby.0",
+    from: { b: "〜中", r: "じゅう" },
+    to: [{ b: "〜" }, { b: "中", r: "じゅう" }],
+    reason:
+      "furigana 跨越接尾記號〜:〜 獨立成段(無讀音),じゅう 只標在「中」上(同 L33-V028 〜中(ちゅう)的分段)",
+  },
 ];
 
 // ---------- 宣告檢查 ----------
@@ -234,12 +347,17 @@ const SUBSTRING_FIELDS: ReadonlySet<string> = new Set<SubstringField>([
 const isSubstring = (c: FieldCorrection) => SUBSTRING_FIELDS.has(c.field);
 
 const RUBY_B_RE = /^ruby\.(0|[1-9]\d*)\.b$/;
+/** ruby 分段修正的欄位:ruby.<i> */
+const RUBY_SEG_RE = /^ruby\.(0|[1-9]\d*)$/;
+const HAN_RE = /\p{Script=Han}/u;
+/** 帶 r 的段不得含漢字、數字以外的字(同 content-lint ruby-r-scope) */
+const OUT_OF_R_SCOPE_RE = /[^\p{Script=Han}々〆ヶ0-9０-９,]/u;
 const ID_RE = /^L(\d{2})-([VGSD])\d+$/;
 const TITLE_ID_RE = /^L(\d{2})-D01$/;
 /** 教材資料中会話標題行的 speaker 寫法(另有缺漏者) */
 const TITLE_SPEAKERS: ReadonlySet<string> = new Set(["標題", "（標題）"]);
 
-/** 各種 id 可修正的欄位(ruby 以 ruby.<i>.b 表示) */
+/** 各種 id 可修正的欄位(ruby 以 ruby.<i>.b 或分段的 ruby.<i> 表示) */
 const FIELDS_BY_KIND: Record<string, readonly string[]> = {
   V: ["pos", "kana", "meaning", "ruby"],
   G: ["explanation"],
@@ -248,6 +366,14 @@ const FIELDS_BY_KIND: Record<string, readonly string[]> = {
 };
 
 const surfaceOf = (ruby: readonly RubySeg[]) => ruby.map((s) => s.b).join("");
+/** 讀音只取假名:有 r 取 r,否則取 b 中的假名(記號、句讀、空白不計) */
+const kanaReadingOf = (ruby: readonly RubySeg[]) =>
+  ruby.map((s) => s.r ?? s.b.replace(/[^ぁ-ゖァ-ヺー]/g, "")).join("");
+/** ruby 段的標示:{b} 或 {b/r} */
+const segsLabel = (ruby: readonly RubySeg[]) =>
+  ruby
+    .map((s) => (s.r === undefined ? `{${s.b}}` : `{${s.b}/${s.r}}`))
+    .join("");
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 export function labelOf(c: Correction): string {
@@ -257,6 +383,8 @@ export function labelOf(c: Correction): string {
     case "dialogueTitle":
       // 套用後 D id 遞補,原 id 已指向另一行:以課號標示,原 id 只作註記
       return `L${pad2(c.lesson)} 会話標題「${surfaceOf(c.from.ruby)}」(原 ${c.from.id})→ dialogueTitle`;
+    case "rubySplit":
+      return `${c.id} ${c.field} ${segsLabel([c.from])} → ${segsLabel(c.to)}`;
     default:
       return unknownKind(c);
   }
@@ -316,10 +444,62 @@ function titleDeclaration(c: DialogueTitleCorrection): Declaration {
   return { where, key: `L${c.lesson} dialogueTitle`, errors };
 }
 
+function rubySplitDeclaration(c: RubySplitCorrection): Declaration {
+  const errors: string[] = [];
+  const where = `${c.id} ${c.field}`;
+  const m = ID_RE.exec(c.id);
+  if (!m) {
+    errors.push(`${where}:id 格式不符`);
+  } else {
+    if (Number(m[1]) !== c.lesson) {
+      errors.push(`${where}:id 課號 ≠ lesson ${c.lesson}`);
+    }
+    if (!FIELDS_BY_KIND[m[2]].includes("ruby")) {
+      errors.push(`${where}:${m[2]} 沒有 ruby`);
+    }
+  }
+  if (!RUBY_SEG_RE.test(c.field)) errors.push(`${where}:欄位應為 ruby.<i>`);
+  if (c.to.length < 2) errors.push(`${where}:to 至少兩段`);
+  if ([c.from, ...c.to].some((s) => s.b === "" || s.r === "")) {
+    errors.push(`${where}:段的 b、r 不得為空`);
+  }
+  const surface = surfaceOf(c.to);
+  if (surface !== c.from.b) {
+    errors.push(`${where}:to 串接的 b「${surface}」≠ from「${c.from.b}」`);
+  }
+  const reading = kanaReadingOf(c.to);
+  const fromReading = kanaReadingOf([c.from]);
+  if (reading !== fromReading) {
+    errors.push(
+      `${where}:to 的讀音(只取假名)「${reading}」≠ from「${fromReading}」`,
+    );
+  }
+  // 分段結果須合 content-lint 的 ruby-han-has-r、ruby-r-scope(error):寫入前擋下,不留給
+  // verify(空的 r 已報「不得為空」,不重複報)
+  for (const s of c.to) {
+    if (s.r === undefined && HAN_RE.test(s.b)) {
+      errors.push(`${where}:to 的「${s.b}」含漢字卻沒有 r`);
+    } else if (s.r && OUT_OF_R_SCOPE_RE.test(s.b)) {
+      errors.push(
+        `${where}:to 的「${s.b}」帶 r 卻含漢字、數字以外的字(furigana 不跨越記號與送り仮名)`,
+      );
+    }
+  }
+  if (c.reason.trim() === "") errors.push(`${where}:缺 reason`);
+  return { where, key: where, errors };
+}
+
+/** 改動 ruby 的修正所指的項目 id(会話標題不算:它不改段,只整行移走) */
+const rubyTargetOf = (c: Correction): string | null =>
+  (c.kind === "field" && RUBY_B_RE.test(c.field)) || c.kind === "rubySplit"
+    ? c.id
+    : null;
+
 /**
  * CORRECTIONS 的宣告錯誤(課號與 id、欄位與 id 種類、from/to、重複、先後);空陣列 = 合法。
  * 同一欄位:整值只能宣告一筆;子字串可有多筆(from 不同),彼此干擾由 fixLesson 套用後的
- * 冪等核對攔下。会話標題修正會遞補同課的 D id,該課 D 的欄位修正須排在其後(id 以遞補後為準)。
+ * 冪等核對攔下。会話標題修正會遞補同課的 D id,該課 D 的欄位與分段修正須排在其後(id 以遞補後
+ * 為準)。ruby 分段使其後的段號位移:有分段的項目,ruby 不得再有其他修正(分段或 ruby.<i>.b)。
  */
 export function validateCorrections(cs: readonly Correction[]): string[] {
   const errors: string[] = [];
@@ -333,14 +513,31 @@ export function validateCorrections(cs: readonly Correction[]): string[] {
       case "dialogueTitle":
         decl = titleDeclaration(c);
         break;
+      case "rubySplit":
+        decl = rubySplitDeclaration(c);
+        break;
       default:
         return unknownKind(c);
     }
     errors.push(...decl.errors);
     if (seen.has(decl.key)) errors.push(`${decl.where}:重複宣告`);
     seen.add(decl.key);
+    // 同一段的重複分段已報「重複宣告」
     if (
-      c.kind === "field" &&
+      c.kind === "rubySplit" &&
+      cs.some(
+        (t, k) =>
+          k !== i &&
+          rubyTargetOf(t) === c.id &&
+          !(t.kind === "rubySplit" && t.field === c.field),
+      )
+    ) {
+      errors.push(
+        `${decl.where}:同一項目的 ruby 另有修正(分段使其後的段號位移,有分段的項目 ruby 只能有這一筆修正)`,
+      );
+    }
+    if (
+      c.kind !== "dialogueTitle" &&
       ID_RE.exec(c.id)?.[2] === "D" &&
       cs
         .slice(i + 1)
@@ -458,6 +655,34 @@ function titleStatus(lesson: Lesson, c: DialogueTitleCorrection): Status {
   );
 }
 
+/** 項目(單字、例句、会話)的 ruby */
+function rubyOf(lesson: Lesson, id: string): RubySeg[] {
+  const ruby = findTarget(lesson, id).ruby;
+  if (!Array.isArray(ruby)) throw new Error(`${id}:沒有 ruby`);
+  return ruby as RubySeg[];
+}
+
+const segIndexOf = (c: RubySplitCorrection) =>
+  Number(c.field.slice("ruby.".length));
+/** 與課程檔相同的 key 順序(b、r;無讀音者不寫 r) */
+const normSeg = (s: RubySeg): RubySeg =>
+  s.r === undefined ? { b: s.b } : { b: s.b, r: s.r };
+
+/** ruby 分段:第 i 段完全等於 from = 待套用;自第 i 段起完全等於 to = 已套用;其他丟錯 */
+function rubySplitStatus(lesson: Lesson, c: RubySplitCorrection): Status {
+  const ruby = rubyOf(lesson, c.id);
+  const i = segIndexOf(c);
+  if (i < ruby.length && isDeepStrictEqual(plain(ruby[i]), plain(c.from))) {
+    return "pending";
+  }
+  if (isDeepStrictEqual(plain(ruby.slice(i, i + c.to.length)), plain(c.to))) {
+    return "applied";
+  }
+  throw new Error(
+    `${labelOf(c)}:第 ${i} 段起既非 from 也非 to,拒絕修改;現值 ${segsLabel(ruby)}`,
+  );
+}
+
 /** 新增修正種類時,各 switch 漏寫的 case 在這裡成為型別錯誤 */
 function unknownKind(c: never): never {
   throw new Error(`未知的修正種類:${JSON.stringify(c)}`);
@@ -470,6 +695,8 @@ export function statusOf(lesson: Lesson, c: Correction): Status {
       return fieldStatus(lesson, c);
     case "dialogueTitle":
       return titleStatus(lesson, c);
+    case "rubySplit":
+      return rubySplitStatus(lesson, c);
     default:
       return unknownKind(c);
   }
@@ -554,6 +781,61 @@ function moveTitleLines(
   });
 }
 
+/** ruby 段在課程檔中的寫法:`{ "b": …, "r": … }`(無讀音者不寫 r) */
+const segToken = (s: RubySeg) =>
+  `{ "b": ${JSON.stringify(s.b)}${s.r === undefined ? "" : `, "r": ${JSON.stringify(s.r)}`} }`;
+
+/** ruby 屬性的原文行:單行 `"ruby": [{ … }, { … }]` 或逐段換行(每段一行、內縮 2 格) */
+function rubyPropertyLines(
+  indent: string,
+  ruby: readonly RubySeg[],
+  multiline: boolean,
+  comma: string,
+): string[] {
+  const tokens = ruby.map(segToken);
+  return multiline
+    ? [
+        `${indent}"ruby": [`,
+        ...tokens.map(
+          (t, k) => `${indent}  ${t}${k < tokens.length - 1 ? "," : ""}`,
+        ),
+        `${indent}]${comma}`,
+      ]
+    : [`${indent}"ruby": [${tokens.join(", ")}]${comma}`];
+}
+
+/**
+ * 原文:物件 id 的 ruby 屬性由 before 改寫為 after,沿用原排版(單行或逐段換行,課程檔兩種
+ * 並存)與其後的逗號。原文須與 before 依其中一種排版逐字相同,否則丟錯(不猜)。
+ */
+function rewriteRubyLines(
+  lines: string[],
+  id: string,
+  before: readonly RubySeg[],
+  after: readonly RubySeg[],
+): void {
+  const span = findObjectById(lines, id);
+  const props = propertySpans(lines, span).filter((p) => p.key === "ruby");
+  if (props.length !== 1) throw new Error(`${id}:找不到 ruby 屬性`);
+  const { start, end } = props[0];
+  const indent = `${/^ */.exec(lines[span.open])?.[0] ?? ""}  `;
+  const actual = lines.slice(start, end + 1);
+  const comma = actual[actual.length - 1].endsWith(",") ? "," : "";
+  const multiline = [false, true].find((ml) =>
+    isDeepStrictEqual(actual, rubyPropertyLines(indent, before, ml, comma)),
+  );
+  if (multiline === undefined) {
+    throw new Error(
+      `${id}:ruby 原文與資料不符,或排版既非單行也非逐段換行,拒絕修改`,
+    );
+  }
+  lines.splice(
+    start,
+    end - start + 1,
+    ...rubyPropertyLines(indent, after, multiline, comma),
+  );
+}
+
 /** 模型:第一行的 ruby 與 translation(保留原 key 順序)成為 dialogueTitle,插在 dialogues 前;其後各行 id 遞補 */
 function moveTitleModel(model: Lesson): void {
   const [first, ...rest] = model.dialogues;
@@ -592,6 +874,18 @@ function applyCorrection(lines: string[], model: Lesson, c: Correction): void {
       const oldIds = model.dialogues.slice(1).map((d) => d.id);
       moveTitleLines(lines, model.id, c, oldIds);
       moveTitleModel(model);
+      return;
+    }
+    case "rubySplit": {
+      const ruby = rubyOf(model, c.id);
+      const i = segIndexOf(c);
+      const after = [
+        ...ruby.slice(0, i),
+        ...c.to.map(normSeg),
+        ...ruby.slice(i + 1),
+      ];
+      rewriteRubyLines(lines, c.id, ruby, after);
+      ruby.splice(0, ruby.length, ...after);
       return;
     }
     default:
