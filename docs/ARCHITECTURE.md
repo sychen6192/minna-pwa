@@ -102,7 +102,7 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── queueNote.ts        # 今日佇列因每日上限而空時的說明(純函式;首頁、課程頁共用)
     │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)
     │   ├── quiz.ts             # 出題引擎:選擇/輸入/例句填空(挖空)/聽力題型、干擾項(聽力、填空排除可互換的字)、輸入判分、聽力朗讀文字(純函式)
-    │   ├── examples.ts         # 語境例句:詞邊界比對找同課例句(findExampleSentence;findExampleMatch 另回傳位置,供例句填空)(純函式)
+    │   ├── examples.ts         # 語境例句:詞邊界比對找同課例句(findExampleSentence;findExampleMatch 另回傳位置與比對種類 exact/conjugated,例句填空只用 exact);動詞全課無ます形時改比對 conjugate.ts 推導的活用形(分かち書き詞首、右邊界、讀音一致;一字語幹/同課同形字須 note 搭配名詞)(純函式)
     │   ├── stats.ts            # 統計聚合(純函式 + DB 查詢)
     │   ├── tts.ts              # Web Speech API 包裝(speak、可取消的連續朗讀 speakSequence)+ 朗讀文字清理(speechText)
     │   ├── useSetting.ts       # 讀取全域設定的 hook(useSetting / useTtsEnabled;經 db.ts)與日語語音可用性(useJaVoiceAvailable)

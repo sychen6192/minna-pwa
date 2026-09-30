@@ -416,7 +416,8 @@ export function splitRuby(
 
 /**
  * 為單字出例句填空:以 examples.ts 的詞邊界比對(findExampleMatch)找本課最短的例句或会話,
- * 把單字所在處挖空(只挖單字本身的表面形,同句只挖一處)。不出(回傳 null)的情況:
+ * 把單字所在處挖空(只挖單字本身的表面形,同句只挖一處;動詞的活用形命中不挖,
+ * 選項是ます形,挖空處須是單字本身)。不出(回傳 null)的情況:
  * - 慣用語(寒暄、套語多半整句即答案,挖空後沒有可判斷的語境);表面含教材記號者
  * - 句子:含「→」的對照行、正規化後等於單字本身(findExampleMatch 已排除)、会話標題行、
  *   中譯標示較晚課次者(用到還沒教的內容,同例句重組)、句中另有同一字面(挖一處仍看得到答案)、
@@ -429,8 +430,13 @@ export function makeCloze(vocab: VocabItem, lesson: Lesson): Cloze | null {
   const titles = new Set<Sentence>(
     lesson.dialogues.filter((line, i) => isTitleLine(line, i)),
   );
-  const match = findExampleMatch(vocab, lesson, ({ sentence, start, end }) => {
-    if (titles.has(sentence) || refersToLaterLesson(sentence, lesson.id)) {
+  const match = findExampleMatch(vocab, lesson, (m) => {
+    const { sentence, start, end, kind } = m;
+    if (
+      kind !== "exact" ||
+      titles.has(sentence) ||
+      refersToLaterLesson(sentence, lesson.id)
+    ) {
       return false;
     }
     const text = surfaceOf(sentence);

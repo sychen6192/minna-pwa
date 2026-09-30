@@ -798,6 +798,41 @@ describe("makeCloze(T11.8)", () => {
     ).toBeNull();
   });
 
+  it("動詞只有活用形命中(T11.9)時不出:挖空處須是單字本身(ます形)", () => {
+    const aimasu: VocabItem = {
+      id: "L06-V011",
+      ruby: [{ b: "会", r: "あ" }, { b: "います" }],
+      kana: "あいます",
+      meaning: "見面",
+      pos: "動I",
+    };
+    const conjugatedOnly = sent("S1", [
+      { b: "駅", r: "えき" },
+      { b: "で " },
+      { b: "会", r: "あ" },
+      { b: "いましょう。" },
+    ]);
+    expect(
+      makeCloze(aimasu, lessonWith(6, [aimasu], [conjugatedOnly])),
+    ).toBeNull();
+    // 另有ます形的句子(較長)時照常出題,挖的是ます形
+    const exact = sent("S2", [
+      { b: "あした " },
+      { b: "駅", r: "えき" },
+      { b: "で " },
+      { b: "友達", r: "ともだち" },
+      { b: "に " },
+      { b: "会", r: "あ" },
+      { b: "います。" },
+    ]);
+    const cloze = makeCloze(
+      aimasu,
+      lessonWith(6, [aimasu], [conjugatedOnly, exact]),
+    );
+    expect(cloze?.sentenceId).toBe("S2");
+    expect(cloze && segText(cloze.after)).toBe("。");
+  });
+
   it("句=字、含→的對照行、会話標題行、中譯標示較晚課次的例句不選", () => {
     const samui: VocabItem = {
       id: "L08-V018",

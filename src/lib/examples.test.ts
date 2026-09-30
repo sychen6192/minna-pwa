@@ -377,3 +377,423 @@ describe("findExampleMatch(T11.8 例句填空)", () => {
     expect(findExampleSentence(asobimasu, l)?.id).toBe("S1"); // 不影響語境例句
   });
 });
+
+// ── T11.9 動詞活用形 ─────────────────────────────────────────────────
+
+/** 帶讀音的例句:「会(あ)いましょう」的漢字段寫成「漢字(よみ)」,其餘為假名段 */
+function rubySentence(text: string, id = "S"): Sentence {
+  const ruby: RubySeg[] = [];
+  let last = 0;
+  for (const m of text.matchAll(/([㐀-鿿々]+)\(([ぁ-ゖ]+)\)/g)) {
+    if (m.index > last) ruby.push({ b: text.slice(last, m.index) });
+    ruby.push({ b: m[1], r: m[2] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) ruby.push({ b: text.slice(last) });
+  return { id, ruby, translation: `${id} 的翻譯` };
+}
+
+/** 帶讀音例句的課:依序編號 S1、S2… */
+function rubyLesson(texts: string[], words: VocabItem[] = []): Lesson {
+  return lesson(
+    [grammar(texts.map((t, i) => rubySentence(t, `S${i + 1}`)))],
+    [],
+    words,
+  );
+}
+
+/** 動詞:ruby 以同一「漢字(よみ)」寫法;kana 為讀音去空白(教材 kana 欄的慣例) */
+function verb(
+  text: string,
+  pos: VocabItem["pos"],
+  overrides: Partial<VocabItem> = {},
+): VocabItem {
+  const { ruby } = rubySentence(text);
+  const kana = ruby
+    .map((s) => s.r ?? s.b)
+    .join("")
+    .replace(/\s/g, "");
+  return kanjiVocab(ruby, { pos, kana, ...overrides });
+}
+
+/** 比對到的片段(以【】標出) */
+function marked(v: VocabItem, l: Lesson): string | null {
+  const m = findExampleMatch(v, l);
+  if (!m) return null;
+  const t = m.sentence.ruby.map((s) => s.b).join("");
+  return `${t.slice(0, m.start)}【${t.slice(m.start, m.end)}】${t.slice(m.end)}`;
+}
+
+const aimasu = verb("会(あ)います", "動I", { note: "［友達に〜］" });
+
+describe("findExampleMatch 動詞活用形(T11.9)", () => {
+  it("会います 命中「会いましょう」(語幹 2 字、有漢字:不要求 note 名詞),kind 為 conjugated", () => {
+    const l = rubyLesson([
+      "10時(じ)です。大阪城公園駅(おおさかじょうこうえんえき)で 会(あ)いましょう。",
+    ]);
+    const m = findExampleMatch(aimasu, l);
+    expect(m?.kind).toBe("conjugated");
+    expect(marked(aimasu, l)).toBe(
+      "10時です。大阪城公園駅で 【会いましょう】。",
+    );
+    expect(findExampleSentence(aimasu, l)?.id).toBe("S1");
+  });
+
+  it("ます形命中一律優先(即使活用形的句子較短),kind 為 exact", () => {
+    const l = rubyLesson([
+      "駅(えき)で 会(あ)いましょう。",
+      "あした 駅(えき)で 友達(ともだち)に 会(あ)います。",
+    ]);
+    const m = findExampleMatch(aimasu, l);
+    expect(m?.kind).toBe("exact");
+    expect(m?.sentence.id).toBe("S2");
+  });
+
+  it("活用形之間也取最短句;同一位置取最長的形(会いませんでした)", () => {
+    const l = rubyLesson([
+      "きのう 駅(えき)で 友達(ともだち)に 会(あ)いませんでした。",
+      "駅(えき)で 会(あ)いませんでした。",
+    ]);
+    expect(marked(aimasu, l)).toBe("駅で 【会いませんでした】。");
+  });
+
+  it.each<[string, VocabItem, string, string]>([
+    [
+      "て形 + ください",
+      verb("曲(ま)がります", "動I"),
+      "右(みぎ)へ 曲(ま)がって ください。",
+      "右へ 【曲がって】 ください。",
+    ],
+    [
+      "て形 + も",
+      verb("考(かんが)えます", "動II"),
+      "いくら 考(かんが)えても、わかりません。",
+      "いくら 【考えて】も、わかりません。",
+    ],
+    [
+      "た形 + ら",
+      verb("連絡(れんらく)します", "動III"),
+      "会社(かいしゃ)に 連絡(れんらく)したら、すぐ 来(き)ます。",
+      "会社に 【連絡した】ら、すぐ 来ます。",
+    ],
+    [
+      "た形 + んです",
+      verb("遅(おく)れます", "動II"),
+      "どうして 遅(おく)れたんですか。",
+      "どうして 【遅れた】んですか。",
+    ],
+    [
+      "ない形 + で",
+      verb("心配(しんぱい)します", "動III"),
+      "心配(しんぱい)しないで ください。",
+      "【心配しない】で ください。",
+    ],
+    [
+      "なければ",
+      verb("返(かえ)します", "動I"),
+      "本(ほん)を 返(かえ)さなければ なりません。",
+      "本を 【返さなければ】 なりません。",
+    ],
+    [
+      "辞書形 + と",
+      verb("回(まわ)します", "動I"),
+      "これを 回(まわ)すと、音(おと)が 大(おお)きく なります。",
+      "これを 【回す】と、音が 大きく なります。",
+    ],
+    [
+      "辞書形 + のが",
+      verb("育(そだ)てます", "動II"),
+      "花(はな)を 育(そだ)てるのが 好(す)きです。",
+      "花を 【育てる】のが 好きです。",
+    ],
+    [
+      "意向形 + と",
+      verb("続(つづ)けます", "動II"),
+      "柔道(じゅうどう)を 続(つづ)けようと 思(おも)って います。",
+      "柔道を 【続けよう】と 思って います。",
+    ],
+    [
+      "條件形",
+      verb("急(いそ)ぎます", "動I"),
+      "急(いそ)げば、間(ま)に 合(あ)います。",
+      "【急げば】、間に 合います。",
+    ],
+    [
+      "〜たい",
+      verb("撮(と)ります", "動I"),
+      "写真(しゃしん)を 撮(と)りたいです。",
+      "写真を 【撮りたい】です。",
+    ],
+    [
+      "〜ながら",
+      verb("歩(ある)きます", "動I"),
+      "歩(ある)きながら 話(はな)しましょう。",
+      "【歩きながら】 話しましょう。",
+    ],
+    [
+      "〜にくい",
+      verb("乾(かわ)きます", "動I"),
+      "洗濯物(せんたくもの)が 乾(かわ)きにくいです。",
+      "洗濯物が 【乾きにくい】です。",
+    ],
+    [
+      "被動(Ⅰ類)",
+      verb("頼(たの)みます", "動I"),
+      "母(はは)に 買(か)い物(もの)を 頼(たの)まれました。",
+      "母に 買い物を 【頼まれました】。",
+    ],
+    [
+      "被動(Ⅱ類)",
+      verb("褒(ほ)めます", "動II"),
+      "先生(せんせい)に 褒(ほ)められました。",
+      "先生に 【褒められました】。",
+    ],
+    [
+      "被動(する)",
+      verb("輸出(ゆしゅつ)します", "動III"),
+      "車(くるま)が 輸出(ゆしゅつ)されて います。",
+      "車が 【輸出されて】 います。",
+    ],
+    [
+      "可能(する)",
+      verb("優勝(ゆうしょう)します", "動III"),
+      "優勝(ゆうしょう)できなくて、残念(ざんねん)です。",
+      "【優勝できなくて】、残念です。",
+    ],
+    [
+      "多詞動詞",
+      verb("無理(むり)を します", "動III"),
+      "無理(むり)を しない ほうが いいですよ。",
+      "【無理を しない】 ほうが いいですよ。",
+    ],
+  ])("%s", (_, v, text, expected) => {
+    expect(marked(v, rubyLesson([text]))).toBe(expected);
+  });
+
+  it("Ⅰ類的可能形不比對(切れる 等常是另一個動詞)", () => {
+    const kirimasu = verb("切(き)ります", "動I");
+    expect(
+      findExampleSentence(kirimasu, rubyLesson(["ひもが 切(き)れました。"])),
+    ).toBeNull();
+  });
+
+  it("ます形語幹本身(名詞同形:休み、帰り)不算活用形", () => {
+    const yasumimasu = verb("休(やす)みます", "動I");
+    expect(
+      findExampleSentence(
+        yasumimasu,
+        rubyLesson(["銀行(ぎんこう)の 休(やす)みは 土曜日(どようび)です。"]),
+      ),
+    ).toBeNull();
+  });
+
+  it("須在分かち書き的詞首:漢字開頭也不接在假名之後(受け取って ⊄ 取ります)", () => {
+    const torimasu = verb("取(と)ります", "動I");
+    expect(
+      findExampleSentence(
+        torimasu,
+        rubyLesson(["荷物(にもつ)を 受(う)け取(と)って ください。"]),
+      ),
+    ).toBeNull();
+    expect(
+      marked(torimasu, rubyLesson(["塩(しお)を 取(と)って ください。"])),
+    ).toBe("塩を 【取って】 ください。");
+  });
+
+  it("右邊界:詞尾後須是邊界字元或所列的助詞、助動詞(〜てる 等縮約不收)", () => {
+    const machimasu = verb("待(ま)ちます", "動I");
+    expect(
+      findExampleSentence(
+        machimasu,
+        rubyLesson(["ありがとう。待(ま)ってるよ。"]),
+      ),
+    ).toBeNull();
+    expect(
+      marked(machimasu, rubyLesson(["いくら 待(ま)っても 来(き)ません。"])),
+    ).toBe("いくら 【待って】も 来ません。");
+  });
+
+  it("讀音須相同:開(あ)きます ≠ 開(ひら)いて、降(お)ります ≠ 降(ふ)りました", () => {
+    const akimasu = verb("開(あ)きます", "動I");
+    expect(
+      findExampleSentence(
+        akimasu,
+        rubyLesson([
+          "日曜日(にちようび)に 教室(きょうしつ)を 開(ひら)いて います。",
+        ]),
+      ),
+    ).toBeNull();
+    expect(marked(akimasu, rubyLesson(["ドアが 開(あ)いて います。"]))).toBe(
+      "ドアが 【開いて】 います。",
+    );
+    const orimasu = verb("降(お)ります", "動II");
+    expect(
+      findExampleSentence(
+        orimasu,
+        rubyLesson(["きのう 雨(あめ)が 降(ふ)りました。"]),
+      ),
+    ).toBeNull();
+  });
+
+  it("一字語幹(します、来ます…)須在活用形之前有 note 的搭配名詞;沒有 note 則不配", () => {
+    // L34-V007:します〔ネクタイを〜〕
+    const shimasu = vocab("します", {
+      id: "L34-V007",
+      pos: "動III",
+      note: "〔ネクタイを〜〕",
+    });
+    expect(
+      findExampleSentence(
+        shimasu,
+        lessonOf(["わたしが する とおりに、して くださいね。"]),
+      ),
+    ).toBeNull();
+    expect(
+      marked(shimasu, lessonOf(["きょうは ネクタイを して います。"])),
+    ).toBe("きょうは ネクタイを 【して】 います。");
+    // 搭配名詞在後面不算
+    expect(
+      findExampleSentence(
+        shimasu,
+        lessonOf(["して ください。ネクタイを 忘れないで。"]),
+      ),
+    ).toBeNull();
+    const kimasu = verb("来(き)ます", "動III");
+    expect(
+      findExampleSentence(
+        kimasu,
+        rubyLesson(["日本(にほん)へ 来(き)ました。"]),
+      ),
+    ).toBeNull();
+  });
+
+  it("同課同表面形(L46 出ます×2):各自須有 note 的搭配名詞", () => {
+    const bus = verb("出(で)ます", "動II", {
+      id: "L46-V004",
+      note: "［バスが〜］",
+    });
+    const hon = verb("出(で)ます", "動II", {
+      id: "L46-V032",
+      note: "［本が〜］",
+    });
+    const l = rubyLesson(
+      ["たった 今(いま) バスが 出(で)た ところです。"],
+      [bus, hon],
+    );
+    expect(marked(bus, l)).toBe("たった 今 バスが 【出た】 ところです。");
+    expect(findExampleSentence(hon, l)).toBeNull();
+  });
+
+  it("同課同表面形:語幹 2 字以上(会います×2)也須有各自 note 的搭配名詞", () => {
+    const tomodachi = verb("会(あ)います", "動I", {
+      id: "L13-V001",
+      note: "［友達に〜］",
+    });
+    const jiko = verb("会(あ)います", "動I", {
+      id: "L13-V002",
+      note: "［事故に〜］",
+    });
+    const noNoun = rubyLesson(
+      ["駅(えき)で 会(あ)いましょう。"],
+      [tomodachi, jiko],
+    );
+    expect(findExampleSentence(tomodachi, noNoun)).toBeNull();
+    expect(findExampleSentence(jiko, noNoun)).toBeNull();
+    const withNoun = rubyLesson(
+      ["駅(えき)で 友達(ともだち)に 会(あ)いましょう。"],
+      [tomodachi, jiko],
+    );
+    expect(marked(tomodachi, withNoun)).toBe("駅で 友達に 【会いましょう】。");
+    expect(findExampleSentence(jiko, withNoun)).toBeNull();
+    // 單獨一個 会います(非同形)則不要求名詞
+    expect(
+      marked(tomodachi, rubyLesson(["駅(えき)で 会(あ)いましょう。"])),
+    ).toBe("駅で 【会いましょう】。");
+  });
+
+  it("note 有多個括號(［でんきが〜］［電気が〜］)時任一名詞皆可", () => {
+    const tsukimasu = vocab("つきます", {
+      pos: "動I",
+      note: "［でんきが〜］［電気が〜］",
+    });
+    expect(
+      marked(tsukimasu, rubyLesson(["電気(でんき)が ついて います。"])),
+    ).toBe("電気が 【ついて】 います。");
+  });
+
+  it("沒有漢字、語幹不足 3 字的動詞:只收ます系(ありません),其他形須有搭配名詞(ある 日 ≠ あります)", () => {
+    const arimasu = vocab("あります", { pos: "動I" });
+    expect(marked(arimasu, rubyLesson(["時間(じかん)が ありませんか。"]))).toBe(
+      "時間が 【ありません】か。",
+    );
+    expect(
+      findExampleSentence(
+        arimasu,
+        rubyLesson([
+          "ある 日(ひ)、町(まち)で 友達(ともだち)に 会(あ)いました。",
+        ]),
+      ),
+    ).toBeNull();
+    const tsukemasu = vocab("つけます", { pos: "動II" });
+    expect(
+      findExampleSentence(
+        tsukemasu,
+        rubyLesson(["車(くるま)に 気(き)を つけて ください。"]),
+      ),
+    ).toBeNull();
+  });
+
+  it("あります 不配名詞、形容詞否定的 〜じゃ/では/く ありません(不是「有/在」)", () => {
+    const arimasu = vocab("あります", { pos: "動I" });
+    for (const text of [
+      "わたしは 学生(がくせい)じゃ ありません。",
+      "これは 本(ほん)では ありません。",
+      "きょうは 寒(さむ)く ありませんでした。",
+    ]) {
+      expect(findExampleSentence(arimasu, rubyLesson([text])), text).toBeNull();
+    }
+    expect(
+      marked(
+        arimasu,
+        rubyLesson(["冷蔵庫(れいぞうこ)に 何(なに)も ありません。"]),
+      ),
+    ).toBe("冷蔵庫に 何も 【ありません】。");
+  });
+
+  it("沒有漢字的動詞在て形之後(補助動詞位置)不配:〜て しまいました ≠ しまいます", () => {
+    const shimaimasu = vocab("しまいます", { pos: "動I" });
+    expect(
+      findExampleSentence(
+        shimaimasu,
+        rubyLesson(["電車(でんしゃ)に 傘(かさ)を 忘(わす)れて しまいました。"]),
+      ),
+    ).toBeNull();
+    expect(
+      marked(
+        shimaimasu,
+        rubyLesson(["はさみを 引(ひ)き出(だ)しに しまって ください。"]),
+      ),
+    ).toBe("はさみを 引き出しに 【しまって】 ください。");
+  });
+
+  it("不選含「→」的對照行、正規化後等於活用形本身的句子", () => {
+    const nomimasu = verb("飲(の)みます", "動I");
+    expect(
+      findExampleSentence(
+        nomimasu,
+        rubyLesson(["飲(の)みます → 飲(の)んで", "飲(の)んで。"]),
+      ),
+    ).toBeNull();
+  });
+
+  it("非動詞不找活用形(形容詞的活用不比對);accept 可只收 exact", () => {
+    const samui = verb("寒(さむ)い", "い形");
+    expect(
+      findExampleSentence(samui, rubyLesson(["きのうは 寒(さむ)かったです。"])),
+    ).toBeNull();
+    const l = rubyLesson(["駅(えき)で 会(あ)いましょう。"]);
+    expect(
+      findExampleMatch(aimasu, l, ({ kind }) => kind === "exact"),
+    ).toBeNull();
+  });
+});

@@ -7,6 +7,7 @@ import {
   type VocabItem,
 } from "@/schemas/lesson";
 import { isTitleLine } from "./dialogue";
+import { findExampleMatch } from "./examples";
 import { isSupplementary } from "./notes";
 import {
   acceptedAnswers,
@@ -145,6 +146,15 @@ describe("例句填空 × 全部教材(T11.8)", () => {
           expect(sentence?.ruby, v.id).toContainEqual(seg);
       }
     }
+  });
+
+  it("動詞的語境例句是活用形命中(T11.9)者不出填空", () => {
+    const conjugatedOnly = lessons.flatMap((l) =>
+      targets(l).filter((v) => findExampleMatch(v, l)?.kind === "conjugated"),
+    );
+    expect(conjugatedOnly.length).toBeGreaterThan(0);
+    const ids = new Set(clozes.map((c) => c.v.id));
+    expect(conjugatedOnly.filter((v) => ids.has(v.id))).toEqual([]);
   });
 
   it("不出慣用語;不選含→的對照行、会話標題行與較晚課次的例句", () => {
