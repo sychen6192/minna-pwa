@@ -878,7 +878,7 @@ describe("lintContent:待修清單", () => {
     expect(result.pendingCount).toBe(1);
   });
 
-  it("PENDING_FIXES:只列 error 規則,11 個 id 不重複", () => {
+  it("PENDING_FIXES:只列 error 規則,7 個 id 不重複", () => {
     const errorRules = new Set(
       RULES.filter((r) => r.severity === "error").map((r) => r.id),
     );
@@ -886,8 +886,8 @@ describe("lintContent:待修清單", () => {
       Object.keys(PENDING_FIXES).filter((k) => !errorRules.has(k)),
     ).toEqual([]);
     const all = Object.values(PENDING_FIXES).flat();
-    expect(all).toHaveLength(11);
-    expect(new Set(all).size).toBe(11);
+    expect(all).toHaveLength(7);
+    expect(new Set(all).size).toBe(7);
   });
 });
 

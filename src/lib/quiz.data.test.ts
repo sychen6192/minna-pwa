@@ -178,7 +178,9 @@ describe("聽力題 × 全部教材(T11.8)", () => {
   const listenable = all.filter(canListen);
 
   it("可出聽力題的字數(記錄於 commit);排除的是 kana 含記號或表面含〜…者", () => {
-    expect(listenable).toHaveLength(1988);
+    // T12.2 修正 L04-V050 え―と(U+2015)→ えーと 後 1988 → 1989
+    expect(listenable).toHaveLength(1989);
+    expect(listenable.map((v) => v.id)).toContain("L04-V050");
     for (const v of all.filter((w) => !canListen(w))) {
       expect(
         /[^ぁ-ゖァ-ヺー]/.test(v.kana) || /[〜…]/.test(surface(v.ruby)),

@@ -72,11 +72,11 @@ describe("content-lint × 真實資料:error 規則", () => {
     },
   );
 
-  // T12.2 修 L04-V050、L41-G04、L43-D08、L48-V011;T12.3 修 L47-V004..006;
+  // T12.2 已修 L04-V050、L41-G04、L43-D08、L48-V011(fix-content);T12.3 修 L47-V004..006;
   // T12.4 修会話標題行並移除待修機制。每修一筆,這裡與 PENDING_FIXES 同步刪除。
-  // 連訊息一起釘:待修清單以 id 比對,同一欄位新增的問題(如 L48-V011 再多一個日文字形)
+  // 連訊息一起釘:待修清單以 id 比對,同一欄位新增的問題(如 L47-V004 被改成另一個形狀仍不符的詞)
   // 只會改變訊息,不釘訊息就會被待修項目蓋掉。
-  it("待修命中恰為 11 id / 12 筆,待修清單沒有多餘項", () => {
+  it("待修命中恰為 7 id / 7 筆,待修清單沒有多餘項", () => {
     expect(result.stalePending).toEqual([]);
     expect(
       Object.fromEntries(
@@ -88,10 +88,6 @@ describe("content-lint × 真實資料:error 規則", () => {
           ]),
       ),
     ).toEqual({
-      "ja-lookalike-dash": [
-        "L04-V050 ruby「え―と」U+2015",
-        "L04-V050 kana「え―と」U+2015",
-      ],
       "verb-class-shape": [
         "L47-V004 動I「します」末詞為します,應為動III",
         "L47-V005 動I「します」末詞為します,應為動III",
@@ -103,13 +99,8 @@ describe("content-lint × 真實資料:error 規則", () => {
         "L24-D01 speaker=「標題」 手伝って くれますか",
         "L41-D01 speaker=(無) 荷物を 預かって いただけませんか",
       ],
-      "zh-glyph": [
-        "L41-G04 explanation:証",
-        "L43-D08 translation:辺",
-        "L48-V011 meaning:証",
-      ],
     });
-    expect(result.pendingCount).toBe(12);
+    expect(result.pendingCount).toBe(7);
     expect(result.errorCount).toBe(0);
   });
 });
@@ -120,9 +111,8 @@ describe("content-lint × 真實資料:error 規則", () => {
  * 須在同一個 commit 更新這裡。
  */
 const WARNING_IDS: Record<string, string[]> = {
-  // kana 含記號(PDF 清單 3;L04-V050 え―と 於 T12.2 修正)
+  // kana 含記號(PDF 清單 3;L04-V050 え―と 已於 T12.2 修正)
   "kana-symbols": [
-    "L04-V050",
     "L09-V003",
     "L09-V004",
     "L09-V005",
@@ -185,8 +175,8 @@ const WARNING_IDS: Record<string, string[]> = {
   ],
   "sentence-id-order": ["L01", "L37"],
   "speaker-alias": ["L02"],
-  // L49-D02 於 T12.2、L22-G02 與 L41-G04 的～於 T12.6 修正
-  "zh-lookalike": ["L22-G02", "L41-G04", "L49-G01", "L49-D02"],
+  // L49-D02 已於 T12.2 修正;L22-G02 與 L41-G04 的～於 T12.6 修正
+  "zh-lookalike": ["L22-G02", "L41-G04", "L49-G01"],
 };
 
 describe("content-lint × 真實資料:warning(ratchet)", () => {
