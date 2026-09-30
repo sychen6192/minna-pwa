@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { LessonSchema } from "@/schemas/lesson";
+import { SLOW_TEST_TIMEOUT } from "@/test/timeouts";
 import {
   conjClass,
   conjugate,
@@ -22,9 +23,6 @@ import {
   type DrillItem,
 } from "./drill";
 import { normalizeReading } from "./quiz";
-
-// 全部字 × 全部形的迴圈較久(單獨約 8 秒),verify 平行跑時放寬逾時
-const SLOW = 60_000;
 
 // 以實際教材資料(public/data)驗證活用練習的出題:全部可練的字 × 全部形。
 const lessonsDir = join(process.cwd(), "public", "data", "lessons");
@@ -199,7 +197,7 @@ describe("每個字 × 每一形(全資料)", () => {
           .sort(),
       );
     },
-    SLOW,
+    SLOW_TEST_TIMEOUT, // 全部字 × 全部形的迴圈較久(單獨約 8 秒)
   );
 
   it(
@@ -215,7 +213,7 @@ describe("每個字 × 每一形(全資料)", () => {
       expect(new Set(qs.map((q) => q.item.id)).size).toBe(10);
       for (const q of qs) expect(q.item.lessonId).toBeLessThanOrEqual(20);
     },
-    SLOW,
+    SLOW_TEST_TIMEOUT, // 全部字 × 全部形的迴圈較久(單獨約 8 秒)
   );
 });
 
@@ -285,7 +283,7 @@ describe("進階形(T11.5,全資料)", () => {
         }
       }
     },
-    SLOW,
+    SLOW_TEST_TIMEOUT, // 全部字 × 全部形的迴圈較久(單獨約 8 秒)
   );
 
   it("第 50 課:動I 可能形的選項含被動形(書ける ↔ 書かれる)、使役形的選項含被動形(書かせる ↔ 書かれる)", () => {

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 import { db, getSetting, setSetting } from "@/lib/db";
 import type { Lesson, VocabItem } from "@/schemas/lesson";
+import { holdTimeouts, passTapGuard } from "@/test/clock";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -231,12 +232,6 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
 });
-
-/** 把時鐘撥過列內換鈕後的點擊防護(300ms);之後 Date 停在 fake 時間 */
-function passRowGuard() {
-  if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(Date.now() + 1_000);
-}
 
 describe("LessonDetail", () => {
   it("預設顯示単語分頁,含釋義與 furigana", async () => {
@@ -795,7 +790,7 @@ describe("LessonDetail", () => {
     await user.click(screen.getByRole("button", { name: "標記已會:あそびます" }));
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
     const restore = await screen.findByRole("button", { name: "恢復複習:あそびます" });
-    passRowGuard();
+    passTapGuard();
     await user.click(restore);
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", false);
   });
@@ -816,7 +811,7 @@ describe("LessonDetail", () => {
     // 其他列不受影響;同一列過了防護時間即可操作
     await user.click(screen.getByRole("button", { name: "加入複習:ほしい" }));
     expect(addCards).toHaveBeenLastCalledWith(["L13-V002"], 13);
-    passRowGuard();
+    passTapGuard();
     await user.click(known);
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
   });
@@ -834,7 +829,7 @@ describe("LessonDetail", () => {
       expect(screen.getByRole("button", { name: "標記已會:あそびます" })).toHaveFocus(),
     );
 
-    passRowGuard();
+    passTapGuard();
     await user.keyboard("{Enter}");
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
     await waitFor(() =>
@@ -1242,7 +1237,7 @@ describe("LessonDetail 自我測驗與詞性篩選(T11.1)", () => {
     const known = await screen.findByRole("button", { name: "標記已會:玩、遊玩" });
     await user.click(known); // 連點的第二下
     expect(setWordSuspended).not.toHaveBeenCalled();
-    passRowGuard();
+    passTapGuard();
     await user.click(known);
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
   });
@@ -1596,23 +1591,32 @@ describe("LessonDetail 会話朗讀與角色扮演(T11.2)", () => {
   it("直接開啟 #dialogue 且語音清單晚到:查好語音才渲染会話,播放鈕不晚出現推擠台詞", async () => {
     const { synth, voices } = installVoice();
     const kyoko = voices.splice(0); // 清單尚未載入
-    window.history.replaceState(null, "", "#dialogue");
-    getLesson.mockResolvedValue(dialogueLesson);
-    render(<LessonDetail id={24} />);
+    // 語音清單的逾時(VOICE_TIMEOUT_MS)由測試掌握:測試跑得慢也不會先逾時定案為「沒有語音」
+    const voiceTimeout = holdTimeouts(VOICE_TIMEOUT_MS);
+    try {
+      window.history.replaceState(null, "", "#dialogue");
+      getLesson.mockResolvedValue(dialogueLesson);
+      render(<LessonDetail id={24} />);
 
-    expect(await screen.findByRole("button", { name: "会話" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.getByRole("status")).toHaveTextContent("載入中");
-    expect(screen.queryByText("明天要搬家對吧。")).not.toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "会話" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("status")).toHaveTextContent("載入中");
+      expect(screen.queryByText("明天要搬家對吧。")).not.toBeInTheDocument();
+      expect(voiceTimeout.pending()).toBe(1);
 
-    voices.push(...kyoko);
-    act(() => {
-      synth.dispatchEvent(new Event("voiceschanged"));
-    });
-    expect(await screen.findByText("明天要搬家對吧。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "全部播放" })).toBeInTheDocument();
+      voices.push(...kyoko);
+      act(() => {
+        synth.dispatchEvent(new Event("voiceschanged"));
+      });
+      expect(await screen.findByText("明天要搬家對吧。")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "全部播放" })).toBeInTheDocument();
+      // 語音到了就取消逾時
+      expect(voiceTimeout.pending()).toBe(0);
+    } finally {
+      voiceTimeout.restore();
+    }
   });
 
   it("語音清單在逾時後才到(voiceschanged):全部播放與扮演隨即出現", async () => {

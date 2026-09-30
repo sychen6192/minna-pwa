@@ -11,7 +11,12 @@ import { StrictMode } from "react";
 import { afterEach, beforeEach, vi } from "vitest";
 import { db, setSetting, type CardRow } from "@/lib/db";
 import type { Lesson } from "@/schemas/lesson";
-import { freezeClock, passTapGuard, useSteppingClock } from "@/test/clock";
+import {
+  expectFocusSoon,
+  freezeClock,
+  passTapGuard,
+  useSteppingClock,
+} from "@/test/clock";
 import { coverByBottomNav } from "@/test/layout";
 import { clearDrillState } from "./drillState";
 import DrillPage from "./page";
@@ -776,7 +781,10 @@ describe("DrillPage 狀態", () => {
     render(<DrillPage />); // 瀏覽器返回(網址仍為 ?upto=14)
     expect(await screen.findByText("第 1 / 2 題")).toBeInTheDocument();
     expect(screen.getByText("答錯 ✗")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "下一題" })).toHaveFocus();
+    // 掛載 effect 移焦:非同步載入後的 passive effect 可能晚於 findBy
+    await expectFocusSoon(() =>
+      screen.getByRole("button", { name: "下一題" }),
+    );
   });
 
   it("調整過範圍後離開再返回:網址已是新範圍,仍接續", async () => {

@@ -6,6 +6,7 @@ import {
   type RubySeg,
   type VocabItem,
 } from "@/schemas/lesson";
+import { SLOW_TEST_TIMEOUT } from "@/test/timeouts";
 import { isTitleLine } from "./dialogue";
 import { findExampleMatch } from "./examples";
 import { isSupplementary } from "./notes";
@@ -231,34 +232,40 @@ describe("聽力、填空的干擾項 × 教材:可互換的字不同時出現(T
     [49, "では", "それでは"],
   ];
 
-  it.each([["cloze"], ["listen"]] as QuestionType[][])("%s", (type) => {
-    let checked = 0;
-    for (const lessonId of [...new Set(pairs.map(([id]) => id))]) {
-      const lesson = lessons.find((l) => l.id === lessonId);
-      for (let seed = 1; seed <= 30; seed++) {
-        let x = seed;
-        const rng = () => ((x = (x * 16807) % 2147483647) - 1) / 2147483646;
-        const qs = generateQuiz(lessonId, poolFor(lessonId), {
-          types: [type],
-          lesson,
-          listenAvailable: true,
-          rng,
-        });
-        for (const q of qs) {
-          if (q.type === "input") continue;
-          const shown = q.options.map((o) => surface(o.candidate.ruby));
-          for (const [id, a, b] of pairs) {
-            if (id !== lessonId) continue;
-            const answer = surface(q.answer.ruby);
-            if (answer !== a && answer !== b) continue;
-            checked++;
-            expect(shown, `${type} ${answer}`).not.toContain(
-              answer === a ? b : a,
-            );
+  // 聽力題逐題以正規化讀音篩整個出題池,6 課 × 30 個種子單獨約 4 秒:放寬逾時
+  it.each([["cloze"], ["listen"]] as QuestionType[][])(
+    "%s",
+    (type) => {
+      let checked = 0;
+      for (const lessonId of [...new Set(pairs.map(([id]) => id))]) {
+        const lesson = lessons.find((l) => l.id === lessonId);
+        const pool = poolFor(lessonId);
+        for (let seed = 1; seed <= 30; seed++) {
+          let x = seed;
+          const rng = () => ((x = (x * 16807) % 2147483647) - 1) / 2147483646;
+          const qs = generateQuiz(lessonId, pool, {
+            types: [type],
+            lesson,
+            listenAvailable: true,
+            rng,
+          });
+          for (const q of qs) {
+            if (q.type === "input") continue;
+            const shown = q.options.map((o) => surface(o.candidate.ruby));
+            for (const [id, a, b] of pairs) {
+              if (id !== lessonId) continue;
+              const answer = surface(q.answer.ruby);
+              if (answer !== a && answer !== b) continue;
+              checked++;
+              expect(shown, `${type} ${answer}`).not.toContain(
+                answer === a ? b : a,
+              );
+            }
           }
         }
       }
-    }
-    expect(checked).toBeGreaterThan(100);
-  });
+      expect(checked).toBeGreaterThan(100);
+    },
+    SLOW_TEST_TIMEOUT,
+  );
 });

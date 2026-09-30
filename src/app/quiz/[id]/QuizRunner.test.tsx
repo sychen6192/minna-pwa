@@ -123,6 +123,26 @@ beforeEach(async () => {
 /** 「開始測驗(N 題)」 */
 const START = /^開始測驗/;
 
+/**
+ * 點擊 `el`,回傳點擊事件分派期間(React 的根監聽器處理完、act 尚未 flush effect 之前)
+ * speak 已被呼叫的次數:在點擊處理函式內朗讀者為 [n],改在 effect(點擊之後)朗讀者少一次。
+ * 行動版瀏覽器只允許在使用者手勢內的第一次朗讀。
+ */
+async function speakCountDuringClick(
+  user: ReturnType<typeof userEvent.setup>,
+  el: Element,
+): Promise<number[]> {
+  const during: number[] = [];
+  const probe = () => during.push(speak.mock.calls.length);
+  document.addEventListener("click", probe);
+  try {
+    await user.click(el);
+  } finally {
+    document.removeEventListener("click", probe);
+  }
+  return during;
+}
+
 /** 載入後的題型選擇畫面按「開始測驗」(預設題型),並撥過點擊防護 */
 async function startQuiz(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: START }));
@@ -555,12 +575,18 @@ describe("QuizRunner 題型選擇、聽力與例句填空(T11.8)", () => {
     await vi.waitFor(() => expect(chip("聽力")).toBeEnabled());
     expect(chip("聽力")).toHaveAttribute("aria-pressed", "true");
 
-    await startQuiz(user);
+    // 在「開始測驗」的點擊內朗讀(行動版瀏覽器要求),讀表面形(引擎依辭典決定重音)
+    expect(
+      await speakCountDuringClick(
+        user,
+        screen.getByRole("button", { name: START }),
+      ),
+    ).toEqual([1]);
+    passTapGuard();
     expect(generateQuiz.mock.lastCall?.[2]).toMatchObject({
       types: ["jp-to-zh", "zh-to-jp", "input", "cloze", "listen"],
       listenAvailable: true,
     });
-    // 在「開始測驗」的點擊內朗讀(行動版瀏覽器要求),讀表面形(引擎依辭典決定重音)
     expect(speak).toHaveBeenCalledTimes(1);
     expect(speak).toHaveBeenLastCalledWith("お花見");
     expect(screen.getByText("聽發音,選出意思")).toBeInTheDocument();
@@ -596,7 +622,12 @@ describe("QuizRunner 題型選擇、聽力與例句填空(T11.8)", () => {
     await startQuiz(user);
     expect(speak).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "狗" }));
-    await user.click(screen.getByRole("button", { name: "下一題" }));
+    expect(
+      await speakCountDuringClick(
+        user,
+        screen.getByRole("button", { name: "下一題" }),
+      ),
+    ).toEqual([1]);
     expect(speak).toHaveBeenCalledTimes(1);
     expect(speak).toHaveBeenLastCalledWith("お花見");
   });
