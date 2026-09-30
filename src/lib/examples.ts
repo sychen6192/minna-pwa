@@ -34,12 +34,17 @@ function startsWord(text: string, at: number, kanaLead: boolean): boolean {
   return kanaLead ? BOUNDARY_RE.test(prev) : !COMPOUND_RE.test(prev);
 }
 
-/** text 是否在某個詞的開頭處出現 word(逐一檢查每個出現位置)。 */
-function containsWord(text: string, word: string, kanaLead: boolean): boolean {
+/** word 在 text 中第一個位於詞開頭的出現位置(逐一檢查每個出現位置);沒有為 -1。 */
+function wordStart(text: string, word: string, kanaLead: boolean): number {
   for (let i = text.indexOf(word); i >= 0; i = text.indexOf(word, i + 1)) {
-    if (startsWord(text, i, kanaLead)) return true;
+    if (startsWord(text, i, kanaLead)) return i;
   }
-  return false;
+  return -1;
+}
+
+/** text 是否在某個詞的開頭處出現 word。 */
+function containsWord(text: string, word: string, kanaLead: boolean): boolean {
+  return wordStart(text, word, kanaLead) >= 0;
 }
 
 /**
@@ -58,6 +63,13 @@ function collocations(note: string | undefined): string[] {
     .flatMap((noun) => particles.map((p) => noun + p));
 }
 
+/** 單字在例句中的比對位置:句子表面文字(ruby 的 b 串接)的 [start, end) */
+export interface ExampleMatch {
+  sentence: Sentence;
+  start: number;
+  end: number;
+}
+
 /**
  * 為單字找一句「同課語境例句」:掃該課的文法例句與会話,取在詞邊界上含該單字表面形、
  * 且最短的一句(i+1 傾向——越短通常越單純)。找不到回傳 null。
@@ -73,6 +85,18 @@ export function findExampleSentence(
   vocab: VocabItem,
   lesson: Lesson,
 ): Sentence | null {
+  return findExampleMatch(vocab, lesson)?.sentence ?? null;
+}
+
+/**
+ * 同 findExampleSentence,另回傳單字在句中的位置(第一個位於詞開頭的出現處)。
+ * `accept` 可再篩選(例句填空:挖空處須對齊 ruby 分段);不通過者改看其他句,仍取最短。
+ */
+export function findExampleMatch(
+  vocab: VocabItem,
+  lesson: Lesson,
+  accept?: (match: ExampleMatch) => boolean,
+): ExampleMatch | null {
   const word = surface(vocab.ruby);
   if (word.length < 2) return null;
   const kanaLead = vocab.ruby[0].r === undefined;
@@ -88,21 +112,24 @@ export function findExampleSentence(
     ...lesson.dialogues,
   ];
 
-  let best: Sentence | null = null;
+  let best: ExampleMatch | null = null;
   let bestLen = Infinity;
   for (const s of candidates) {
     const text = surface(s.ruby);
     if (text.length >= bestLen) continue;
     if (text.includes(TABLE_ROW_MARK)) continue;
     if (normalize(text) === normalize(word)) continue;
-    if (!containsWord(text, word, kanaLead)) continue;
+    const start = wordStart(text, word, kanaLead);
+    if (start < 0) continue;
     if (
       homonym &&
       !required.some((c) => containsWord(text, c, !COMPOUND_RE.test(c[0])))
     ) {
       continue;
     }
-    best = s;
+    const match = { sentence: s, start, end: start + word.length };
+    if (accept && !accept(match)) continue;
+    best = match;
     bestLen = text.length;
   }
   return best;

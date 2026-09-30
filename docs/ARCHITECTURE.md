@@ -74,7 +74,7 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── page.tsx            # 今日儀表板(佇列 Hero、今日目標、安裝提示;資料層動態載入)
     │   ├── lessons/            # F1(/lessons、/lessons/[id])
     │   ├── review/             # F2
-    │   ├── quiz/[id]/          # F3(/quiz 頂端「練習」區塊連到各練習)
+    │   ├── quiz/[id]/          # F3:題型選擇(日→中/中→日/輸入/例句填空/聽力,存於設定 quizTypes)→ 10 題 → 結果(/quiz 頂端「練習」區塊連到各練習)
     │   ├── drill/              # F7.3 活用練習、F7.5 助詞搭配(/drill,?mode=particle:類型、範圍(與形)→ 10 題 → 結果;不寫入 DB)
     │   ├── reorder/            # F7.4 例句重組(/reorder 選課、/reorder/[id]:至多 8 句 → 結果;不寫入 DB)
     │   ├── grammar/            # F4
@@ -101,7 +101,8 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── lang.ts             # isJapanese / jaLang:日文字串的 lang="ja" 判定(純函式)
     │   ├── queueNote.ts        # 今日佇列因每日上限而空時的說明(純函式;首頁、課程頁共用)
     │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)
-    │   ├── quiz.ts             # 出題引擎(純函式)
+    │   ├── quiz.ts             # 出題引擎:選擇/輸入/例句填空(挖空)/聽力題型、干擾項(聽力、填空排除可互換的字)、輸入判分、聽力朗讀文字(純函式)
+    │   ├── examples.ts         # 語境例句:詞邊界比對找同課例句(findExampleSentence;findExampleMatch 另回傳位置,供例句填空)(純函式)
     │   ├── stats.ts            # 統計聚合(純函式 + DB 查詢)
     │   ├── tts.ts              # Web Speech API 包裝(speak、可取消的連續朗讀 speakSequence)+ 朗讀文字清理(speechText)
     │   ├── useSetting.ts       # 讀取全域設定的 hook(useSetting / useTtsEnabled;經 db.ts)與日語語音可用性(useJaVoiceAvailable)

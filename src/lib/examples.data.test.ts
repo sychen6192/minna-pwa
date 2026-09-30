@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { LessonSchema, type Lesson, type RubySeg } from "@/schemas/lesson";
-import { findExampleSentence } from "./examples";
+import { findExampleMatch, findExampleSentence } from "./examples";
 
 // 以實際教材資料(public/data)驗證語境例句配對:釘住稽核找到的誤配(LCV-M2 / DQ-M1)不再出現。
 const lessonsDir = join(process.cwd(), "public", "data", "lessons");
@@ -79,5 +79,20 @@ describe("語境例句 × 全部教材(T10.5)", () => {
     expect(exampleOf("L47-V005")).toBeNull(); // 課內無「味が します」
     expect(exampleOf("L47-V006")).toBeNull(); // 課內無「においが します」
     expect(exampleOf("L01-V014")?.id).toBe("L01-S10"); // ミラーさんは IMCの 社員です。
+  });
+});
+
+describe("findExampleMatch × 全部教材(T11.8)", () => {
+  it("與 findExampleSentence 選同一句,位置處恰為單字表面形", () => {
+    for (const l of lessons) {
+      for (const v of l.vocab) {
+        const m = findExampleMatch(v, l);
+        expect(m?.sentence ?? null, v.id).toBe(findExampleSentence(v, l));
+        if (m)
+          expect(text(m.sentence.ruby).slice(m.start, m.end), v.id).toBe(
+            text(v.ruby),
+          );
+      }
+    }
   });
 });

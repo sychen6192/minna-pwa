@@ -1,4 +1,5 @@
 import Dexie, { type Table } from "dexie";
+import type { QuestionType } from "@/lib/quiz";
 
 // ── 使用者資料 row 型別(DATA_MODEL §2)──────────────────────────────
 
@@ -49,6 +50,7 @@ export interface Settings {
   ttsEnabled: boolean;
   furigana: "show" | "hide";
   installPromptDismissed: boolean; // 安裝提示已被使用者關閉(T6.3)
+  quizTypes: QuestionType[]; // 單字測驗的題型選擇(T11.8;聽力只在有日語語音時出題)
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -60,6 +62,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsEnabled: true,
   furigana: "show",
   installPromptDismissed: false,
+  quizTypes: ["jp-to-zh", "zh-to-jp", "input", "cloze", "listen"],
 };
 
 export type SettingsKey = keyof Settings;

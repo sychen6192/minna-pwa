@@ -1,6 +1,10 @@
 import { toHiragana, toKatakana } from "wanakana";
+import { isTitleLine } from "@/lib/dialogue";
+import { findExampleMatch } from "@/lib/examples";
 import { isSupplementary } from "@/lib/notes";
-import type { VocabItem } from "@/schemas/lesson";
+import { promptText, refersToLaterLesson } from "@/lib/reorder";
+import { speechText } from "@/lib/tts";
+import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
 
 /** 出題候選 = 單字 + 所屬課號(用於同課/鄰近課干擾項規則) */
 export interface QuizCandidate extends VocabItem {
@@ -8,7 +12,19 @@ export interface QuizCandidate extends VocabItem {
 }
 
 export type McqDirection = "jp-to-zh" | "zh-to-jp";
-export type QuestionType = McqDirection | "input";
+/** 選擇題:看日文選中文、看中文選日文、聽發音選中文(listen) */
+export type McqType = McqDirection | "listen";
+/** 題型:選擇題、輸入題(看中文與漢字輸入假名)、例句填空(cloze) */
+export type QuestionType = McqType | "input" | "cloze";
+
+/** 全部題型(固定順序:出題輪替與題型選單皆依此) */
+export const QUESTION_TYPES: readonly QuestionType[] = [
+  "jp-to-zh",
+  "zh-to-jp",
+  "input",
+  "cloze",
+  "listen",
+];
 
 export interface McqOption {
   id: string;
@@ -17,7 +33,7 @@ export interface McqOption {
 }
 
 export interface McqQuestion {
-  type: McqDirection;
+  type: McqType;
   answer: QuizCandidate;
   options: McqOption[];
 }
@@ -27,7 +43,24 @@ export interface InputQuestion {
   answer: QuizCandidate;
 }
 
-export type Question = McqQuestion | InputQuestion;
+/** 例句填空的題幹:本課例句在單字處挖空(同句只挖一處),空格前後保留原句的 ruby 分段 */
+export interface Cloze {
+  sentenceId: string;
+  before: RubySeg[];
+  after: RubySeg[];
+  /** 例句中譯(協助判斷唯一解) */
+  translation: string;
+}
+
+/** 例句填空:選項為日文(正解 + 同詞性干擾項) */
+export interface ClozeQuestion {
+  type: "cloze";
+  answer: QuizCandidate;
+  options: McqOption[];
+  cloze: Cloze;
+}
+
+export type Question = McqQuestion | InputQuestion | ClozeQuestion;
 
 type Rng = () => number;
 
@@ -236,6 +269,8 @@ export function pickDistractors(
   pool: QuizCandidate[],
   count: number,
   rng: Rng = Math.random,
+  /** 選項顯示的文字:給定時選項間(含正解)此值也不重複(聽力的中文、填空的日文表面形) */
+  distinctBy?: (c: QuizCandidate) => string,
 ): QuizCandidate[] {
   const usable = pool.filter(
     (c) =>
@@ -260,86 +295,496 @@ export function pickDistractors(
 
   const ordered = [...tier1, ...tier2, ...tier3];
 
+  const keyOf = distinctBy ?? ((c: QuizCandidate) => c.id);
   const picked: QuizCandidate[] = [];
-  const seen = new Set<string>();
+  const seen = new Set<string>([keyOf(answer)]);
   for (const c of ordered) {
     if (picked.length >= count) break;
-    if (seen.has(c.id)) continue;
-    seen.add(c.id);
+    const key = keyOf(c);
+    if (seen.has(key)) continue;
+    seen.add(key);
     picked.push(c);
   }
   return picked;
 }
 
-function makeMcq(
+// ── 聽力題(LC-08)──────────────────────────────────────────────────
+
+/** 漢字(含々〆ヶ) */
+const KANJI_RE = /[㐀-鿿豈-﫿々〆ヶ]/;
+/** 數字:引擎讀數字的方式(4分の 1、5年生)不一定是教材讀音 */
+const DIGIT_RE = /[0-9０-９]/;
+/** 判斷「單一漢字」時忽略的句讀與空白 */
+const SPEECH_PUNCT_RE = /[\s、。?？!！]/g;
+/**
+ * 表面形有另一個常用讀音的字(同形異讀):以表面形朗讀可能讀成別的字,改讀 kana。
+ * 教材內同表面不同讀音者(降ります ふります/おります、開きます ひらきます/あきます;
+ * quiz.data.test 以全部教材核對),與另有常用讀音者(明日 あす/あした、紅葉 もみじ/こうよう、
+ * 辛い からい/つらい、止めます とめます/やめます、何階 なんがい/なんかい)。
+ */
+const READ_KANA_SURFACES: ReadonlySet<string> = new Set([
+  "降ります",
+  "開きます",
+  "明日",
+  "紅葉",
+  "辛い",
+  "止めます",
+  "何階",
+]);
+
+function surfaceOf(v: Pick<VocabItem, "ruby">): string {
+  return v.ruby.map((s) => s.b).join("");
+}
+
+/**
+ * 聽力題的朗讀文字。含漢字時讀(清理記號後的)表面形:引擎依辭典決定重音,比只給假名準確
+ * (はし、あめ 這類同音詞);下列情況改讀 kana(speechText),避免引擎讀成別的字:
+ * - 單一漢字(方 かた/ほう、私 わたくし、土 ど):單字無上下文,引擎常取另一個讀音
+ * - 含數字、同形異讀(READ_KANA_SURFACES)、以「、」並列的同音寫法(暑い、熱い)、
+ *   「・」縮寫(月・水・金)
+ */
+export function listenText(v: Pick<VocabItem, "ruby" | "kana">): string {
+  const surface = speechText(surfaceOf(v));
+  const bare = surface.replace(SPEECH_PUNCT_RE, "");
+  const lone = [...bare].length === 1;
+  const alternatives = /[、・]/.test(surface) && !/[、・]/.test(v.kana);
+  if (
+    !KANJI_RE.test(surface) ||
+    lone ||
+    alternatives ||
+    DIGIT_RE.test(surface) ||
+    READ_KANA_SURFACES.has(surface)
+  ) {
+    return speechText(v);
+  }
+  return surface;
+}
+
+/**
+ * 能否出聽力題:kana 須為純假名(［な］、おっと／しゅじん、〜によると 這類記號無法確定朗讀內容),
+ * 表面不含〜…(接頭/接尾、數量詞框架不是能單獨聽懂的詞),且有可朗讀的文字。
+ */
+export function canListen(v: Pick<VocabItem, "ruby" | "kana">): boolean {
+  return (
+    KANA_ONLY_RE.test(v.kana) &&
+    !ELLIPSIS_RE.test(surfaceOf(v)) &&
+    listenText(v) !== ""
+  );
+}
+
+// ── 例句填空(LC-10)────────────────────────────────────────────────
+
+/** 選項不該出現的教材記號與句讀:正解取自例句原文、不會帶這些,帶的干擾項一眼可刪 */
+const NOTATION_RE = /[［］〔〕（）()〜～…／「」。、？！?!]/;
+
+/** 表面形可當填空選項(不含教材記號與句讀) */
+function isPlainSurface(v: Pick<VocabItem, "ruby">): boolean {
+  return !NOTATION_RE.test(surfaceOf(v));
+}
+
+/**
+ * 把 ruby 分段在表面文字的 [start, end) 處切成前後兩段(挖空用)。帶讀音(r)的漢字段不可拆:
+ * 區間端點落在其中者(外国 ⊂ 外国人)回傳 null;假名段可在任意處切開。
+ */
+export function splitRuby(
+  segs: readonly RubySeg[],
+  start: number,
+  end: number,
+): { before: RubySeg[]; after: RubySeg[] } | null {
+  const before: RubySeg[] = [];
+  const after: RubySeg[] = [];
+  let pos = 0;
+  for (const seg of segs) {
+    const segStart = pos;
+    const segEnd = pos + seg.b.length;
+    pos = segEnd;
+    if (segEnd <= start) {
+      before.push(seg);
+    } else if (segStart >= end) {
+      after.push(seg);
+    } else if (seg.r !== undefined) {
+      // 漢字段與挖空區間重疊:須整段在區間內
+      if (segStart < start || segEnd > end) return null;
+    } else {
+      if (segStart < start)
+        before.push({ b: seg.b.slice(0, start - segStart) });
+      if (segEnd > end) after.push({ b: seg.b.slice(end - segStart) });
+    }
+  }
+  return { before, after };
+}
+
+/**
+ * 為單字出例句填空:以 examples.ts 的詞邊界比對(findExampleMatch)找本課最短的例句或会話,
+ * 把單字所在處挖空(只挖單字本身的表面形,同句只挖一處)。不出(回傳 null)的情況:
+ * - 慣用語(寒暄、套語多半整句即答案,挖空後沒有可判斷的語境);表面含教材記號者
+ * - 句子:含「→」的對照行、正規化後等於單字本身(findExampleMatch 已排除)、会話標題行、
+ *   中譯標示較晚課次者(用到還沒教的內容,同例句重組)、句中另有同一字面(挖一處仍看得到答案)、
+ *   挖空處切開帶讀音的漢字段(外国 ⊂ 外国人)
+ * 中譯去掉句尾的課次參照(promptText)。
+ */
+export function makeCloze(vocab: VocabItem, lesson: Lesson): Cloze | null {
+  if (vocab.pos === "慣用" || !isPlainSurface(vocab)) return null;
+  const word = surfaceOf(vocab);
+  const titles = new Set<Sentence>(
+    lesson.dialogues.filter((line, i) => isTitleLine(line, i)),
+  );
+  const match = findExampleMatch(vocab, lesson, ({ sentence, start, end }) => {
+    if (titles.has(sentence) || refersToLaterLesson(sentence, lesson.id)) {
+      return false;
+    }
+    const text = surfaceOf(sentence);
+    return (
+      text.slice(start, end) === word &&
+      text.indexOf(word) === text.lastIndexOf(word) &&
+      splitRuby(sentence.ruby, start, end) !== null
+    );
+  });
+  const parts = match && splitRuby(match.sentence.ruby, match.start, match.end);
+  if (!match || !parts) return null;
+  return {
+    sentenceId: match.sentence.id,
+    ...parts,
+    translation: promptText(match.sentence.translation),
+  };
+}
+
+// ── 可互換的選項(聽力、填空)──────────────────────────────────────────
+
+/** 中文意思的說明括號:（じゃ的禮貌說法）、(自己的)、〔鐘錶〕 */
+const MEANING_NOTE_RE = /（[^（）]*）|\([^()]*\)|〔[^〔〕]*〕|［[^［］]*］/g;
+/** 中文意思的並列分隔 */
+const MEANING_SEP_RE = /[、，,／/；;]/;
+/** 比對核心詞時忽略的句讀與記號 */
+const MEANING_PUNCT_RE = /[\s。？！?!〜～…"“”]/g;
+
+/** 中文意思的核心詞:去掉說明括號(含巢狀)後以並列分隔切開(那麼（じゃ的禮貌說法）→ 那麼) */
+function meaningTokens(meaning: string): string[] {
+  let core = meaning;
+  for (let prev = ""; prev !== core; ) {
+    prev = core;
+    core = core.replace(MEANING_NOTE_RE, "");
+  }
+  return core
+    .split(MEANING_SEP_RE)
+    .map((t) => t.replace(MEANING_PUNCT_RE, ""))
+    .filter((t) => t.length > 0);
+}
+
+/** a 的中文意思提到 b(どちら「哪邊（どこ 的禮貌形）」、こっち「這邊（不如"こちら"禮貌）」) */
+function mentions(
+  a: Pick<VocabItem, "meaning">,
+  b: Pick<VocabItem, "kana">,
+): boolean {
+  return (
+    KANA_ONLY_RE.test(b.kana) &&
+    b.kana.length >= 2 &&
+    a.meaning.includes(b.kana)
+  );
+}
+
+/**
+ * こそあど詞的類別(場所與方向同類:ここ／こちら／こっち 可互換)。そ・あ 系列譯成中文同為「那」,
+ * 中譯分不出來(あそこ／そちら),ko・so・a・do 以中譯的「這／那／哪」比對。
+ */
+const KOSOADO_KIND: ReadonlyMap<string, string> = new Map(
+  (
+    [
+      ["place", "ここ そこ あそこ どこ こちら そちら あちら どちら"],
+      ["place", "こっち そっち あっち どっち"],
+      ["thing", "これ それ あれ どれ"],
+      ["determiner", "この その あの どの"],
+      ["kind", "こんな そんな あんな どんな"],
+      ["degree", "こんなに そんなに あんなに どんなに"],
+    ] as const
+  ).flatMap(([kind, words]) =>
+    words.split(" ").map((w): [string, string] => [w, kind]),
+  ),
+);
+const KOSOADO_DEIXIS: Readonly<Record<string, string>> = {
+  こ: "這",
+  そ: "那",
+  あ: "那",
+  ど: "哪",
+};
+
+function sameKosoado(
+  a: Pick<VocabItem, "kana">,
+  b: Pick<VocabItem, "kana">,
+): boolean {
+  const kind = KOSOADO_KIND.get(a.kana);
+  return (
+    kind !== undefined &&
+    kind === KOSOADO_KIND.get(b.kana) &&
+    KOSOADO_DEIXIS[a.kana[0]] === KOSOADO_DEIXIS[b.kana[0]]
+  );
+}
+
+/**
+ * 兩個字同時當選項時可能都算對(聽力的中文選項、填空的日文選項因此不同時出現):
+ * - 中文核心詞重疊:では「那麼（じゃ的禮貌說法）」／それでは「那麼」、中「裡面、中間」／奥「裡面」、
+ *   それ／あれ(皆「那」)
+ * - 一方的意思提到另一方:どちら「哪邊（どこ 的禮貌形）」／どこ、こちら／ここ
+ * - 同類こそあど詞且中譯同為這／那／哪:あそこ／そちら／あっち
+ * 寧可多排除(干擾項另有同課/鄰近課的字可補)。
+ */
+export function interchangeable(
+  a: Pick<VocabItem, "kana" | "meaning">,
+  b: Pick<VocabItem, "kana" | "meaning">,
+): boolean {
+  const tokens = new Set(meaningTokens(a.meaning));
+  return (
+    meaningTokens(b.meaning).some((t) => tokens.has(t)) ||
+    mentions(a, b) ||
+    mentions(b, a) ||
+    sameKosoado(a, b)
+  );
+}
+
+// ── 出題 ───────────────────────────────────────────────────────────
+
+function withOptions(
   answer: QuizCandidate,
-  pool: QuizCandidate[],
-  direction: McqDirection,
-  optionCount: number,
+  distractors: QuizCandidate[],
   rng: Rng,
-): McqQuestion {
-  const distractors = pickDistractors(answer, pool, optionCount - 1, rng);
-  const options: McqOption[] = shuffle(
+): McqOption[] {
+  return shuffle(
     [
       { id: answer.id, candidate: answer, correct: true },
       ...distractors.map((c) => ({ id: c.id, candidate: c, correct: false })),
     ],
     rng,
   );
-  return { type: direction, answer, options };
 }
+
+function makeMcq(
+  answer: QuizCandidate,
+  pool: QuizCandidate[],
+  type: McqType,
+  optionCount: number,
+  rng: Rng,
+): McqQuestion {
+  if (type !== "listen") {
+    const distractors = pickDistractors(answer, pool, optionCount - 1, rng);
+    return { type, answer, options: withOptions(answer, distractors, rng) };
+  }
+  // 聽力:選項為中文,彼此不重複;讀音相同的字(平/片假名寫法不同亦同)聽不出差別、
+  // 意思可互換的字(interchangeable)也算對,皆不當干擾項
+  const reading = normalizeReading(answer.kana);
+  const distractors = pickDistractors(
+    answer,
+    pool.filter(
+      (c) =>
+        normalizeReading(c.kana) !== reading && !interchangeable(answer, c),
+    ),
+    optionCount - 1,
+    rng,
+    (c) => c.meaning,
+  );
+  return { type, answer, options: withOptions(answer, distractors, rng) };
+}
+
+/**
+ * 例句填空的選項:同詞性干擾項(pickDistractors 規則),只取不帶教材記號的字,日文表面形不重複;
+ * 填入也對的字(interchangeable:どこ／どちら、あそこ／そちら、では／それでは)不當干擾項
+ */
+function makeClozeQuestion(
+  answer: QuizCandidate,
+  cloze: Cloze,
+  pool: QuizCandidate[],
+  optionCount: number,
+  rng: Rng,
+): ClozeQuestion {
+  const distractors = pickDistractors(
+    answer,
+    pool.filter((c) => isPlainSurface(c) && !interchangeable(answer, c)),
+    optionCount - 1,
+    rng,
+    surfaceOf,
+  );
+  return {
+    type: "cloze",
+    answer,
+    options: withOptions(answer, distractors, rng),
+    cloze,
+  };
+}
+
+/**
+ * 輪到的題型不適合這個字時改出的題型(依序取第一個已啟用且適合者):
+ * 輸入、填空 → 中→日(同為回想日文);聽力 → 日→中(同為辨義)。
+ */
+const FALLBACK: Readonly<Record<QuestionType, readonly QuestionType[]>> = {
+  "jp-to-zh": [],
+  "zh-to-jp": [],
+  input: ["zh-to-jp", "jp-to-zh", "cloze", "listen"],
+  cloze: ["zh-to-jp", "jp-to-zh", "input", "listen"],
+  listen: ["jp-to-zh", "zh-to-jp", "cloze", "input"],
+};
+
+/** 有條件的題型:先在抽中的字裡為它們挑適合者(否則常被一律適合的選擇題先用掉);越少字適合者越先挑 */
+const CONSTRAINED: readonly QuestionType[] = ["cloze", "listen", "input"];
 
 export interface GenerateQuizOptions {
   count?: number;
   optionCount?: number;
   types?: QuestionType[];
+  /** 目標課的完整資料:例句填空從其文法例句與会話找句;未提供時不出填空 */
+  lesson?: Lesson;
+  /** 可出聽力題(呼叫端:設定 ttsEnabled 開啟且有日語語音);false 時 types 中的 listen 忽略 */
+  listenAvailable?: boolean;
   rng?: Rng;
+}
+
+/** 出題的共同判斷:實際啟用的題型、各題型適不適合某字、可出題的字(generateQuiz 與 quizWordCount 共用) */
+function quizPlan(
+  lessonId: number,
+  pool: QuizCandidate[],
+  { types: requested, lesson, listenAvailable = false }: GenerateQuizOptions,
+) {
+  const types = (requested ?? ["jp-to-zh", "zh-to-jp", "input"]).filter(
+    (t) => t !== "listen" || listenAvailable,
+  );
+  const clozes = new Map<string, Cloze | null>();
+  const clozeOf = (c: QuizCandidate): Cloze | null => {
+    if (lesson === undefined || c.lessonId !== lesson.id) return null;
+    if (!clozes.has(c.id)) clozes.set(c.id, makeCloze(c, lesson));
+    return clozes.get(c.id) ?? null;
+  };
+  const fits = (c: QuizCandidate, t: QuestionType): boolean =>
+    t === "input"
+      ? canInput(c)
+      : t === "listen"
+        ? canListen(c)
+        : t === "cloze"
+          ? clozeOf(c) !== null
+          : true;
+  const targets = pool.filter(
+    (c) =>
+      c.lessonId === lessonId &&
+      !isSupplementary(c) &&
+      types.some((t) => fits(c, t)),
+  );
+  return { types, clozeOf, fits, targets };
+}
+
+/**
+ * 以這些題型可出題的字數(補充單字除外、至少適合一個啟用題型):題型選單據此顯示題數
+ * (generateQuiz 出 min(count, 此數) 題)。
+ */
+export function quizWordCount(
+  lessonId: number,
+  pool: QuizCandidate[],
+  options: Pick<GenerateQuizOptions, "types" | "lesson" | "listenAvailable">,
+): number {
+  return quizPlan(lessonId, pool, options).targets.length;
 }
 
 /**
  * 為 `lessonId` 出題。`pool` 應含該課單字 + 鄰近課單字(供干擾項)。
- * 題型在 enabled types 間輪替;選擇題干擾項依 pickDistractors 規則。
- * - 補充單字(自行練習發音)不出題,仍可當干擾項;題目不足 `count` 時就出較少題。
- * - 輪到輸入題但該字不適合輸入(!canInput)時,改出選擇題:優先中→日(同為回想日文),
- *   否則取第一個啟用的選擇題型;未啟用任何選擇題型時只從可輸入的字出題。
+ * 題型在 enabled types 間依序輪替;選擇題干擾項依 pickDistractors 規則。
+ * - 本回合的字從可出題的字隨機均勻抽 `count` 個(再測一次重新抽);補充單字(自行練習發音)
+ *   不出題,仍可當干擾項;題目不足 `count` 時就出較少題。
+ * - 有條件的題型只給適合的字:輸入題 canInput、聽力 canListen(且 listenAvailable)、
+ *   填空 makeCloze 找得到例句(需 `lesson`)。先在抽中的字裡為這些題型挑適合者;不夠時該題改出
+ *   FALLBACK 中已啟用且適合的題型(輸入、填空優先中→日)。沒有任何啟用題型適合的字不出題
+ *   (例:只啟用輸入題時只從可輸入的字出題)。填空因此只在抽到有例句的字時出現。
+ * - 填空:同一回合每句例句只用一次;抽中的字只剩「例句已用過的填空」可出時改取未抽中的字,
+ *   沒有其他字可出時才重複。
  */
 export function generateQuiz(
   lessonId: number,
   pool: QuizCandidate[],
   options: GenerateQuizOptions = {},
 ): Question[] {
-  const {
-    count = 10,
-    optionCount = 4,
-    types = ["jp-to-zh", "zh-to-jp", "input"],
-    rng = Math.random,
-  } = options;
-
+  const { count = 10, optionCount = 4, rng = Math.random } = options;
+  const { types, clozeOf, fits, targets } = quizPlan(lessonId, pool, options);
   if (types.length === 0) return [];
 
-  const mcqTypes = types.filter((t): t is McqDirection => t !== "input");
-  const fallback: McqDirection | undefined = mcqTypes.includes("zh-to-jp")
-    ? "zh-to-jp"
-    : mcqTypes[0];
+  // 隨機順序的前 count 個 = 本回合抽中的字(均勻抽樣,不因題型偏向某些字);其後備用
+  const order = shuffle(targets, rng);
+  const sampled = order.slice(0, count);
+  const slots = sampled.map((_, i) => types[i % types.length]);
 
-  const targets = shuffle(
-    pool.filter(
-      (c) =>
-        c.lessonId === lessonId &&
-        !isSupplementary(c) &&
-        (fallback !== undefined || canInput(c)),
-    ),
-    rng,
-  ).slice(0, count);
+  const used = new Set<string>();
+  const take = (
+    from: readonly QuizCandidate[],
+    accept: (c: QuizCandidate) => boolean,
+  ) => {
+    const c = from.find((w) => !used.has(w.id) && accept(w));
+    if (c) used.add(c.id);
+    return c;
+  };
+  // 同一回合每句例句只挖空一次(同句的另一個字挖空時,前一題的答案就在句中)
+  const usedSentences = new Set<string>();
+  const fresh = (c: QuizCandidate, t: QuestionType): boolean => {
+    if (t !== "cloze") return fits(c, t);
+    const cloze = clozeOf(c);
+    return cloze !== null && !usedSentences.has(cloze.sentenceId);
+  };
+  const use = (c: QuizCandidate, t: QuestionType) => {
+    const sentenceId = t === "cloze" ? clozeOf(c)?.sentenceId : undefined;
+    if (sentenceId !== undefined) usedSentences.add(sentenceId);
+  };
 
-  return targets.map((answer, i) => {
-    const rotated = types[i % types.length];
-    const type =
-      rotated === "input" && fallback !== undefined && !canInput(answer)
-        ? fallback
-        : rotated;
-    return type === "input"
-      ? { type: "input", answer }
-      : makeMcq(answer, pool, type, optionCount, rng);
+  // 有條件題型的輪次:抽中的字裡適合者,先給可出題型最少的字(只能填空的字先佔例句,
+  // 也能出輸入題的字留給輸入題,例句才不會不夠分)
+  const flexibility = (c: QuizCandidate) =>
+    types.filter((t) => fits(c, t)).length;
+  const answers: (QuizCandidate | undefined)[] = slots.map(() => undefined);
+  for (const t of CONSTRAINED) {
+    slots.forEach((slot, i) => {
+      if (slot !== t) return;
+      const fitting = sampled.filter((w) => !used.has(w.id) && fresh(w, t));
+      const least = Math.min(...fitting.map(flexibility));
+      const c = take(fitting, (w) => flexibility(w) === least);
+      if (c) use(c, t);
+      answers[i] = c;
+    });
+  }
+
+  const questions: Question[] = [];
+  slots.forEach((slot, i) => {
+    const preset = answers[i];
+    // 其餘輪次依序取抽中的字;抽中的字都只剩例句已用過的填空可出時,改取未抽中、出題不必重複
+    // 例句的字,仍沒有才重複例句。題數 ≤ 可出題的字數,這裡必取得到字
+    const answer =
+      preset ??
+      take(order, (w) => types.some((t) => fresh(w, t))) ??
+      take(order, () => true);
+    if (!answer) return;
+    // 輪到的題型不適合時依 FALLBACK 改出;每個可出題的字至少適合一個啟用題型
+    const candidates = [slot, ...FALLBACK[slot], ...types].filter((t) =>
+      types.includes(t),
+    );
+    const type = preset
+      ? slot
+      : (candidates.find((t) => fresh(answer, t)) ??
+        candidates.find((t) => fits(answer, t)) ??
+        slot);
+    if (!preset) use(answer, type);
+    if (type === "input") {
+      questions.push({ type, answer });
+    } else if (type === "cloze") {
+      const cloze = clozeOf(answer);
+      if (cloze) {
+        questions.push(
+          makeClozeQuestion(answer, cloze, pool, optionCount, rng),
+        );
+      }
+    } else {
+      questions.push(makeMcq(answer, pool, type, optionCount, rng));
+    }
   });
+  return questions;
+}
+
+/**
+ * 讀回儲存的題型選擇(設定 quizTypes;手改的備份可能留下任意值):只留已知題型,
+ * 依 QUESTION_TYPES 排序、去重;沒有任何有效題型時回傳 null(呼叫端改用預設)。
+ */
+export function parseQuizTypes(raw: unknown): QuestionType[] | null {
+  if (!Array.isArray(raw)) return null;
+  const types = QUESTION_TYPES.filter((t) => raw.includes(t));
+  return types.length > 0 ? types : null;
 }

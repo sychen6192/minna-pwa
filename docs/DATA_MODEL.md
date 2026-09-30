@@ -184,6 +184,7 @@ settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAl
 | `ttsEnabled` | true(false 時課程頁、複習、練習都不顯示發音鈕) |
 | `furigana` | `"show"`(`show` \| `hide`;課程頁/複習/練習/測驗的初始值,課程頁內切換只影響本頁、不寫回) |
 | `installPromptDismissed` | false(加入主畫面提示已被關閉) |
+| `quizTypes` | `["jp-to-zh","zh-to-jp","input","cloze","listen"]`(單字測驗的題型選擇,`QuestionType[]`;聽力只在 TTS 開啟且有日語語音時出題,不可用時保留原選擇;讀回時只留已知題型,無有效值則用預設) |
 
 ## 3. 匯出 / 匯入格式
 

@@ -5,7 +5,7 @@ import type {
   Sentence,
   VocabItem,
 } from "@/schemas/lesson";
-import { findExampleSentence } from "./examples";
+import { findExampleMatch, findExampleSentence } from "./examples";
 
 function vocab(surface: string, overrides: Partial<VocabItem> = {}): VocabItem {
   return {
@@ -350,5 +350,30 @@ describe("findExampleSentence 同課同表面形(T10.5)", () => {
     const suru = vocab("します", { id: "L06-V010", pos: "動III" });
     const l = lessonOf(["会議を します。"], [suru]);
     expect(findExampleSentence(suru, l)?.id).toBe("S1");
+  });
+});
+
+describe("findExampleMatch(T11.8 例句填空)", () => {
+  it("回傳單字在句子表面文字中的位置(第一個位於詞開頭處)", () => {
+    const l = lessonOf(["まっすぐ 行って、すぐ 右です。"]);
+    const m = findExampleMatch(vocab("すぐ"), l);
+    expect(m?.sentence.id).toBe("S1");
+    expect(m && [m.start, m.end]).toEqual([9, 11]); // まっすぐ 的「すぐ」不算
+  });
+
+  it("accept 不通過時改看其他句,仍取最短;全不通過回傳 null", () => {
+    const l = lessonOf([
+      "公園で 遊びます。",
+      "日曜日は 公園で 遊びます。",
+      "子どもたちは 毎日 公園で 遊びます。",
+    ]);
+    const m = findExampleMatch(
+      asobimasu,
+      l,
+      ({ sentence }) => sentence.id !== "S1",
+    );
+    expect(m?.sentence.id).toBe("S2");
+    expect(findExampleMatch(asobimasu, l, () => false)).toBeNull();
+    expect(findExampleSentence(asobimasu, l)?.id).toBe("S1"); // 不影響語境例句
   });
 });

@@ -313,8 +313,11 @@ export function misplacedPositions(
 /** 中譯句尾的課次參照「（第25課）」「(第 5 課)」:教材標示此例句用到該課的文法/單字 */
 const LESSON_REF_RE = /\s*[（(]第\s*(\d+)\s*課[）)]\s*$/;
 
-/** 例句標示的課次比本課晚(用到還沒教的內容):不在本課出題 */
-function refersToLaterLesson(sentence: Sentence, lessonId: number): boolean {
+/** 例句標示的課次比本課晚(用到還沒教的內容):不在本課出題(例句重組、測驗的例句填空) */
+export function refersToLaterLesson(
+  sentence: Sentence,
+  lessonId: number,
+): boolean {
   const m = LESSON_REF_RE.exec(sentence.translation);
   return m !== null && Number(m[1]) > lessonId;
 }
