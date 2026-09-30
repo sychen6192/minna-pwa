@@ -36,7 +36,8 @@ pdftotext -layout N.pdf  →  Claude Code 結構化 + ruby 對齊  →  寫 Lxx.
    - 濾掉頁尾雜訊(`課:13 (頁:1/9)` 之類)。
    - 單字/文法依教材原順序編號(id 穩定性是硬需求,見 DATA_MODEL §4)。
    - **不得**增刪、潤飾或「補完」教材內容;唯一例外是 `会話` 中譯(來源無)。
-4. **驗證**:`pnpm validate:content`——先以 Zod(單一真相)驗證全部檔案與檔名,通過後執行 content-lint(`scripts/content-lint.ts`,規則見該檔 `RULES`)。Zod 或 content-lint **error**(id 格式/連號、ruby 讀音與 furigana 範圍、字元衛生、日文近似字、詞性形狀、会話 speaker、中文字形等)失敗即修(exit 1);**warning**(kana 記號、kana 與 ruby 不一致、跨課重複、詞性不一致等)是需要對照 PDF 判斷的可疑項,只列出、不影響結束碼。預設每條規則只印前 5 筆;`pnpm validate:content --all` 印全部清單、`--rule <id>` 只印一條規則的完整清單,作為校讀清單。warning 清單由 `scripts/content-lint.data.test.ts` 以 id 釘住(ratchet),資料修正須在同一個 commit 更新。
+   - 中文欄位(`meaning`、`note` 的中文說明、`explanation`、`translation`)的標點用全形「，；：？！（）」,千分位(15,000)保留半形。PDF 文字層半形/全形混用(依抽取批次而異),寫檔後一律執行 `pnpm normalize:zh-punct` 統一(見 §2「中文標點」)。
+4. **驗證**:`pnpm validate:content`——先以 Zod(單一真相)驗證全部檔案與檔名,通過後執行 content-lint(`scripts/content-lint.ts`,規則見該檔 `RULES`)。Zod 或 content-lint **error**(id 格式/連號、ruby 讀音與 furigana 範圍、字元衛生、日文近似字、詞性形狀、会話 speaker、中文字形、中文標點等)失敗即修(exit 1);**warning**(kana 記號、kana 與 ruby 不一致、跨課重複、詞性不一致等)是需要對照 PDF 判斷的可疑項,只列出、不影響結束碼。預設每條規則只印前 5 筆;`pnpm validate:content --all` 印全部清單、`--rule <id>` 只印一條規則的完整清單,作為校讀清單。warning 清單由 `scripts/content-lint.data.test.ts` 以 id 釘住(ratchet),資料修正須在同一個 commit 更新。
 5. **索引**:50 課全數通過後,由腳本產生 `public/data/index.json`。
 
 ## 2. 已知特例
@@ -45,6 +46,7 @@ pdftotext -layout N.pdf  →  Claude Code 結構化 + ruby 對齊  →  寫 Lxx.
 - `会話` 中譯為自譯(來源無中文);`vocab`/`grammar` 中文皆取自 PDF。
 - **会話標題**(2026-09-30,T12.4):会話前的標題(如 L24「手伝って くれますか」)存於課層級的 `dialogueTitle`(ruby + 自譯中譯,置於 `dialogues` 前),**不當 `dialogues` 的第一行台詞**;`dialogues` 只收有說話者的台詞,D 自 `D01` 連號(content-lint error dialogue-speaker、id-sequence 把關)。每課只有一段会話,課層級一個欄位即足夠。舊抽取把 L15/L23/L24/L41 的標題放在 D01(speaker 為「標題」「（標題）」或缺漏),已由 `fix:content` 移出;其餘 46 課目前沒有 `dialogueTitle`(教材是否有標題需對照 PDF)。
 - **資料修正**(2026-09-30,T12.2):不需對照 PDF 的修正(稽核 2026-09 §D)列在 `scripts/fix-content.ts` 的 `CORRECTIONS`(每筆宣告現值、修正值與理由;種類有欄位值修正、「会話標題行移入 `dialogueTitle` 並遞補 D id」(T12.4)與「ruby 分段」(一段換成多段,串接的表面與只取假名的讀音須不變;T12.5)),以 `pnpm fix:content` 手術式寫回;`pnpm fix:content --check` 只列狀態,有待套用項 exit 1。它是 DATA_MODEL §4-2 所說的 fixture、允許寫入 `public/data` 的來源(pipeline 側另有只寫 accent 行的 `enrich:accents` 與產生 index.json 的 `build:index`),修正一律加進清單、不得手改 JSON。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住:日後從 PDF 重新抽取而蓋回時測試失敗,重跑 `pnpm fix:content` 即復原;現值既非修正前也非修正後(資料已另被改動)時腳本報錯中止,需人工判斷。
+- **中文標點**(2026-09-30,T12.6):中文欄位的標點由 `scripts/normalize-zh-punct.ts`(`pnpm normalize:zh-punct`)規則式統一為全形(規則 R1–R9 在 `scripts/lib/zhPunct.ts`:`, ; : ? ! ( )` → 全形,千分位 `\d,\d{3}` 與時刻 `\d:\d` 保留;刪除轉換標點旁的 ASCII 空白;小型變體 ﹐﹑﹖、成對的 ASCII 引號、～(U+FF5E)→ ，、？“”〜),以 `scripts/lib/rawJson.ts` 手術式寫回、冪等;先印摘要(各欄位筆數、各規則字數、保留的千分位),`--check` 不寫檔、有待改項 exit 1,`--list` 逐筆列出。欄位:`vocab.meaning`、`vocab.note`(段落標記「補充單字(自行練習發音)」「読み物」「会話」除外)、`grammar.explanation`、例句與会話 `translation`、`dialogueTitle.translation`;日文欄位不動。它與 `fix:content` 同為允許寫入 `public/data` 的來源(規則式,不逐筆宣告)。`fix:content` 的中文修正(欄位修正的 from/to、会話標題修正的中譯)以正規化後的寫法宣告(`scripts/fix-content.data.test.ts` 把關),故重新抽取後**先跑 `normalize:zh-punct` 再跑 `fix:content`**:欄位修正比對子字串、現有 4 筆不含標點,先後皆可;会話標題修正比對整句中譯(L15「您的家人呢？」),中譯須已正規化才比對得到。首次執行改動 535 筆值(note 38、meaning 46、explanation 189、例句 125、会話 137),保留 8 個千分位。content-lint error zh-punct 在 `pnpm verify` 把關:日後從 PDF 重新抽取而帶回半形時測試失敗,重跑本腳本即復原。
 - `ことば` 末段「請自行練習發音」:**收國家/地名等實詞**(アメリカ、韓国…);**略過虛構專有名詞**(校名/公司名/店名/機構名,如 IMC、さくら大学),因其僅為課文範例且常無假名讀音。
 
 ## 3. 驗收標準

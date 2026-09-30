@@ -9,6 +9,7 @@ import {
   statusOf,
   validateCorrections,
 } from "./fix-content";
+import { normalizeZhPunct } from "./lib/zhPunct";
 
 // 以真實教材資料釘住 fix-content 的每筆修正。CI 只跑 pnpm verify,日後從 PDF 重新抽取而
 // 蓋回任一筆時在這裡失敗(執行 pnpm fix:content 即復原)。
@@ -21,6 +22,20 @@ const lessonOf = (lesson: number) => parseLesson(rawOf(lesson));
 describe("fix-content × 真實資料", () => {
   it("CORRECTIONS 宣告合法", () => {
     expect(validateCorrections(CORRECTIONS)).toEqual([]);
+  });
+
+  // 重新抽取後先跑 normalize:zh-punct 再跑 fix:content,中文修正必比對得到:欄位修正比對
+  // 子字串,会話標題修正比對整句中譯(L15「您的家人呢？」)
+  it("中文修正(meaning、explanation、translation、会話標題中譯)以標點正規化後的寫法宣告(T12.6)", () => {
+    const zh = CORRECTIONS.flatMap((c) => {
+      if (c.kind === "dialogueTitle") return [c.from.translation];
+      if (c.kind !== "field") return [];
+      return ["meaning", "explanation", "translation"].includes(c.field)
+        ? [c.from, c.to]
+        : [];
+    });
+    expect(zh).toHaveLength(12);
+    expect(zh.filter((t) => normalizeZhPunct(t) !== t)).toEqual([]);
   });
 
   it.each(CORRECTIONS.map((c) => [labelOf(c), c] as const))(

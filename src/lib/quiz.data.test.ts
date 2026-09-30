@@ -15,6 +15,7 @@ import {
   canListen,
   checkAnswer,
   generateQuiz,
+  interchangeable,
   listenText,
   makeCloze,
   type QuestionType,
@@ -332,6 +333,27 @@ describe("聽力、填空的干擾項 × 教材:可互換的字不同時出現(T
     },
     SLOW_TEST_TIMEOUT,
   );
+});
+
+describe("中文標點全形化(T12.6):並列的意思以全形逗號切開,可互換的字不同時當干擾項", () => {
+  const byId = new Map(vocab.map((v) => [v.id, v]));
+  const item = (id: string) => {
+    const v = byId.get(id);
+    if (!v) throw new Error(id);
+    return v;
+  };
+
+  // 原資料的小型變體「﹐」(U+FE50)不在 MEANING_SEP_RE,「去﹐進入」整串當成一個詞而比不到「去」
+  it.each([
+    ["L05-V001", "去", "L37-V040", "去，進入"],
+    ["L15-V003", "使用、用", "L37-V039", "利用，用"],
+    ["L05-V017", "朋友", "L37-V046", "朋友，友人"],
+    ["L06-V047", "然後", "L37-V047", "之後，然後"],
+  ])("%s「%s」× %s「%s」可互換", (a, meaningA, b, meaningB) => {
+    expect([item(a).meaning, item(b).meaning]).toEqual([meaningA, meaningB]);
+    expect(interchangeable(item(a), item(b))).toBe(true);
+    expect(interchangeable(item(b), item(a))).toBe(true);
+  });
 });
 
 describe("日→中、中→日的選項 × 全部教材:顯示的文字不重複(F3.2)", () => {

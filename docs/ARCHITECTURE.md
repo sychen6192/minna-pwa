@@ -47,6 +47,7 @@ PDF 皆含文字層,原規劃的 PyMuPDF + Claude Message Batches 改為下表(A
 | 結構化抽取 | Claude Code 依 `docs/PIPELINE.md` 慣例直抽為 JSON;讀音由使用者人工校讀 |
 | 重音回填 | `pnpm enrich:accents`(kanjium,`scripts/enrich-accents.ts`) |
 | 資料修正 | `pnpm fix:content`(`scripts/fix-content.ts`):不需 PDF 的修正以宣告式清單 `CORRECTIONS`(現值 from → 修正值 to + 理由;另有会話標題行移入 `dialogueTitle` 並遞補 D id,以及 ruby 分段——一段換成多段,串接的表面與讀音不變)手術式寫回(`scripts/lib/rawJson.ts` 以 id 行定位物件、只換目標字串,不整檔重寫),冪等;`--check` 只列狀態,有待套用項 exit 1。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住 |
+| 中文標點 | `pnpm normalize:zh-punct`(`scripts/normalize-zh-punct.ts`):中文欄位(meaning、note(段落標記除外)、explanation、translation、dialogueTitle.translation)的標點規則式統一為全形(R1–R9 在 `scripts/lib/zhPunct.ts`,千分位保留;SPEC F1.6),同樣以 `scripts/lib/rawJson.ts` 手術式寫回、冪等;先印摘要,`--check` 有待改項 exit 1。content-lint error zh-punct 與它共用規則,在 `pnpm verify` 把關 |
 | 最終驗證 | `pnpm validate:content`(Zod,單一真相;通過後跑 content-lint `scripts/content-lint.ts`:error 規則失敗 exit 1,warning 只列出,`--all`/`--rule <id>` 印完整清單)。error 規則另由 `scripts/content-lint.data.test.ts` 在 `pnpm verify` 對真實資料執行 |
 
 ### 部署
@@ -72,7 +73,9 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
 │   ├── build-index.ts          # pnpm build:index(index.json)
 │   ├── enrich-accents.ts       # pnpm enrich:accents(重音回填)
 │   ├── fix-content.ts          # pnpm fix:content(宣告式資料修正,手術式寫回 public/data)
-│   ├── lib/rawJson.ts          # 課程 JSON 手術式字串替換(不整檔重寫;fix-content 等共用)
+│   ├── normalize-zh-punct.ts   # pnpm normalize:zh-punct(中文標點全形化,手術式寫回 public/data)
+│   ├── lib/rawJson.ts          # 課程 JSON 手術式字串替換(不整檔重寫;fix-content、normalize-zh-punct 共用)
+│   ├── lib/zhPunct.ts          # 中文標點規則 normalizeZhPunct 與中文欄位清單(normalize-zh-punct、content-lint 共用)
 │   └── precache-entries.ts     # SW precache 條目(/data/**、public/)
 └── src/
     ├── app/

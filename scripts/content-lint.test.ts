@@ -34,7 +34,7 @@ function lesson(id: number): Lesson {
         id: `${L}-V001`,
         ruby: [{ b: "本", r: "ほん" }],
         kana: "ほん",
-        meaning: `書(${id})`,
+        meaning: `書（${id}）`,
         pos: "名",
       },
     ],
@@ -151,7 +151,7 @@ const seg = (b: string, r?: string): RubySeg =>
   r === undefined ? { b } : { b, r };
 
 describe("RULES", () => {
-  it("error 16 條、warning 9 條(T12.5 把 ruby-r-scope 升為 error;T12.6 加 zh-punct)", () => {
+  it("error 17 條、warning 9 條(T12.5 把 ruby-r-scope 升為 error、T12.6 加 zh-punct)", () => {
     const of = (s: string) =>
       RULES.filter((r) => r.severity === s).map((r) => r.id);
     expect(of("error")).toEqual([
@@ -171,6 +171,7 @@ describe("RULES", () => {
       "adjective-shape",
       "dialogue-speaker",
       "zh-glyph",
+      "zh-punct",
     ]);
     expect(of("warning")).toEqual([
       "kana-symbols",
@@ -690,6 +691,54 @@ describe("error:zh-glyph 與 Big5", () => {
       "L01-G01 explanation:証会",
       "L01-D01 translation:辺",
       "L01:dialogueTitle translation:伝",
+    ]);
+  });
+});
+
+describe("error:zh-punct", () => {
+  it("全形標點、千分位與時刻、段落標記 note、日文欄位不報", () => {
+    const l = withVocab(
+      { meaning: "（自己的）丈夫，妻子；哪？好！“這”〜" },
+      { note: "〔〜を します：做作業〕" },
+      { note: "補充單字(自行練習發音)" },
+      {
+        ruby: [seg("お"), seg("名前", "なまえ"), seg("は?")],
+        kana: "おなまえは",
+      },
+    );
+    l.title = "N(場所)を";
+    l.grammar[0].pattern = "N(場所)を 出ます";
+    l.grammar[0].explanation =
+      "1）成為受詞，和 2）修飾。871-6813、7.助詞、はい/いいえ";
+    l.grammar[0].examples[0].translation = "之後必須付15,000日圓，10:00 出發。";
+    l.dialogues[0].speaker = "A:";
+    l.dialogueTitle = { ruby: [seg("は?")], translation: "您的家人呢？" };
+    expect(messages("zh-punct", l)).toEqual([]);
+  });
+
+  it("中文欄位(釋義、note、解說、例句、会話標題、会話)的半形標點、小型變體、ASCII 引號與～;標出第一個不同處", () => {
+    const l = withVocab(
+      { meaning: "(自己的)丈夫" },
+      { note: "〔〜を します:做作業〕" },
+      { meaning: "利用﹐用" },
+    );
+    l.grammar[0].explanation = "接續:動詞";
+    l.grammar[0].examples[0].translation = "好嗎?";
+    l.dialogues[0].translation = '不如"わたし"禮貌';
+    const g2 = { ...l.grammar[0], id: "L01-G02", explanation: "「～だ」" };
+    g2.examples = [{ ...g2.examples[0], id: "L01-S02", translation: "日圓,5" }];
+    l.grammar.push(g2);
+    l.dialogueTitle = { ruby: [seg("は")], translation: "您的家人呢 ?" };
+    expect(messages("zh-punct", l)).toEqual([
+      "L01-V001 meaning:…(自己的)丈夫…(U+0028)",
+      "L01-V002 note:…〜を します:做作業〕…(U+003A)",
+      "L01-V003 meaning:…利用﹐用…(U+FE50)",
+      "L01-G01 explanation:…接續:動詞…(U+003A)",
+      "L01-S01 translation:…好嗎?…(U+003F)",
+      "L01-G02 explanation:…「～だ」…(U+FF5E)",
+      "L01-S02 translation:…日圓,5…(U+002C)",
+      "L01:dialogueTitle translation:…您的家人呢 ?…(U+0020)",
+      'L01-D01 translation:…不如"わたし"禮貌…(U+0022)',
     ]);
   });
 });

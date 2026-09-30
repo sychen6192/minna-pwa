@@ -94,7 +94,7 @@ export type GrammarPoint = z.infer<typeof GrammarPointSchema>;
 
 `dialogueTitle`(2026-09-30 追加,T12.4):会話標題(ruby + 中譯,中譯為自譯,同会話)以小標顯示在台詞上方,中譯隨「隱藏中譯」;不列入朗讀、扮演、例句重組、例句填空與語境例句(SPEC F7.2、F3.1)。z.object 預設丟棄 schema 沒有的 key,`content.ts` 以 safeParse 載入:新增欄位時 schema 須與資料同一個 commit 或更早,否則欄位在 App 裡默默消失(`fix-content` 寫入前核對會攔下)。
 
-`VocabItem.note` 的教材寫法由執行期解讀(pipeline 改動 note 格式時須一併確認):note 恰為「読み物」「会話」「補充單字(自行練習發音)」者是段落標記(`notes.ts`);助詞搭配「［たばこを〜］」「〔〜を します:做作業〕」(〜 = 單字本身,冒號後為中譯)由 `particles.ts` 解析出題(F7.5)。
+`VocabItem.note` 的教材寫法由執行期解讀(pipeline 改動 note 格式時須一併確認):note 恰為「読み物」「会話」「補充單字(自行練習發音)」者是段落標記(`notes.ts`);助詞搭配「［たばこを〜］」「〔〜を します：做作業〕」(〜 = 單字本身,冒號後為中譯)由 `particles.ts` 解析出題(F7.5)。
 
 ### 1.3 範例(`public/data/lessons/L13.json` 縮樣)
 
@@ -239,4 +239,5 @@ settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAl
    - 補充單字(T10.11):note 恰為「補充單字(自行練習發音)」的字為選學——整課加入不含(`addCards` 回傳實際新建的正向卡數,即「已加入 N 字」)、測驗不出題,但可單字加入並照常排程。各課進度不計補充單字:`lessonProgress` 的 `supplementary`(`getSupplementaryWords` 由課程 JSON 取得的各課補充單字 id)從總數、已加入、已學會中扣除,故整課加入後全部學會即「已完成」;單字加入的補充單字只計入 `supplementaryAdded`(只加了補充單字的課算「進行中」)。課程列表只載入已有卡片的課,統計頁載入全部課;讀不到的課退回 index 總數。
    - 階段分布:已會(暫停)優先;學習中 = Review 且最後一次評分為「重來」(long-term scheduler 答錯後仍為 Review;state Learning/Relearning 僅可能來自匯入的舊資料,同歸學習中);其餘 Review 依 stability 分未成熟 / 已成熟(≥ `MATURE_STABILITY` = 21 天)。
    - 頑固卡:`lapses ≥ LEECH_THRESHOLD`(4)且 stability < `MATURE_STABILITY`;`lapses` 只增不減,成熟即解除,再遺忘而 stability 掉回門檻下時再次列入。
-7. **content-lint error 規則全過**(2026-09-30 追加,T12.1):`scripts/content-lint.ts` 的 error 規則(課號與檔名、index 計數、id 格式/唯一/連號、ruby 讀音與 furigana 範圍(不跨越記號與送り仮名,T12.5 由 warning 升為 error)、字元衛生、日文近似字、kana 字元、詞性形狀、会話 speaker、中文字形)在真實資料上為 0 筆;由 `scripts/content-lint.data.test.ts` 在 `pnpm verify` 把關,`pnpm validate:content` 另印 warning(需人工判斷,不影響結束碼)。error 規則沒有例外清單:命中時修正資料(不需 PDF 者加進 `scripts/fix-content.ts`)或規則,不得豁免(T12.1 的待修清單 `PENDING_FIXES` 於 T12.4 修完最後的会話標題行後移除)。ruby、字元衛生與中文字形規則同樣檢查 `dialogueTitle`。
+7. **content-lint error 規則全過**(2026-09-30 追加,T12.1):`scripts/content-lint.ts` 的 error 規則(課號與檔名、index 計數、id 格式/唯一/連號、ruby 讀音與 furigana 範圍(不跨越記號與送り仮名,T12.5 由 warning 升為 error)、字元衛生、日文近似字、kana 字元、詞性形狀、会話 speaker、中文字形、中文標點(T12.6,見 8))在真實資料上為 0 筆;由 `scripts/content-lint.data.test.ts` 在 `pnpm verify` 把關,`pnpm validate:content` 另印 warning(需人工判斷,不影響結束碼)。error 規則沒有例外清單:命中時修正資料(不需 PDF 者加進 `scripts/fix-content.ts`)或規則,不得豁免(T12.1 的待修清單 `PENDING_FIXES` 於 T12.4 修完最後的会話標題行後移除)。ruby、字元衛生、中文字形與中文標點規則同樣檢查 `dialogueTitle`。
+8. **中文欄位標點全形**(2026-09-30 追加,T12.6,SPEC F1.6):`vocab.meaning`、`vocab.note`(段落標記 `SECTION_MARKER_NOTES` 除外——那是 `isSupplementary`/`noteSection` 比對的常數,原樣保留)、`grammar.explanation`、例句與会話的 `translation`、`dialogueTitle.translation` 的「，；：？！（）」為全形,只有千分位(`\d,\d{3}`,如 15,000;現有 8 處,皆在例句與会話中譯)與數字之間的時刻冒號(現有 0 處)保留半形;小型變體 ﹐﹑﹖、成對的 ASCII 引號與 ～(U+FF5E)已統一為 ，、？“”〜。於建置期由 `pnpm normalize:zh-punct`(`scripts/normalize-zh-punct.ts`,規則 R1–R9 在 `scripts/lib/zhPunct.ts`)手術式寫回資料,不在顯示層轉換:畫面、搜尋、測驗與資料測試看到同一份文字。content-lint error zh-punct(`normalizeZhPunct(值) = 值`)在 `pnpm verify` 把關。日文欄位(`title`、`pattern`、`speaker`、`ruby`、`kana`)與 App 介面文案不在此列。

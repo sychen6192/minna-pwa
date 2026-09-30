@@ -30,6 +30,12 @@ describe("cjkTokenize", () => {
   it("空字串回空陣列", () => {
     expect(cjkTokenize("")).toEqual([]);
   });
+
+  it("標點寬度不影響 token:半形與全形標點都是分界(資料中文標點為全形,T12.6)", () => {
+    expect(cjkTokenize("（他人的）丈夫，妻子？")).toEqual(
+      cjkTokenize("(他人的)丈夫,妻子?"),
+    );
+  });
 });
 
 const lessons: Lesson[] = [
@@ -123,6 +129,17 @@ describe("buildSearchIndex + searchAll", () => {
   it("空白/空字串查詢回空陣列", () => {
     expect(searchAll(index, "")).toEqual([]);
     expect(searchAll(index, "   ")).toEqual([]);
+  });
+
+  it("查詢打半形標點也命中全形標點的中文(T12.6)", () => {
+    const vocab = { ...lessons[1].vocab[0], meaning: "（他人的）丈夫" };
+    const idx = buildSearchIndex([{ ...lessons[1], vocab: [vocab] }]);
+    expect(searchAll(idx, "(他人的)丈夫").map((h) => h.id)).toEqual([
+      "L01-V001",
+    ]);
+    expect(searchAll(idx, "（他人的）丈夫").map((h) => h.id)).toEqual([
+      "L01-V001",
+    ]);
   });
 
   it("limit 裁切結果數", () => {

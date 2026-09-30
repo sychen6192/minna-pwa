@@ -7,6 +7,7 @@ import {
   type Lesson,
 } from "../src/schemas/lesson";
 import { big5Charset, lintContent, RULES, textFields } from "./content-lint";
+import { zhValues } from "./lib/zhPunct";
 
 // 以真實教材資料(public/data)執行 content-lint。CI 只跑 pnpm verify、不跑 validate:content,
 // 故 Zod、檔名與 error 規則都在這裡把關(不 import validate-content.ts:它是 CLI 入口)。
@@ -73,10 +74,29 @@ describe("content-lint × 真實資料:error 規則", () => {
     },
   );
 
-  // ruby-r-scope 於 T12.5 由 warning 升為 error(fix-content 的 ruby 分段修正 9 段後為 0 筆)
-  it("error 16 條全過", () => {
-    expect(RULES.filter((r) => r.severity === "error")).toHaveLength(16);
+  // ruby-r-scope 於 T12.5 由 warning 升為 error(fix-content 的 ruby 分段修正 9 段後為 0 筆);
+  // zh-punct 於 T12.6 新增(pnpm normalize:zh-punct 寫回 535 筆後為 0 筆)
+  it("error 17 條全過", () => {
+    expect(RULES.filter((r) => r.severity === "error")).toHaveLength(17);
     expect(result.errorCount).toBe(0);
+  });
+
+  it("zh-punct:中文欄位剩下的半形 , ; : ? ! ( ) 恰為 8 個千分位", () => {
+    const half = lessons
+      .flatMap(zhValues)
+      .flatMap((v) =>
+        [...v.value.matchAll(/\d*[,;:?!()]\d*/g)].map((m) => `${v.id} ${m[0]}`),
+      );
+    expect(half).toEqual([
+      "L03-D09 2,500",
+      "L13-D10 1,680",
+      "L14-D09 1,800",
+      "L14-D11 3,200",
+      "L33-D10 15,000",
+      "L33-D11 15,000",
+      "L40-S11 3,911",
+      "L42-S20 3,000",
+    ]);
   });
 
   it("会話標題(dialogueTitle,L15/L23/L24/L41)的表面與中譯也在檢查範圍", () => {
@@ -155,8 +175,9 @@ const WARNING_IDS: Record<string, string[]> = {
   ],
   "sentence-id-order": ["L01", "L37"],
   "speaker-alias": ["L02"],
-  // L49-D02 已於 T12.2 修正;L22-G02 與 L41-G04 的～於 T12.6 修正
-  "zh-lookalike": ["L22-G02", "L41-G04", "L49-G01"],
+  // L49-D02 已於 T12.2 修正;L22-G02 與 L41-G04 的～已於 T12.6 正規化為〜(R9);
+  // 剩 L49-G01「ウチ‑ソト」的 U+2011(教材寫法,不動)
+  "zh-lookalike": ["L49-G01"],
 };
 
 describe("content-lint × 真實資料:warning(ratchet)", () => {

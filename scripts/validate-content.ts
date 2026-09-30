@@ -156,9 +156,11 @@ function main(): void {
   });
   console.log("");
   for (const line of formatReport(lint, args)) console.log(line);
-  if (args.rule === undefined) {
+  // T12.6 起中文欄位標點全為全形(error 規則 zh-punct 把關):有半形時才列比例(如 PDF 重新抽取後)
+  const punct = args.rule === undefined ? punctuationSummary(lessons) : [];
+  if (punct.length > 0) {
     console.log("\n中文欄位標點(半形:全形):");
-    for (const line of punctuationSummary(lessons)) console.log(`  ${line}`);
+    for (const line of punct) console.log(`  ${line}`);
   }
   if (lint.errorCount > 0) {
     process.exitCode = 1;

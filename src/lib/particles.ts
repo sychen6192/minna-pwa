@@ -3,7 +3,7 @@ import type { Lesson, RubySeg, VocabItem } from "@/schemas/lesson";
 
 /**
  * 助詞搭配練習(T11.7,F7.5):題目只取單字 note 中教材原有的搭配(〔たばこを〜〕、
- * 〔〜を します:做作業〕),不補新的搭配;題幹「たばこ（　）吸います」,從 を/に/が/で/へ/と 選。
+ * 〔〜を します：做作業〕),不補新的搭配;題幹「たばこ（　）吸います」,從 を/に/が/で/へ/と 選。
  * 單次練習、不寫入 SRS/DB。
  */
 
@@ -30,7 +30,7 @@ export interface Collocation {
   particle: Particle;
   /** 空格後:"〜"(單字本身)、"〜が あります"(單字 + note 的後續)、"します"(〔〜を します〕的述語) */
   predicate: string;
-  /** note 冒號後的中譯(〔〜を します:做作業〕) */
+  /** note 冒號後的中譯(〔〜を します：做作業〕) */
   gloss?: string;
 }
 
@@ -71,8 +71,8 @@ function openDepth(s: string): number {
 }
 
 /**
- * 去掉冒號後的中譯說明。整個 note 以括號包住時(〔〜を します:做作業〕、
- * 〔コンピューターに〜が あります:〔對電腦〕感興趣〕),冒號前留下的開括號與說明結尾的閉括號各去掉。
+ * 去掉冒號(半/全形;教材資料為全形,T12.6)後的中譯說明。整個 note 以括號包住時(〔〜を します：做作業〕、
+ * 〔コンピューターに〜が あります：〔對電腦〕感興趣〕),冒號前留下的開括號與說明結尾的閉括號各去掉。
  */
 function splitGloss(note: string): { head: string; gloss?: string } {
   const colon = note.search(/[:：]/);
@@ -122,11 +122,11 @@ function parseBody(
 /**
  * 單字 note 中的助詞搭配(教材原文,全部並列者)。認得的寫法:
  * - ［たばこを〜］、〔電話を〜〕、〔ワープロを〕(括號內沒有〜)
- * - 〔〜を します:做作業〕、〜を します:問候(名詞單字本身在前;冒號後為中譯)
- * - 〔コンピューターに〜が あります:…〕(〜之後還有 note 的後續)
+ * - 〔〜を します：做作業〕、〜を します：問候(名詞單字本身在前;冒號後為中譯)
+ * - 〔コンピューターに〜が あります：…〕(〜之後還有 note 的後續)
  * - 並列:〔うちが〜〕〔パンが〜〕〔肉が〜〕、〔音／声が〜〕;［でんきが〜］［電気が〜］(假名與漢字
  *   並列同一個名詞)合併為一個帶讀音的名詞
- * 任何一段無法解析、助詞不在選項組(から/まで/より/の)、沒有助詞(〔〜します:進行確認〕)
+ * 任何一段無法解析、助詞不在選項組(から/まで/より/の)、沒有助詞(〔〜します：進行確認〕)
  * 或〜不是單字本身(〔〜の こと〕)時回傳 []。
  */
 export function parseCollocations(note: string | undefined): Collocation[] {
@@ -444,7 +444,7 @@ export function collocationSpeech(q: ParticleQuestion): string {
   return `${nounText}${particle} ${predicate.split(WORD_MARK).join(word)}`;
 }
 
-/** 回饋的中譯:note 有中譯(〔〜を します:做作業〕)用之,否則為單字釋義 */
+/** 回饋的中譯:note 有中譯(〔〜を します：做作業〕)用之,否則為單字釋義 */
 export function collocationMeaning(q: ParticleQuestion): string {
   return q.collocation.gloss ?? q.item.meaning;
 }

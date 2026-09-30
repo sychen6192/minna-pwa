@@ -320,7 +320,7 @@ export function refersToLaterLesson(
 
 /**
  * 本課可出題的句子:文型例句與会話(依教材順序),同表面文字的重列句只留第一句;
- * 中譯標示較晚課次的例句(L04-S19 …かかります。(第 11 課))不出題。
+ * 中譯標示較晚課次的例句(L04-S19「從大阪到東京要 3 小時。（第 11 課）」)不出題。
  * 会話標題(`Lesson.dialogueTitle`)不是台詞,不出題
  */
 export function reorderPool(lesson: Lesson): Sentence[] {

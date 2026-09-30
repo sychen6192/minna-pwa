@@ -10,6 +10,7 @@
  * - warning:需人工判斷(多半要對照 PDF),只列出、永不影響結束碼。
  */
 import type { Lesson, LessonIndex, RubySeg } from "../src/schemas/lesson";
+import { normalizeZhPunct, zhValues } from "./lib/zhPunct";
 
 export type Severity = "error" | "warning";
 
@@ -567,6 +568,29 @@ const zhRules: LintRule[] = [
         }),
     ),
   },
+  {
+    // T12.6(DQ-08):資料已由 pnpm normalize:zh-punct 寫回;欄位與規則與該腳本共用 scripts/lib/zhPunct.ts
+    id: "zh-punct",
+    severity: "error",
+    description:
+      "中文欄位(meaning、note、explanation、translation;段落標記 note 除外)標點為全形:normalizeZhPunct(值) = 值(只有千分位 15,000 與時刻 10:00 保留半形);以 pnpm normalize:zh-punct 修正",
+    check: eachLesson((l) =>
+      zhValues(l).flatMap((v) => {
+        const to = normalizeZhPunct(v.value);
+        if (to === v.value) return [];
+        // 標出第一個不同處
+        let i = 0;
+        while (v.value[i] === to[i]) i++;
+        const around = v.value.slice(Math.max(0, i - 6), i + 7);
+        return [
+          {
+            id: v.id,
+            message: `${v.field}:…${around}…(${codePoint(v.value[i] ?? "")})`,
+          },
+        ];
+      }),
+    ),
+  },
 ];
 
 // ---------- warning ----------
@@ -740,7 +764,7 @@ const warningRules: LintRule[] = [
   },
 ];
 
-/** error 16 條在前(T12.5 把 ruby-r-scope 升為 error;T12.6 加 zh-punct),warning 9 條在後 */
+/** error 17 條在前(T12.5 把 ruby-r-scope 升為 error、T12.6 加 zh-punct),warning 9 條在後 */
 export const RULES: readonly LintRule[] = [
   ...idRules,
   ...rubyRules,

@@ -6,7 +6,8 @@
  * fixture)。每筆宣告現值 from 與修正值 to:現值為 to = 已套用、不動作;為 from = 套用;
  * 其他 = 報錯中止(資料已被改動,需人工判斷,不猜)。日文與 enum 欄位(pos、kana、
  * ruby.<i>.b)比對整值;中文欄位(meaning、explanation、translation)比對子字串——from 恰
- * 出現一次 = 套用,不含 from 且含 to = 已套用,故與 T12.6 標點正規化的先後互不影響。
+ * 出現一次 = 套用,不含 from 且含 to = 已套用。中文(含会話標題的中譯)以 T12.6 標點正規化
+ * 後的寫法宣告(fix-content.data.test.ts 把關):先跑 normalize:zh-punct 必比對得到。
  * 会話標題(kind "dialogueTitle",T12.4):会話第一行完全等於宣告的 D01 且尚無 dialogueTitle
  * = 套用——ruby 與 translation 移入 `Lesson.dialogueTitle`(置於 dialogues 前)、刪除該行、
  * 後續 D id 自 D01 遞補;dialogueTitle 等於預期、D 自 01 連號且会話不含該句 = 已套用。

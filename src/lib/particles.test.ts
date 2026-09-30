@@ -95,6 +95,16 @@ describe("parseCollocation:只取 note 原文的搭配", () => {
       predicate: "します",
       gloss: "做作業",
     });
+    // 教材資料的冒號為全形(T12.6)
+    expect(parseCollocation("〔〜を します：做作業〕")).toEqual({
+      noun: "〜",
+      particle: "を",
+      predicate: "します",
+      gloss: "做作業",
+    });
+    expect(
+      parseCollocation("〔コンピューターに〜が あります：〔對電腦〕感興趣〕"),
+    ).toMatchObject({ noun: "コンピューター", gloss: "〔對電腦〕感興趣" });
     expect(parseCollocation("〔〜を します〕")).toEqual({
       noun: "〜",
       particle: "を",

@@ -475,7 +475,7 @@ function meaningTokens(meaning: string): string[] {
     .filter((t) => t.length > 0);
 }
 
-/** a 的中文意思提到 b(どちら「哪邊（どこ 的禮貌形）」、こっち「這邊（不如"こちら"禮貌）」) */
+/** a 的中文意思提到 b(どちら「哪邊（どこ 的禮貌形）」、こっち「這邊（不如“こちら”禮貌）」) */
 function mentions(
   a: Pick<VocabItem, "meaning">,
   b: Pick<VocabItem, "kana">,
