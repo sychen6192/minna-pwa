@@ -1,6 +1,41 @@
-# Bundle 量測(T7.4,2026-07-05;T7.5 首頁改儀表板後更新 2026-07-10;Phase 10 後重測 2026-09-29)
+# Bundle 量測(T7.4,2026-07-05;T7.5 首頁改儀表板後更新 2026-07-10;Phase 10 後重測 2026-09-29;Phase 11 後重測 2026-09-30)
 
 量測方式:`out/index.html` 實際引用的資產逐一 `gzip -9` 加總(`next build` 之 First Load 欄為未壓縮值)。
+
+## 2026-09-30 重新量測(Phase 11 後)
+
+量測方式同下。Phase 11 新增的練習頁(`/drill`、`/reorder`、`/reorder/[id]`)與測驗新題型都不在首頁引用之列,首頁 JS 幾乎不變。
+
+| 資產 | gzip |
+|---|---|
+| chunks/3976b0ab(React/框架) | 54.1 KB |
+| chunks/884(App Router runtime + Serwist window) | 47.8 KB |
+| polyfills | 39.4 KB |
+| chunks/505 | 8.5 KB |
+| app/page(儀表板) | 5.7 KB |
+| app/layout | 4.0 KB |
+| chunks/498 | 3.4 KB |
+| webpack runtime + main-app | 2.2 KB |
+| app/not-found | 0.2 KB |
+| **JS 合計** | **165.3 KB ✓** |
+| CSS | 7.4 KB |
+| sw.js(另計,非首屏必要;precache 423 條目) | 15.4 KB |
+
+| 路由 | First Load JS(未壓縮,`next build`) |
+|---|---|
+| `/` | 122 kB |
+| `/drill` | 201 kB |
+| `/grammar` | 143 kB |
+| `/lessons` | 169 kB |
+| `/lessons/[id]` | 192 kB |
+| `/practice` | 191 kB |
+| `/quiz`(入口) | 137 kB |
+| `/quiz/[id]` | 202 kB |
+| `/reorder`(選課) | 136 kB |
+| `/reorder/[id]` | 175 kB |
+| `/review` | 194 kB |
+| `/settings` | 176 kB |
+| `/stats` | **284 kB**(Recharts;N4 僅約束首頁) |
 
 ## 2026-09 重新量測(Phase 10 後)
 
