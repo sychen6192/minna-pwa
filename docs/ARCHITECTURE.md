@@ -5,7 +5,8 @@
 ```mermaid
 flowchart TD
   A["50 份 PDF<br/>repo 外的本機資料夾(不入庫)"] --> B["抽取與結構化<br/>pdftotext -layout + Claude Code"]
-  B --> C["lessons JSON ×50 + index.json<br/>Zod + content-lint(pnpm validate:content)"]
+  B --> P["後處理(依序)<br/>normalize:zh-punct → fix:content<br/>→ enrich:accents → build:index"]
+  P --> C["lessons JSON ×50 + index.json<br/>Zod + content-lint(pnpm validate:content)"]
   C --> D["Git repo(private)"]
   D --> E["GitHub Actions → Cloudflare Pages<br/>(公開網址,noindex)"]
   E --> F["PWA:Next.js App Shell<br/>+ Serwist Service Worker"]
@@ -39,15 +40,16 @@ flowchart TD
 
 ### 建置期管線
 
-PDF 皆含文字層,原規劃的 PyMuPDF + Claude Message Batches 改為下表(ADR 變更見 `docs/PIPELINE.md`)。
+PDF 皆含文字層,原規劃的 PyMuPDF + Claude Message Batches 改為下表(ADR 變更見 `docs/PIPELINE.md`)。表列順序即執行順序:日後從 PDF 重新抽取後依序跑 `normalize:zh-punct` → `fix:content` → `enrich:accents` → `build:index` → `validate:content`(理由見 PIPELINE §2「重新抽取後的步驟」)。
 
 | 步驟 | 工具 |
 |---|---|
 | 文字層抽取 | `pdftotext -layout`(poppler) |
 | 結構化抽取 | Claude Code 依 `docs/PIPELINE.md` 慣例直抽為 JSON;讀音由使用者人工校讀 |
+| 中文標點 | `pnpm normalize:zh-punct`(`scripts/normalize-zh-punct.ts`):中文欄位(meaning、note(段落標記除外)、explanation、translation、dialogueTitle.translation)的標點規則式統一為全形(R1–R9 在 `scripts/lib/zhPunct.ts`,千分位保留;SPEC F1.6),以 `scripts/lib/rawJson.ts` 手術式寫回(以 id 行定位物件、只換目標字串,不整檔重寫)、冪等;先印摘要,`--check` 有待改項 exit 1。content-lint error zh-punct 與它共用規則,在 `pnpm verify` 把關 |
+| 資料修正 | `pnpm fix:content`(`scripts/fix-content.ts`):不需 PDF 的修正以宣告式清單 `CORRECTIONS`(現值 from → 修正值 to + 理由;另有会話標題行移入 `dialogueTitle` 並遞補 D id,以及 ruby 分段——一段換成多段,串接的表面與讀音不變)同樣以 `scripts/lib/rawJson.ts` 手術式寫回,冪等;`--check` 只列狀態,有待套用項 exit 1。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住 |
 | 重音回填 | `pnpm enrich:accents`(kanjium,`scripts/enrich-accents.ts`) |
-| 資料修正 | `pnpm fix:content`(`scripts/fix-content.ts`):不需 PDF 的修正以宣告式清單 `CORRECTIONS`(現值 from → 修正值 to + 理由;另有会話標題行移入 `dialogueTitle` 並遞補 D id,以及 ruby 分段——一段換成多段,串接的表面與讀音不變)手術式寫回(`scripts/lib/rawJson.ts` 以 id 行定位物件、只換目標字串,不整檔重寫),冪等;`--check` 只列狀態,有待套用項 exit 1。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住 |
-| 中文標點 | `pnpm normalize:zh-punct`(`scripts/normalize-zh-punct.ts`):中文欄位(meaning、note(段落標記除外)、explanation、translation、dialogueTitle.translation)的標點規則式統一為全形(R1–R9 在 `scripts/lib/zhPunct.ts`,千分位保留;SPEC F1.6),同樣以 `scripts/lib/rawJson.ts` 手術式寫回、冪等;先印摘要,`--check` 有待改項 exit 1。content-lint error zh-punct 與它共用規則,在 `pnpm verify` 把關 |
+| 課程索引 | `pnpm build:index`(`scripts/build-index.ts`):由課程檔產生 `public/data/index.json`(title、vocabCount、grammarCount;content-lint index-match 核對) |
 | 最終驗證 | `pnpm validate:content`(Zod,單一真相;通過後跑 content-lint `scripts/content-lint.ts`:error 規則失敗 exit 1,warning 只列出,`--all`/`--rule <id>` 印完整清單)。error 規則另由 `scripts/content-lint.data.test.ts` 在 `pnpm verify` 對真實資料執行 |
 
 ### 部署
