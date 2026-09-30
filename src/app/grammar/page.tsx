@@ -12,6 +12,7 @@ import {
   type SearchIndex,
   type SearchKind,
 } from "@/lib/search";
+import { GRAMMAR_QUERY_PARAM } from "@/lib/urlParams";
 import type { Lesson } from "@/schemas/lesson";
 
 interface GrammarEntry {
@@ -62,8 +63,8 @@ const QUERY_SYNC_MS = 300;
 /** 目前網址對應 `query` 的版本(?q= 存搜尋字串,空白查詢則移除);已相同時回傳 null。 */
 function urlWithQuery(query: string): string | null {
   const url = new URL(window.location.href);
-  if (query.trim()) url.searchParams.set("q", query);
-  else url.searchParams.delete("q");
+  if (query.trim()) url.searchParams.set(GRAMMAR_QUERY_PARAM, query);
+  else url.searchParams.delete(GRAMMAR_QUERY_PARAM);
   return url.href === window.location.href ? null : `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -75,7 +76,9 @@ export default function GrammarPage() {
   // 搜尋字串存於網址 ?q=(replaceState,不新增歷史紀錄):點結果再返回時還原。
   // 掛載後才讀 location(不用 useSearchParams:靜態匯出下需 Suspense 邊界,且預先渲染時無查詢字串)
   useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("q");
+    const q = new URLSearchParams(window.location.search).get(
+      GRAMMAR_QUERY_PARAM,
+    );
     if (q) setQuery(q);
   }, []);
   // 延遲中的寫入(沒有則為 null):點連結時先寫入,見下方 capture 監聽

@@ -1,9 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, vi } from "vitest";
+import type { ReactElement } from "react";
+import { afterEach, beforeEach, vi } from "vitest";
 import { db, setSetting, type CardRow } from "@/lib/db";
 import { addCards, buildQueue, rate, setWordSuspended } from "@/lib/srs";
 import type { QuizCandidate } from "@/lib/quiz";
+import { freezeClock, passTapGuard } from "@/test/clock";
 import { describeRequeue, QuizResult } from "./QuizResult";
 
 vi.mock("next/link", () => ({
@@ -59,11 +61,24 @@ const oneWrong = [
 
 beforeEach(async () => {
   await Promise.all([db.cards.clear(), db.logs.clear(), db.settings.clear()]);
+  // 時鐘停住:進結果頁後的點擊防護(300ms)由 passTapGuard 明確撥過
+  freezeClock();
 });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** 渲染結果頁並撥過進場的點擊防護(之後的點擊照常) */
+function renderResult(ui: ReactElement) {
+  const result = render(ui);
+  passTapGuard();
+  return result;
+}
 
 describe("QuizResult", () => {
   it("全對時顯示分數,不顯示加入鈕", () => {
-    render(
+    renderResult(
       <QuizResult results={[{ card: inu, correct: true }]} lessonId={13} />,
     );
     expect(screen.getByText("1 / 1")).toBeInTheDocument();
@@ -74,7 +89,7 @@ describe("QuizResult", () => {
   });
 
   it("顯示錯題清單與分數", () => {
-    render(
+    renderResult(
       <QuizResult
         results={[
           { card: inu, correct: true },
@@ -90,7 +105,7 @@ describe("QuizResult", () => {
 
   it("錯題加入複習後出現在複習佇列,並標示已加入與實際結果", async () => {
     const user = userEvent.setup();
-    render(<QuizResult results={oneWrong} lessonId={13} />);
+    renderResult(<QuizResult results={oneWrong} lessonId={13} />);
 
     // live region 先掛載(空),結果出來再填入
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
@@ -117,7 +132,7 @@ describe("QuizResult", () => {
 
   it("按下錯題加入複習後焦點留在按鈕上(aria-disabled,不掉到 body),再按不重複執行", async () => {
     const user = userEvent.setup();
-    render(<QuizResult results={oneWrong} lessonId={13} />);
+    renderResult(<QuizResult results={oneWrong} lessonId={13} />);
     const button = screen.getByRole("button", { name: "錯題加入複習" });
 
     await user.click(button);
@@ -132,7 +147,7 @@ describe("QuizResult", () => {
   });
 
   it("進結果頁時焦點移到標題(「看結果」鈕已卸載)", () => {
-    render(<QuizResult results={oneWrong} lessonId={13} />);
+    renderResult(<QuizResult results={oneWrong} lessonId={13} />);
     expect(screen.getByRole("heading", { name: "測驗完成" })).toHaveFocus();
   });
 });
@@ -145,7 +160,7 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
       "L13-V002",
     );
 
-    render(<QuizResult results={oneWrong} lessonId={13} />);
+    renderResult(<QuizResult results={oneWrong} lessonId={13} />);
     await user.click(screen.getByRole("button", { name: "錯題加入複習" }));
 
     await waitFor(() =>
@@ -162,7 +177,7 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
     await db.cards.add(learnedCard("L13-V002", Date.now()));
     await setWordSuspended("L13-V002", true);
 
-    render(<QuizResult results={oneWrong} lessonId={13} />);
+    renderResult(<QuizResult results={oneWrong} lessonId={13} />);
     await user.click(screen.getByRole("button", { name: "錯題加入複習" }));
 
     await waitFor(() =>
@@ -178,7 +193,7 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
     const user = userEvent.setup();
     await addCards(["L13-V002"], 13);
 
-    render(<QuizResult results={oneWrong} lessonId={13} />);
+    renderResult(<QuizResult results={oneWrong} lessonId={13} />);
     await user.click(screen.getByRole("button", { name: "錯題加入複習" }));
 
     expect(
@@ -195,7 +210,7 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
     const user = userEvent.setup();
     await db.cards.add(learnedCard("L13-V002", Date.now() - 6 * DAY)); // 昨天到期
 
-    render(<QuizResult results={oneWrong} lessonId={13} />);
+    renderResult(<QuizResult results={oneWrong} lessonId={13} />);
     await user.click(screen.getByRole("button", { name: "錯題加入複習" }));
 
     expect(
@@ -217,7 +232,7 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
       learnedCard("L13-V002", now),
     ]);
 
-    render(<QuizResult results={oneWrong} lessonId={13} />);
+    renderResult(<QuizResult results={oneWrong} lessonId={13} />);
     await user.click(screen.getByRole("button", { name: "錯題加入複習" }));
 
     await waitFor(() =>
@@ -236,7 +251,7 @@ describe("QuizResult 錯題加入複習:已在 SRS 的字(T10.4)", () => {
     await rate("L13-V002", 3, Date.now());
     const logs = await db.logs.count();
 
-    render(<QuizResult results={oneWrong} lessonId={13} />);
+    renderResult(<QuizResult results={oneWrong} lessonId={13} />);
     await user.click(screen.getByRole("button", { name: "錯題加入複習" }));
 
     expect(
@@ -286,11 +301,37 @@ describe("describeRequeue", () => {
   });
 });
 
+describe("QuizResult 進場防護:雙擊「看結果」的第二下", () => {
+  it("剛進結果頁時的點擊不觸發再測一次、下一課測驗與錯題加入複習", async () => {
+    const onRestart = vi.fn();
+    render(
+      <QuizResult results={oneWrong} lessonId={13} onRestart={onRestart} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "再測一次" }));
+    fireEvent.click(screen.getByRole("button", { name: "錯題加入複習" }));
+    // fireEvent 回傳 false = 預設動作(連結導覽)被擋下
+    expect(
+      fireEvent.click(screen.getByRole("link", { name: "下一課測驗 →" })),
+    ).toBe(false);
+    expect(onRestart).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(await db.cards.count()).toBe(0);
+
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: "再測一次" }));
+    expect(onRestart).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "錯題加入複習" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("新加入 1"),
+    );
+  });
+});
+
 describe("QuizResult 導覽(T10.4)", () => {
   it("再測一次呼叫 onRestart;下一課測驗與回課程連結", async () => {
     const user = userEvent.setup();
     const onRestart = vi.fn();
-    render(
+    renderResult(
       <QuizResult results={oneWrong} lessonId={13} onRestart={onRestart} />,
     );
 
@@ -307,7 +348,7 @@ describe("QuizResult 導覽(T10.4)", () => {
   });
 
   it("第 50 課沒有下一課;未提供 onRestart 時不顯示再測一次", () => {
-    render(
+    renderResult(
       <QuizResult results={[{ card: inu, correct: true }]} lessonId={50} />,
     );
     expect(

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import type { CardRow } from "@/lib/db";
 import type { Lesson } from "@/schemas/lesson";
+import { passTapGuard } from "@/test/clock";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -121,12 +122,6 @@ function setupTwoCards() {
 /** 空白鍵翻面(不受換卡後點擊防護影響) */
 function flipByKey() {
   fireEvent.keyDown(window, { code: "Space" });
-}
-
-/** 把時鐘撥過換卡/進結算後的點擊防護(300ms);之後 Date 停在 fake 時間 */
-function passTapGuard() {
-  if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(Date.now() + 1_000);
 }
 
 /** 點擊卡片翻面(先越過點擊防護) */

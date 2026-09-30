@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PitchAccent } from "@/components/PitchAccent";
 import { RatingButtons, ShortcutHint } from "@/components/RatingButtons";
@@ -35,6 +35,7 @@ import { computeStreak, effectiveGoal, reviewsToday, type GoalProgress } from "@
 import { studyDayKey } from "@/lib/studyDay";
 import { speechText } from "@/lib/tts";
 import { useTtsEnabled } from "@/lib/useSetting";
+import { tapGuarded } from "@/lib/useTapGuard";
 import { cn } from "@/lib/utils";
 import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
 
@@ -189,12 +190,6 @@ async function loadSummaryInfo(now: number): Promise<SummaryInfo> {
 }
 
 /**
- * 換卡(含載入第一張、進結算頁)後這段時間內的點擊不生效:雙擊評分/略過鍵時,第二下會
- * 落在下一張卡上(翻開它)或結算頁的連結/復原上(離開結算頁)。
- */
-const CHANGE_GUARD_MS = 300;
-
-/**
  * state + 同步更新的 ref。事件處理一律讀 ref:連按時第二個事件可能早於重繪,
  * 讀 state 會拿到上一張卡。
  */
@@ -227,7 +222,8 @@ export default function ReviewPage() {
   // 評分/略過/復原進行中:ref 供防重入(立即生效),state 供按鈕 disabled
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
-  // 換卡/進結算的時刻(CHANGE_GUARD_MS)
+  // 換卡(含載入第一張)/進結算的時刻:之後 TAP_GUARD_MS(useTapGuard)內的點擊不生效。雙擊評分/
+  // 略過鍵時,第二下會落在下一張卡上(翻開它)或結算頁的連結/復原上(離開結算頁)
   const shownAt = useRef(0);
   // 焦點接手:翻面、換卡、復原、進結算時,原本聚焦的元素(翻卡鈕、評分鍵、復原鈕)會被卸載,
   // 焦點會掉到 body;改移到新內容(答案區/下一張卡/結算標題)。只在這些動作後接手,首次載入不搶焦點
@@ -299,12 +295,14 @@ export default function ReviewPage() {
   }, [loadSeq, setPhase, setSession, setFlipped, setUndo]);
 
   // 頁面重新可見(切回 App、bfcache 還原)時重算「今天」;不打斷進行中的 session:
-  // 空狀態一律重載;結算頁只在跨學習日時重載(同日短暫切走不丟失結算)
+  // 空狀態一律重載;結算頁只在跨學習日時重載(同日短暫切走不丟失結算)。
+  // 掛載時訂閱一次、讀 phaseRef:不隨階段重新訂閱(換階段後的 effect 晚一步執行時不漏接)
   useEffect(() => {
-    if (phase !== "empty" && phase !== "summary") return;
     function onVisible() {
       if (document.visibilityState !== "visible") return;
-      if (phase === "summary" && studyDayKey(Date.now()) === studyDayKey(loadedAt.current)) {
+      const current = phaseRef.current;
+      if (current !== "empty" && current !== "summary") return;
+      if (current === "summary" && studyDayKey(Date.now()) === studyDayKey(loadedAt.current)) {
         return;
       }
       setLoadSeq((n) => n + 1);
@@ -319,7 +317,7 @@ export default function ReviewPage() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, [phase]);
+  }, [phaseRef]);
 
   // 當前卡片的預估間隔(重看項不評分,不需預估)
   useEffect(() => {
@@ -462,13 +460,15 @@ export default function ReviewPage() {
     setFlipped(true);
   }, [setFlipped]);
 
-  // 點擊卡片翻面(換卡後 CHANGE_GUARD_MS 內忽略)
+  // 點擊卡片翻面(換卡後 TAP_GUARD_MS 內忽略)
   const flipByClick = useCallback(() => {
-    if (flippedRef.current || Date.now() - shownAt.current < CHANGE_GUARD_MS) return;
+    if (flippedRef.current || tapGuarded(shownAt.current)) return;
     flip();
   }, [flippedRef, flip]);
 
-  useEffect(() => {
+  // useLayoutEffect:與新內容同一個 commit 移焦。useEffect 在非同步載入後的 commit 會晚一步執行,
+  // 期間的按鍵(翻面)會讓上一個 commit 的 effect 先消耗 moveFocus、移到舊的目標
+  useLayoutEffect(() => {
     if (!moveFocus.current) return;
     moveFocus.current = false;
     // preventScroll:卡片本來就在畫面上,不因移焦而捲動(小螢幕上會跳動)
@@ -478,10 +478,10 @@ export default function ReviewPage() {
     }
   }, [phase, flipped, session]);
 
-  // 結算頁剛出現(CHANGE_GUARD_MS 內)的點擊不觸發連結與復原:capture 階段攔下,
+  // 結算頁剛出現(TAP_GUARD_MS 內)的點擊不觸發連結與復原:capture 階段攔下,
   // preventDefault 擋掉 <a> 的導覽、stopPropagation 擋掉 Link/按鈕的 onClick
   const guardSummaryClick = useCallback((e: React.MouseEvent) => {
-    if (Date.now() - shownAt.current < CHANGE_GUARD_MS) {
+    if (tapGuarded(shownAt.current)) {
       e.preventDefault();
       e.stopPropagation();
     }

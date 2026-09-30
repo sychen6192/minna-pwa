@@ -3,13 +3,23 @@ import {
   acceptedAnswers,
   answerLabel,
   canInput,
+  canListen,
   checkAnswer,
   generateQuiz,
+  interchangeable,
+  listenText,
+  makeCloze,
+  normalizeReading,
+  parseQuizTypes,
   pickDistractors,
+  quizWordCount,
+  splitRuby,
+  type ClozeQuestion,
   type McqQuestion,
+  type QuestionType,
   type QuizCandidate,
 } from "./quiz";
-import type { RubySeg } from "@/schemas/lesson";
+import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
 
 function cand(
   id: string,
@@ -56,7 +66,8 @@ function seeded(seed: number): () => number {
 }
 
 /** 以單一假名讀音判分(答案只由 `kana` 推導,規則同 checkAnswer) */
-const checkInput = (input: string, kana: string) => checkAnswer(input, { kana, ruby: [{ b: kana }] });
+const checkInput = (input: string, kana: string) =>
+  checkAnswer(input, { kana, ruby: [{ b: kana }] });
 
 describe("checkAnswer:輸入正規化(單一假名讀音)", () => {
   it("羅馬字 / 平假名 / 片假名 視為同答", () => {
@@ -192,6 +203,17 @@ describe("acceptedAnswers / checkAnswer(教材表記,T10.4)", () => {
     expect(checkAnswer("sennnsei", sensei)).toBe(false);
     expect(checkAnswer("sennse", sensei)).toBe(false);
     expect(checkAnswer("seisenn", sensei)).toBe(false);
+  });
+
+  it("促音 + ch 以平文式「tch」打亦可(出張 shutchou、こっち kotchi),cch 照常", () => {
+    const shutchou = word([{ b: "出張", r: "しゅっちょう" }], "しゅっちょう");
+    for (const input of ["shutchou", "shucchou", "SHUTCHOU", "しゅっちょう"]) {
+      expect(checkAnswer(input, shutchou), input).toBe(true);
+    }
+    const kotchi = word([{ b: "こっち" }], "こっち");
+    expect(checkAnswer("kotchi", kotchi)).toBe(true);
+    // 漏打促音仍判錯
+    expect(checkAnswer("shuchou", shutchou)).toBe(false);
   });
 
   it("多個可省略段展開所有組合;〜…段、「〜を」語境與同讀音並列不成為答案", () => {
@@ -516,5 +538,850 @@ describe("generateQuiz", () => {
     const a = generateQuiz(13, pool, { count: 5, rng: seeded(42) });
     const b = generateQuiz(13, pool, { count: 5, rng: seeded(42) });
     expect(a).toEqual(b);
+  });
+});
+
+// ── 聽力與例句填空(T11.8)──────────────────────────────────────────
+
+/** 例句:ruby 照教材分段(漢字段帶 r,假名段可跨詞) */
+function sent(
+  id: string,
+  ruby: RubySeg[],
+  translation = `${id} 的中譯`,
+): Sentence {
+  return { id, ruby, translation };
+}
+
+function lessonWith(
+  id: number,
+  vocab: VocabItem[],
+  examples: Sentence[],
+  dialogues: Sentence[] = [],
+): Lesson {
+  return {
+    id,
+    title: `第${id}課`,
+    vocab,
+    grammar: [{ id: `L${id}-G01`, pattern: "型", examples }],
+    dialogues,
+  };
+}
+
+const segText = (segs: RubySeg[]) => segs.map((s) => s.b).join("");
+
+describe("listenText / canListen(T11.8)", () => {
+  it("含漢字者讀表面形(引擎依辭典決定重音),去除教材記號", () => {
+    expect(listenText(word([{ b: "花見", r: "はなみ" }], "はなみ"))).toBe(
+      "花見",
+    );
+    expect(
+      listenText(word([{ b: "［お］" }, { b: "菓子", r: "かし" }], "おかし")),
+    ).toBe("お菓子");
+    expect(
+      listenText(word([{ b: "遊", r: "あそ" }, { b: "びます" }], "あそびます")),
+    ).toBe("遊びます");
+  });
+
+  it("純假名字讀 kana(同發音鈕)", () => {
+    expect(listenText(word([{ b: "コーヒー" }], "コーヒー"))).toBe("コーヒー");
+    expect(listenText(word([{ b: "いい （よい）" }], "いい"))).toBe("いい");
+  });
+
+  it("單一漢字、數字、同形異讀、並列寫法與「・」縮寫改讀 kana", () => {
+    expect(listenText(word([{ b: "方", r: "かた" }], "かた"))).toBe("かた");
+    expect(listenText(word([{ b: "私", r: "わたくし" }], "わたくし"))).toBe(
+      "わたくし",
+    );
+    expect(
+      listenText(
+        word([{ b: "5" }, { b: "年生", r: "ねんせい" }], "ごねんせい"),
+      ),
+    ).toBe("ごねんせい");
+    expect(
+      listenText(word([{ b: "降", r: "お" }, { b: "ります" }], "おります")),
+    ).toBe("おります");
+    expect(listenText(word([{ b: "明日", r: "あす" }], "あす"))).toBe("あす");
+    expect(
+      listenText(
+        word(
+          [
+            { b: "暑", r: "あつ" },
+            { b: "い、" },
+            { b: "熱", r: "あつ" },
+            { b: "い" },
+          ],
+          "あつい",
+        ),
+      ),
+    ).toBe("あつい");
+    expect(
+      listenText(
+        word(
+          [
+            { b: "月", r: "げつ" },
+            { b: "・" },
+            { b: "水", r: "すい" },
+            { b: "・" },
+            { b: "金", r: "きん" },
+          ],
+          "げつすいきん",
+        ),
+      ),
+    ).toBe("げつすいきん");
+  });
+
+  it("kana 含非假名字元、表面含〜…者不出聽力題", () => {
+    expect(canListen(word([{ b: "花見", r: "はなみ" }], "はなみ"))).toBe(true);
+    expect(canListen(word([{ b: "コーヒー" }], "コーヒー"))).toBe(true);
+    expect(
+      canListen(word([{ b: "好", r: "す" }, { b: "き［な］" }], "すき［な］")),
+    ).toBe(false);
+    expect(
+      canListen(
+        word(
+          [{ b: "夫", r: "おっと" }, { b: "／" }, { b: "主人", r: "しゅじん" }],
+          "おっと／しゅじん",
+        ),
+      ),
+    ).toBe(false);
+    expect(canListen(word([{ b: "え―と" }], "え―と"))).toBe(false); // U+2015
+    expect(canListen(word([{ b: "〜君", r: "くん" }], "くん"))).toBe(false); // 單讀接尾會讀成 きみ
+    expect(canListen(word([{ b: "…" }, { b: "時", r: "じ" }], "じ"))).toBe(
+      false,
+    );
+  });
+});
+
+describe("splitRuby(T11.8)", () => {
+  const segs: RubySeg[] = [
+    { b: "ジュースを " },
+    { b: "飲", r: "の" },
+    { b: "みます。" },
+  ];
+
+  it("假名段可在任意處切開;漢字段整段挖掉", () => {
+    // 飲みます = [6, 10)
+    expect(splitRuby(segs, 6, 10)).toEqual({
+      before: [{ b: "ジュースを " }],
+      after: [{ b: "。" }],
+    });
+    // ジュース = [0, 4)
+    expect(splitRuby(segs, 0, 4)).toEqual({
+      before: [],
+      after: [{ b: "を " }, { b: "飲", r: "の" }, { b: "みます。" }],
+    });
+  });
+
+  it("端點落在帶讀音的漢字段中間時回傳 null(外国 ⊂ 外国人)", () => {
+    const gaikokujin: RubySeg[] = [
+      { b: "外国人", r: "がいこくじん" },
+      { b: "の 学生" },
+    ];
+    expect(splitRuby(gaikokujin, 0, 2)).toBeNull();
+    expect(splitRuby(gaikokujin, 1, 3)).toBeNull();
+    expect(splitRuby(gaikokujin, 0, 3)).toEqual({
+      before: [],
+      after: [{ b: "の 学生" }],
+    });
+  });
+});
+
+describe("makeCloze(T11.8)", () => {
+  const nomimasu: VocabItem = {
+    id: "L06-V002",
+    ruby: [{ b: "飲", r: "の" }, { b: "みます" }],
+    kana: "のみます",
+    meaning: "喝",
+    pos: "動I",
+  };
+  const juice: VocabItem = {
+    id: "L06-V026",
+    ruby: [{ b: "ジュース" }],
+    kana: "ジュース",
+    meaning: "果汁",
+    pos: "名",
+  };
+
+  it("挖空位置正確:只挖單字的表面形,前後保留原句的 ruby 分段與中譯", () => {
+    const l = lessonWith(
+      6,
+      [nomimasu, juice],
+      [
+        sent(
+          "L06-S01",
+          [{ b: "ジュースを " }, { b: "飲", r: "の" }, { b: "みます。" }],
+          "我喝果汁。",
+        ),
+      ],
+    );
+    expect(makeCloze(nomimasu, l)).toEqual({
+      sentenceId: "L06-S01",
+      before: [{ b: "ジュースを " }],
+      after: [{ b: "。" }],
+      translation: "我喝果汁。",
+    });
+    expect(makeCloze(juice, l)).toEqual({
+      sentenceId: "L06-S01",
+      before: [],
+      after: [{ b: "を " }, { b: "飲", r: "の" }, { b: "みます。" }],
+      translation: "我喝果汁。",
+    });
+  });
+
+  it("同句只挖一處:句中另有同一字面(挖一處仍看得到答案)的句子不選,改用其他句", () => {
+    const twice = sent("S1", [
+      { b: "ジュースを " },
+      { b: "飲", r: "の" },
+      { b: "みます。コーラも " },
+      { b: "飲", r: "の" },
+      { b: "みます。" },
+    ]);
+    const l = lessonWith(6, [nomimasu], [twice]);
+    expect(makeCloze(nomimasu, l)).toBeNull();
+
+    const once = sent("S2", [
+      { b: "お" },
+      { b: "茶", r: "ちゃ" },
+      { b: "を たくさん " },
+      { b: "飲", r: "の" },
+      { b: "みます。" },
+    ]);
+    const cloze = makeCloze(nomimasu, lessonWith(6, [nomimasu], [twice, once]));
+    expect(cloze?.sentenceId).toBe("S2");
+    const blanks = cloze
+      ? segText(cloze.before) + "（　　）" + segText(cloze.after)
+      : "";
+    expect(blanks).toBe("お茶を たくさん （　　）。");
+    expect(blanks.split("（　　）")).toHaveLength(2);
+  });
+
+  it("挖空處切開帶讀音的漢字段者不選(外国 ⊂ 外国人)", () => {
+    const gaikoku: VocabItem = {
+      id: "L11-V044",
+      ruby: [{ b: "外国", r: "がいこく" }],
+      kana: "がいこく",
+      meaning: "外國",
+      pos: "名",
+    };
+    const l = lessonWith(
+      11,
+      [gaikoku],
+      [
+        sent("S1", [
+          { b: "外国人", r: "がいこくじん" },
+          { b: "の 学生が います。" },
+        ]),
+      ],
+    );
+    expect(makeCloze(gaikoku, l)).toBeNull();
+  });
+
+  it("慣用語、表面含教材記號者不出", () => {
+    const itadakimasu: VocabItem = {
+      id: "L07-V044",
+      ruby: [{ b: "いただきます。" }],
+      kana: "いただきます",
+      meaning: "我開動了",
+      pos: "慣用",
+    };
+    const l = lessonWith(
+      7,
+      [itadakimasu],
+      [sent("S1", [{ b: "いただきます。この スプーン、すてきですね。" }])],
+    );
+    expect(makeCloze(itadakimasu, l)).toBeNull();
+    const shigoto: VocabItem = {
+      id: "L08-V042",
+      ruby: [{ b: "［お］" }, { b: "仕事", r: "しごと" }],
+      kana: "しごと",
+      meaning: "工作",
+      pos: "名",
+    };
+    expect(
+      makeCloze(
+        shigoto,
+        lessonWith(
+          8,
+          [shigoto],
+          [sent("S1", [{ b: "［お］仕事は どうですか。" }])],
+        ),
+      ),
+    ).toBeNull();
+  });
+
+  it("動詞只有活用形命中(T11.9)時不出:挖空處須是單字本身(ます形)", () => {
+    const aimasu: VocabItem = {
+      id: "L06-V011",
+      ruby: [{ b: "会", r: "あ" }, { b: "います" }],
+      kana: "あいます",
+      meaning: "見面",
+      pos: "動I",
+    };
+    const conjugatedOnly = sent("S1", [
+      { b: "駅", r: "えき" },
+      { b: "で " },
+      { b: "会", r: "あ" },
+      { b: "いましょう。" },
+    ]);
+    expect(
+      makeCloze(aimasu, lessonWith(6, [aimasu], [conjugatedOnly])),
+    ).toBeNull();
+    // 另有ます形的句子(較長)時照常出題,挖的是ます形
+    const exact = sent("S2", [
+      { b: "あした " },
+      { b: "駅", r: "えき" },
+      { b: "で " },
+      { b: "友達", r: "ともだち" },
+      { b: "に " },
+      { b: "会", r: "あ" },
+      { b: "います。" },
+    ]);
+    const cloze = makeCloze(
+      aimasu,
+      lessonWith(6, [aimasu], [conjugatedOnly, exact]),
+    );
+    expect(cloze?.sentenceId).toBe("S2");
+    expect(cloze && segText(cloze.after)).toBe("。");
+  });
+
+  it("句=字、含→的對照行、会話標題行、中譯標示較晚課次的例句不選", () => {
+    const samui: VocabItem = {
+      id: "L08-V018",
+      ruby: [{ b: "寒", r: "さむ" }, { b: "い" }],
+      kana: "さむい",
+      meaning: "冷",
+      pos: "い形",
+    };
+    const bad = lessonWith(
+      8,
+      [samui],
+      [
+        sent("S1", [{ b: "寒", r: "さむ" }, { b: "い" }]),
+        sent("S2", [
+          { b: "寒", r: "さむ" },
+          { b: "い → " },
+          { b: "寒", r: "さむ" },
+          { b: "く なります" },
+        ]),
+        sent(
+          "S3",
+          [{ b: "きょうは " }, { b: "寒", r: "さむ" }, { b: "いですね。" }],
+          "今天很冷呢。(第 19 課)",
+        ),
+      ],
+      [sent("D1", [{ b: "寒", r: "さむ" }, { b: "い 日" }])], // 無 speaker 的第一行 = 標題
+    );
+    expect(makeCloze(samui, bad)).toBeNull();
+
+    const earlier = lessonWith(
+      8,
+      [samui],
+      [
+        sent(
+          "S1",
+          [{ b: "きょうは " }, { b: "寒", r: "さむ" }, { b: "いですね。" }],
+          "今天很冷呢。(第 7 課)",
+        ),
+      ],
+    );
+    // 較早課次的參照:照常出題,中譯去掉課次
+    expect(makeCloze(samui, earlier)).toMatchObject({
+      sentenceId: "S1",
+      translation: "今天很冷呢。",
+    });
+  });
+});
+
+describe("generateQuiz 聽力與例句填空(T11.8)", () => {
+  const v = (
+    id: string,
+    kanji: string,
+    kana: string,
+    meaning: string,
+    pos: QuizCandidate["pos"] = "名",
+  ): QuizCandidate => ({
+    id,
+    lessonId: Number(id.slice(1, 3)),
+    ruby: [{ b: kanji, r: kana }],
+    kana,
+    meaning,
+    pos,
+  });
+  const words: QuizCandidate[] = [
+    v("L13-V001", "犬", "いぬ", "狗"),
+    v("L13-V002", "猫", "ねこ", "貓"),
+    v("L13-V003", "小鳥", "ことり", "小鳥"),
+    v("L13-V004", "金魚", "きんぎょ", "金魚"),
+    v("L13-V005", "動物", "どうぶつ", "動物"),
+    v("L12-V001", "海", "うみ", "海"),
+    v("L14-V001", "川", "かわ", "河"),
+  ];
+  // 課內例句:只有 小鳥、金魚 有可挖空的句子(單一字元的 犬、猫 不找例句,見 examples.ts)
+  const clozeIds = ["L13-V003", "L13-V004"];
+  const lesson13 = lessonWith(
+    13,
+    words.filter((w) => w.lessonId === 13),
+    [
+      sent(
+        "L13-S01",
+        [
+          { b: "公園", r: "こうえん" },
+          { b: "に " },
+          { b: "小鳥", r: "ことり" },
+          { b: "が います。" },
+        ],
+        "公園裡有小鳥。",
+      ),
+      sent(
+        "L13-S02",
+        [
+          { b: "金魚", r: "きんぎょ" },
+          { b: "が " },
+          { b: "好", r: "す" },
+          { b: "きです。" },
+        ],
+        "我喜歡金魚。",
+      ),
+      sent(
+        "L13-S03",
+        [
+          { b: "犬", r: "いぬ" },
+          { b: "と " },
+          { b: "猫", r: "ねこ" },
+          { b: "が います。" },
+        ],
+        "有狗和貓。",
+      ),
+    ],
+  );
+
+  it("沒有日語語音(listenAvailable 未開)時不出聽力題", () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const qs = generateQuiz(13, words, {
+        types: ["listen", "jp-to-zh"],
+        rng: seeded(seed),
+      });
+      expect(qs.length).toBe(5);
+      expect(qs.some((q) => q.type === "listen")).toBe(false);
+    }
+    expect(generateQuiz(13, words, { types: ["listen"], rng: ZERO })).toEqual(
+      [],
+    );
+  });
+
+  it("聽力:選項為不重複的中文、恰一正解,不含讀音相同的字", () => {
+    const pool = [
+      ...words,
+      v("L13-V006", "箸", "はし", "筷子"),
+      v("L13-V007", "橋", "はし", "橋"), // 與 箸 同音
+      v("L13-V008", "海", "うみ", "海"),
+      v("L13-V009", "海", "ウミ", "海洋"), // 與 海 同讀音(片假名寫法)
+      v("L13-V010", "兎", "うさぎ", "狗"), // 與 犬 同中文
+      v("L13-V011", "子犬", "こいぬ", "狗"), // 與 犬、兎 同中文
+    ];
+    const reading = (c: QuizCandidate) => normalizeReading(c.kana);
+    for (let seed = 1; seed <= 30; seed++) {
+      const qs = generateQuiz(13, pool, {
+        types: ["listen"],
+        listenAvailable: true,
+        rng: seeded(seed),
+      });
+      expect(qs).toHaveLength(10);
+      for (const q of qs) {
+        expect(q.type).toBe("listen");
+        const { options } = q as McqQuestion;
+        expect(options).toHaveLength(4);
+        expect(options.filter((o) => o.correct).map((o) => o.id)).toEqual([
+          q.answer.id,
+        ]);
+        const meanings = options.map((o) => o.candidate.meaning);
+        expect(new Set(meanings).size).toBe(meanings.length);
+        for (const o of options.filter((x) => !x.correct)) {
+          expect(reading(o.candidate)).not.toBe(reading(q.answer));
+        }
+      }
+    }
+  });
+
+  it("填空:挖空處是正解,選項為不重複的日文、恰一正解", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const qs = generateQuiz(13, words, {
+        types: ["cloze"],
+        lesson: lesson13,
+        rng: seeded(seed),
+      });
+      // 只有 小鳥、金魚 有例句:只啟用填空時只從這兩字出題
+      expect(qs.map((q) => q.answer.id).sort()).toEqual(clozeIds);
+      for (const q of qs) {
+        const c = q as ClozeQuestion;
+        expect(c.type).toBe("cloze");
+        const surfaces = c.options.map((o) => segText(o.candidate.ruby));
+        expect(new Set(surfaces).size).toBe(surfaces.length);
+        expect(c.options.filter((o) => o.correct).map((o) => o.id)).toEqual([
+          q.answer.id,
+        ]);
+      }
+      const kotori = qs.find(
+        (q) => q.answer.id === "L13-V003",
+      ) as ClozeQuestion;
+      expect(kotori.cloze.before).toEqual([
+        { b: "公園", r: "こうえん" },
+        { b: "に " },
+      ]);
+      expect(kotori.cloze.after).toEqual([{ b: "が います。" }]);
+      expect(kotori.cloze.translation).toBe("公園裡有小鳥。");
+    }
+  });
+
+  it("填空干擾項:同詞性優先,不含教材記號,表面形不與正解相同", () => {
+    const pool = [
+      ...words,
+      v("L13-V008", "小鳥", "しょうちょう", "小鳥(另一讀音)"), // 同表面不同讀音
+      v("L13-V009", "〜鳥", "ちょう", "…鳥"),
+      v("L13-V010", "走", "はし", "跑", "動I"),
+    ];
+    for (let seed = 1; seed <= 20; seed++) {
+      const [q] = generateQuiz(13, pool, {
+        types: ["cloze"],
+        lesson: lesson13,
+        count: 1,
+        rng: seeded(seed),
+      }) as ClozeQuestion[];
+      const texts = q.options.map((o) => segText(o.candidate.ruby));
+      expect(texts.filter((t) => t === segText(q.answer.ruby))).toHaveLength(1);
+      expect(texts.some((t) => /[〜［］]/.test(t))).toBe(false);
+      expect(q.options.every((o) => o.candidate.pos === "名")).toBe(true);
+    }
+  });
+
+  it("填空找不到例句的字改出其他啟用題型(中→日優先);未給課程資料時不出填空", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const qs = generateQuiz(13, words, {
+        types: ["cloze", "jp-to-zh"],
+        lesson: lesson13,
+        rng: seeded(seed),
+      });
+      expect(qs).toHaveLength(5);
+      // 填空的輪次先分給有例句的字
+      expect(qs[0].type).toBe("cloze");
+      expect(qs[2].type).toBe("cloze");
+      for (const q of qs) {
+        if (q.type === "cloze") expect(clozeIds).toContain(q.answer.id);
+      }
+      expect(qs[4].type).toBe("jp-to-zh"); // 輪到填空但沒有例句 → 日→中(中→日未啟用)
+    }
+    // 只有 小鳥 有例句:第二個填空輪次改出中→日(優先於日→中)
+    const onlyKotori = {
+      ...lesson13,
+      grammar: [
+        {
+          ...lesson13.grammar[0],
+          examples: lesson13.grammar[0].examples.slice(0, 1),
+        },
+      ],
+    };
+    const withZhJp = generateQuiz(13, words, {
+      types: ["cloze", "zh-to-jp", "jp-to-zh"],
+      lesson: onlyKotori,
+      count: 5,
+      rng: ZERO,
+    });
+    expect(withZhJp.map((q) => q.type)).toEqual([
+      "cloze",
+      "zh-to-jp",
+      "jp-to-zh",
+      "zh-to-jp",
+      "zh-to-jp",
+    ]);
+    expect(withZhJp[0].answer.id).toBe("L13-V003");
+    const noLesson = generateQuiz(13, words, {
+      types: ["cloze", "jp-to-zh"],
+      rng: ZERO,
+    });
+    expect(noLesson.some((q) => q.type === "cloze")).toBe(false);
+    expect(generateQuiz(13, words, { types: ["cloze"], rng: ZERO })).toEqual(
+      [],
+    );
+  });
+
+  it("填空:同一回合每句例句只挖空一次,只剩填空可出時才重複", () => {
+    const shared = lessonWith(
+      13,
+      words.filter((w) => w.lessonId === 13),
+      [
+        sent("L13-S01", [
+          { b: "小鳥", r: "ことり" },
+          { b: "と " },
+          { b: "金魚", r: "きんぎょ" },
+          { b: "が います。" },
+        ]),
+      ],
+    );
+    for (let seed = 1; seed <= 20; seed++) {
+      const qs = generateQuiz(13, words, {
+        types: ["cloze", "jp-to-zh"],
+        lesson: shared,
+        rng: seeded(seed),
+      });
+      expect(qs).toHaveLength(5);
+      expect(qs.filter((q) => q.type === "cloze")).toHaveLength(1);
+      const only = generateQuiz(13, words, {
+        types: ["cloze"],
+        lesson: shared,
+        rng: seeded(seed),
+      }) as ClozeQuestion[];
+      expect(only.map((q) => q.answer.id).sort()).toEqual(clozeIds);
+      expect(only.every((q) => q.cloze.sentenceId === "L13-S01")).toBe(true);
+    }
+  });
+
+  it("quizWordCount:以所選題型可出題的字數,與 generateQuiz 的題數一致", () => {
+    const count = (types: QuestionType[], listenAvailable = false) =>
+      quizWordCount(13, words, { types, lesson: lesson13, listenAvailable });
+    expect(count(["cloze"])).toBe(2);
+    expect(count(["cloze", "jp-to-zh"])).toBe(5);
+    expect(count(["listen"])).toBe(0);
+    expect(count(["listen"], true)).toBe(5);
+    expect(quizWordCount(13, words, { types: ["cloze"] })).toBe(0); // 未給課程資料
+    for (const types of [
+      ["cloze"],
+      ["cloze", "input"],
+      ["input"],
+    ] as QuestionType[][]) {
+      expect(
+        generateQuiz(13, words, { types, lesson: lesson13, rng: ZERO }),
+      ).toHaveLength(count(types));
+    }
+  });
+
+  it("全部題型:每題都有合法題型與正解,題數受 count 限制", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const qs = generateQuiz(13, words, {
+        types: ["jp-to-zh", "zh-to-jp", "input", "cloze", "listen"],
+        lesson: lesson13,
+        listenAvailable: true,
+        count: 4,
+        rng: seeded(seed),
+      });
+      expect(qs).toHaveLength(4);
+      expect(qs.map((q) => q.type)).toEqual([
+        "jp-to-zh",
+        "zh-to-jp",
+        "input",
+        "cloze",
+      ]);
+      expect(new Set(qs.map((q) => q.answer.id)).size).toBe(4);
+    }
+  });
+
+  it("本回合的字均勻抽樣:有例句的字不會每回合都被挑中", () => {
+    // 20 字只有 小鳥 有例句;每回合抽 5 字 → 均勻時約 1/4 回合出現
+    const many = [
+      ...words.filter((w) => w.lessonId === 13),
+      ...Array.from({ length: 15 }, (_, i) =>
+        v(`L13-V1${String(i).padStart(2, "0")}`, `字${i}`, `じ${i}`, `字${i}`),
+      ),
+    ];
+    const kotoriOnly = lessonWith(13, many, lesson13.grammar[0].examples);
+    let picked = 0;
+    let clozes = 0;
+    const rounds = 400;
+    for (let seed = 1; seed <= rounds; seed++) {
+      const qs = generateQuiz(13, many, {
+        types: ["jp-to-zh", "cloze"],
+        lesson: kotoriOnly,
+        count: 5,
+        rng: seeded(seed),
+      });
+      if (qs.some((q) => q.answer.id === "L13-V003")) picked++;
+      clozes += qs.filter((q) => q.type === "cloze").length;
+    }
+    expect(picked / rounds).toBeGreaterThan(0.15);
+    expect(picked / rounds).toBeLessThan(0.35); // 舊做法(先挑有例句的字)為 100%
+    expect(clozes).toBeGreaterThan(0); // 抽到有例句的字時照常出填空
+  });
+
+  it("填空:抽中的字只剩例句已用過的填空時改取其他可出題的字,不重複例句", () => {
+    // ジュース、コーラ 只能出填空且共用一句;犬、猫 只能出輸入題(單一字元不找例句)
+    const drinks: QuizCandidate[] = [
+      {
+        ...v("L13-V001", "ジュース", "ジュース", "果汁"),
+        ruby: [{ b: "ジュース" }],
+      },
+      { ...v("L13-V002", "コーラ", "コーラ", "可樂"), ruby: [{ b: "コーラ" }] },
+      v("L13-V003", "犬", "いぬ", "狗"),
+      v("L13-V004", "猫", "ねこ", "貓"),
+    ];
+    const l = lessonWith(13, drinks, [
+      sent("L13-S01", [{ b: "ジュースと コーラが あります。" }]),
+    ]);
+    for (let seed = 1; seed <= 40; seed++) {
+      const qs = generateQuiz(13, drinks, {
+        types: ["input", "cloze"],
+        lesson: l,
+        count: 3,
+        rng: seeded(seed),
+      });
+      expect(qs).toHaveLength(3);
+      const clozes = qs.filter((q) => q.type === "cloze");
+      expect(clozes).toHaveLength(1);
+      // 兩個飲料都被抽中時,第二個改由沒抽中的 犬/猫 出輸入題
+      expect(qs.filter((q) => q.type === "input")).toHaveLength(2);
+    }
+  });
+
+  it("填空輪次先給只能出填空的字(也能輸入的字留給輸入題),例句才夠分", () => {
+    // コーラ 只能出填空;紅茶 可輸入也可填空(同一句);犬 只能輸入
+    const drinks: QuizCandidate[] = [
+      { ...v("L13-V001", "コーラ", "コーラ", "可樂"), ruby: [{ b: "コーラ" }] },
+      v("L13-V002", "紅茶", "こうちゃ", "紅茶"),
+      v("L13-V003", "犬", "いぬ", "狗"),
+    ];
+    const l = lessonWith(13, drinks, [
+      sent("L13-S01", [
+        { b: "コーラと " },
+        { b: "紅茶", r: "こうちゃ" },
+        { b: "が あります。" },
+      ]),
+    ]);
+    for (let seed = 1; seed <= 20; seed++) {
+      const qs = generateQuiz(13, drinks, {
+        types: ["input", "cloze"],
+        lesson: l,
+        rng: seeded(seed),
+      });
+      expect(qs.map((q) => [q.answer.id, q.type]).sort()).toEqual([
+        ["L13-V001", "cloze"],
+        ["L13-V002", "input"],
+        ["L13-V003", "input"],
+      ]);
+    }
+  });
+
+  it("可互換的字不當干擾項:聽力(中文選項)與填空(日文選項)", () => {
+    const k = (
+      id: string,
+      kana: string,
+      meaning: string,
+      pos: QuizCandidate["pos"] = "其他",
+    ): QuizCandidate => ({
+      id,
+      lessonId: 3,
+      ruby: [{ b: kana }],
+      kana,
+      meaning,
+      pos,
+    });
+    const koko = k("L03-V001", "ここ", "這裡、這個地方");
+    const soko = k("L03-V002", "そこ", "那裡、那個地方");
+    const asoko = k("L03-V003", "あそこ", "那裡、那個地方");
+    const kochira = k("L03-V005", "こちら", "這邊（ここ 的禮貌形）");
+    const sochira = k("L03-V006", "そちら", "那邊（そこ 的禮貌形）");
+    const achira = k("L03-V007", "あちら", "那邊（あそこ 的禮貌形）");
+    const others = ["うち", "いえ", "みせ", "へや", "にわ", "えき"].map(
+      (w, i) => k(`L03-V02${i}`, w, `地點${i}`, "名"),
+    );
+    const pool = [koko, soko, asoko, kochira, sochira, achira, ...others];
+    const l = lessonWith(3, pool, [
+      sent("L03-S01", [{ b: "トイレは あそこです。" }], "廁所在那裡。"),
+    ]);
+    for (let seed = 1; seed <= 30; seed++) {
+      for (const types of [["cloze"], ["listen"]] as QuestionType[][]) {
+        const qs = generateQuiz(3, pool, {
+          types,
+          lesson: l,
+          listenAvailable: true,
+          rng: seeded(seed),
+        }) as (McqQuestion | ClozeQuestion)[];
+        const q = qs.find((x) => x.answer.id === asoko.id);
+        if (!q) continue;
+        expect(q.options).toHaveLength(4);
+        const ids = q.options.map((o) => o.id);
+        // そこ(同義)、あちら(意思提到 あそこ)、そちら(同為「那」的場所詞)皆不出
+        for (const bad of [soko, achira, sochira])
+          expect(ids, types[0]).not.toContain(bad.id);
+      }
+    }
+  });
+});
+
+describe("interchangeable(T11.8)", () => {
+  const w = (kana: string, meaning: string) => ({ kana, meaning });
+
+  it("中文核心詞重疊(去掉說明括號、依並列切開)", () => {
+    expect(
+      interchangeable(
+        w("では", "那麼（じゃ的禮貌說法）"),
+        w("それでは", "那麼"),
+      ),
+    ).toBe(true);
+    expect(interchangeable(w("なか", "裡面、中間"), w("おく", "裡面"))).toBe(
+      true,
+    );
+    expect(
+      interchangeable(
+        w("それ", "那（事物近對方）"),
+        w("あれ", "那（事物在遠方）"),
+      ),
+    ).toBe(true);
+    expect(interchangeable(w("いぬ", "狗"), w("ねこ", "貓"))).toBe(false);
+    expect(
+      interchangeable(w("ここ", "這裡、這個地方"), w("そこ", "那裡、那個地方")),
+    ).toBe(false);
+  });
+
+  it("意思提到對方;同類こそあど詞且中譯同為這／那／哪", () => {
+    expect(
+      interchangeable(
+        w("どこ", "哪裡、哪個地方"),
+        w("どちら", "哪邊（どこ 的禮貌形）"),
+      ),
+    ).toBe(true);
+    expect(
+      interchangeable(
+        w("あそこ", "那裡、那個地方"),
+        w("そちら", "那邊（そこ 的禮貌形）"),
+      ),
+    ).toBe(true);
+    expect(
+      interchangeable(w("あそこ", "那裡、那個地方"), w("あっち", "那邊")),
+    ).toBe(true);
+    // こ 與 そ・あ、場所與事物:中譯分得出來
+    expect(
+      interchangeable(
+        w("ここ", "這裡"),
+        w("あちら", "那邊（あそこ 的禮貌形）"),
+      ),
+    ).toBe(false);
+    expect(interchangeable(w("あそこ", "那裡"), w("これ", "這"))).toBe(false);
+  });
+});
+
+describe("pickDistractors distinctBy / parseQuizTypes(T11.8)", () => {
+  it("distinctBy:選項間(含正解)該值不重複", () => {
+    const answer = cand("A", 13, "名", "狗", "いぬ");
+    const pool = [
+      answer,
+      cand("b", 13, "名", "貓", "ねこ"),
+      cand("c", 13, "名", "貓", "ネコちゃん"),
+      cand("d", 13, "名", "鳥", "とり"),
+    ];
+    expect(
+      pickDistractors(answer, pool, 3, ZERO)
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual(["b", "c", "d"]);
+    const d = pickDistractors(answer, pool, 3, ZERO, (c) => c.meaning);
+    expect(d.map((c) => c.meaning).sort()).toEqual(["貓", "鳥"]);
+  });
+
+  it("parseQuizTypes:只留已知題型、依固定順序;無效時 null", () => {
+    expect(parseQuizTypes(["listen", "cloze", "jp-to-zh", "jp-to-zh"])).toEqual(
+      ["jp-to-zh", "cloze", "listen"],
+    );
+    expect(parseQuizTypes(["foo"])).toBeNull();
+    expect(parseQuizTypes([])).toBeNull();
+    expect(parseQuizTypes("cloze")).toBeNull();
+    expect(parseQuizTypes(undefined)).toBeNull();
   });
 });

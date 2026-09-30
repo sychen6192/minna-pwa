@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 import { db, getSetting, setSetting } from "@/lib/db";
 import type { Lesson, VocabItem } from "@/schemas/lesson";
+import { holdTimeouts, passTapGuard } from "@/test/clock";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -44,6 +45,7 @@ vi.mock("@/lib/srs", () => ({
   suspendedWordIds: (...a: unknown[]) => suspendedWordIds(...a),
 }));
 
+import { cancelSpeech, VOICE_TIMEOUT_MS } from "@/lib/tts";
 import { LessonDetail } from "./LessonDetail";
 
 /** queueCounts 基底:今日佇列空、未達上限 */
@@ -230,12 +232,6 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
 });
-
-/** 把時鐘撥過列內換鈕後的點擊防護(300ms);之後 Date 停在 fake 時間 */
-function passRowGuard() {
-  if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(Date.now() + 1_000);
-}
 
 describe("LessonDetail", () => {
   it("預設顯示単語分頁,含釋義與 furigana", async () => {
@@ -431,23 +427,32 @@ describe("LessonDetail", () => {
     expect(screen.queryByText("玩、遊玩")).not.toBeInTheDocument();
   });
 
-  it("標頭連結:測驗本課、上一課、下一課(第 1 課無上一課、第 50 課無下一課)", async () => {
+  it("標頭連結:測驗本課、活用練習、上一課、下一課(第 1 課無上一課、第 50 課無下一課)", async () => {
     getLesson.mockResolvedValue(sampleLesson);
     const { unmount } = render(<LessonDetail id={13} />);
     await screen.findByText("玩、遊玩");
 
     const nav = screen.getByRole("navigation", { name: "課程導覽" });
     expect(within(nav).getByRole("link", { name: "測驗本課" })).toHaveAttribute("href", "/quiz/13");
+    // 本課有動詞(遊びます),第 4 課起已教ます系:範圍到本課
+    expect(within(nav).getByRole("link", { name: "活用練習" })).toHaveAttribute(
+      "href",
+      "/drill?upto=13",
+    );
     expect(within(nav).getByRole("link", { name: "上一課" })).toHaveAttribute("href", "/lessons/12");
     expect(within(nav).getByRole("link", { name: "下一課" })).toHaveAttribute("href", "/lessons/14");
-    // 觸控區 ≥ 44px(buttonVariants size sm = h-11)
-    for (const link of within(nav).getAllByRole("link")) expect(link).toHaveClass("h-11");
+    // 觸控區 ≥ 44px(buttonVariants size sm = h-11;上/下一課為 size icon = size-11)
+    for (const link of within(nav).getAllByRole("link")) {
+      expect(link.className).toMatch(/(^|\s)(h|size)-11(\s|$)/);
+    }
     unmount();
 
     getLesson.mockResolvedValue({ ...sampleLesson, id: 1 });
     const first = render(<LessonDetail id={1} />);
     await screen.findByText("玩、遊玩");
     expect(screen.queryByRole("link", { name: "上一課" })).not.toBeInTheDocument();
+    // 第 1 課還沒教任何活用形:不給活用練習
+    expect(screen.queryByRole("link", { name: "活用練習" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "下一課" })).toHaveAttribute("href", "/lessons/2");
     first.unmount();
 
@@ -456,6 +461,41 @@ describe("LessonDetail", () => {
     await screen.findByText("玩、遊玩");
     expect(screen.getByRole("link", { name: "上一課" })).toHaveAttribute("href", "/lessons/49");
     expect(screen.queryByRole("link", { name: "下一課" })).not.toBeInTheDocument();
+  });
+
+  it("標頭「例句重組」:本課有可重組的句子(3–8 塊)時連到 /reorder/[id],沒有則不給", async () => {
+    // sampleLesson 的例句與台詞都只有 2 塊:不給入口
+    getLesson.mockResolvedValue(sampleLesson);
+    const { unmount } = render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+    expect(screen.queryByRole("link", { name: "例句重組" })).not.toBeInTheDocument();
+    unmount();
+
+    getLesson.mockResolvedValue({
+      ...sampleLesson,
+      grammar: [
+        {
+          ...sampleLesson.grammar[0],
+          examples: [
+            {
+              id: "L13-S02",
+              ruby: [
+                { b: "わたしは " },
+                { b: "車", r: "くるま" },
+                { b: "が ほしいです。" },
+              ],
+              translation: "我想要車子。",
+            },
+          ],
+        },
+      ],
+    });
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+    const nav = screen.getByRole("navigation", { name: "課程導覽" });
+    const link = within(nav).getByRole("link", { name: "例句重組" });
+    expect(link).toHaveAttribute("href", "/reorder/13");
+    expect(link).toHaveClass("h-11");
   });
 
   it("切換到文型分頁:顯示文型、隱藏単語", async () => {
@@ -750,7 +790,7 @@ describe("LessonDetail", () => {
     await user.click(screen.getByRole("button", { name: "標記已會:あそびます" }));
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
     const restore = await screen.findByRole("button", { name: "恢復複習:あそびます" });
-    passRowGuard();
+    passTapGuard();
     await user.click(restore);
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", false);
   });
@@ -771,7 +811,7 @@ describe("LessonDetail", () => {
     // 其他列不受影響;同一列過了防護時間即可操作
     await user.click(screen.getByRole("button", { name: "加入複習:ほしい" }));
     expect(addCards).toHaveBeenLastCalledWith(["L13-V002"], 13);
-    passRowGuard();
+    passTapGuard();
     await user.click(known);
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
   });
@@ -789,7 +829,7 @@ describe("LessonDetail", () => {
       expect(screen.getByRole("button", { name: "標記已會:あそびます" })).toHaveFocus(),
     );
 
-    passRowGuard();
+    passTapGuard();
     await user.keyboard("{Enter}");
     expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
     await waitFor(() =>
@@ -847,5 +887,971 @@ describe("LessonDetail", () => {
     expect(
       await screen.findByText(/載入課程失敗.*HTTP 404/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("LessonDetail 自我測驗與詞性篩選(T11.1)", () => {
+  /** 単語分頁的「遮住」分段鈕 */
+  const maskGroup = () => screen.getByRole("group", { name: "遮住" });
+  const maskButton = (name: "無" | "中文" | "日文") =>
+    within(maskGroup()).getByRole("button", { name });
+  const chips = () => screen.getByRole("group", { name: "詞性篩選" });
+  const pressedChips = () =>
+    within(chips())
+      .getAllByRole("button")
+      .map((b) => [b.textContent, b.getAttribute("aria-pressed")]);
+  /** 單字列表(不含課名等標頭文字) */
+  const vocabList = () => screen.getByRole("list");
+
+  it("遮住:無/中文/日文 為 aria-pressed 分段鈕(預設無),觸控區 ≥ 44px", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    const state = () =>
+      within(maskGroup())
+        .getAllByRole("button")
+        .map((b) => [b.textContent, b.getAttribute("aria-pressed")]);
+    expect(state()).toEqual([
+      ["無", "true"],
+      ["中文", "false"],
+      ["日文", "false"],
+    ]);
+    for (const b of within(maskGroup()).getAllByRole("button")) {
+      expect(b).toHaveClass("h-11", "min-w-11");
+    }
+    // 不遮時沒有揭示鈕、也沒有「全部顯示」
+    expect(screen.queryAllByRole("button", { expanded: false })).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "全部顯示" })).not.toBeInTheDocument();
+
+    await user.click(maskButton("中文"));
+    expect(state()).toEqual([
+      ["無", "false"],
+      ["中文", "true"],
+      ["日文", "false"],
+    ]);
+  });
+
+  it("遮中文:釋義與 note 不在無障礙樹中,點擊揭示(aria-expanded)、再點遮回", async () => {
+    getLesson.mockResolvedValue(withSections);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(maskButton("中文"));
+    // 釋義與 note(常含中文釋義)都不渲染;段落徽章仍在
+    expect(screen.queryByText("玩、遊玩")).not.toBeInTheDocument();
+    expect(screen.queryByText("〔公園で〜〕")).not.toBeInTheDocument();
+    expect(vocabList().textContent).not.toMatch(/玩|想要|孩子們|紐約/);
+    const reveal = screen.getByRole("button", { name: "顯示中文:あそびます" });
+    expect(reveal).toHaveAttribute("aria-expanded", "false");
+    expect(reveal).toHaveTextContent("顯示中文"); // 看得到的佔位文字是名稱開頭
+    expect(reveal).toHaveClass("min-w-11", "-my-3", "py-3"); // 點擊區 44px、列高不變
+    // 標題字、讀音與發音鈕照常
+    expect(screen.getByText("遊")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "播放 あそびます 的發音" })).toBeInTheDocument();
+
+    await user.click(reveal);
+    expect(reveal).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "玩、遊玩", expanded: true })).toBe(reveal);
+    expect(screen.getByText("〔公園で〜〕")).toBeInTheDocument(); // 揭示後 note 一起出現
+    // 其他字仍遮住
+    expect(screen.queryByText("想要")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "顯示中文:ほしい" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    await user.click(reveal);
+    expect(reveal).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("玩、遊玩")).not.toBeInTheDocument();
+  });
+
+  it("鍵盤揭示:Enter 揭示、Space 遮回,焦點留在同一顆鈕", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+    await user.click(maskButton("中文"));
+
+    const reveal = screen.getByRole("button", { name: "顯示中文:ほしい" });
+    reveal.focus();
+    await user.keyboard("{Enter}");
+    expect(reveal).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("想要")).toBeInTheDocument();
+    expect(reveal).toHaveFocus();
+
+    await user.keyboard(" ");
+    expect(reveal).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("想要")).not.toBeInTheDocument();
+    expect(reveal).toHaveFocus();
+  });
+
+  it("遮日文:標題字、讀音、重音與 note 都不渲染,列內鈕改以釋義命名;發音鈕保留(聽音回想)", async () => {
+    getLesson.mockResolvedValue({
+      ...lessonWithKanjiPitch,
+      vocab: lessonWithKanjiPitch.vocab.map((v) =>
+        v.id === "L13-V001" ? { ...v, note: "〔公園で〜〕" } : v,
+      ),
+    });
+    const user = userEvent.setup();
+    const { container } = render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(maskButton("日文"));
+    const list = vocabList();
+    // 文字與屬性(aria-label)都不含答案:讀音、重音說明、note 的日文搭配
+    for (const answer of ["あそびます", "ほしい", "くるま", "すき", "公園"]) {
+      expect(list.innerHTML).not.toContain(answer);
+    }
+    // 標題字(含漢字者為 <ruby>;釋義「玩、遊玩」「車子」本身含同一個漢字,不以字面比對)
+    expect(list.querySelector("ruby")).toBeNull();
+    expect(list.querySelectorAll("[lang=ja]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-mora]")).toHaveLength(0);
+    // 釋義照常顯示
+    expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "加入複習:玩、遊玩" })).toBeInTheDocument();
+
+    // 發音鈕仍在(名稱不洩漏讀音),朗讀該字
+    const speakers = screen.getAllByRole("button", { name: /^播放發音:/ });
+    expect(speakers).toHaveLength(4);
+    await user.click(screen.getByRole("button", { name: "播放發音:車子" }));
+    expect(speak).toHaveBeenCalledWith("くるま");
+
+    // 揭示:標題字、重音讀音、note 出現,列內鈕名稱回到讀音
+    const reveal = screen.getByRole("button", { name: "顯示日文:車子" });
+    expect(reveal).toHaveAttribute("aria-expanded", "false");
+    expect(reveal).toHaveClass("min-w-11", "-my-2", "py-2", "mr-1.5"); // 不被發音鈕的點擊區蓋到
+    await user.click(reveal);
+    expect(reveal).toHaveAttribute("aria-expanded", "true");
+    expect(within(reveal).getByText("車")).toBeInTheDocument();
+    expect(getPitchLabel("くるま、重音 0 型(平板)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "加入複習:くるま" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "播放 くるま 的發音" })).toBeInTheDocument();
+    // 其他字仍遮住
+    expect(list.innerHTML).not.toContain("あそびます");
+
+    // 純假名字(重音標記即標題)同樣藏在揭示鈕內
+    await user.click(screen.getByRole("button", { name: "顯示日文:想要" }));
+    expect(getPitchLabel("ほしい、重音 2 型(中高)").closest("button")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    // note 隨揭示出現
+    await user.click(screen.getByRole("button", { name: "顯示日文:玩、遊玩" }));
+    expect(screen.getByText("〔公園で〜〕")).toBeInTheDocument();
+  });
+
+  it("切換遮罩時揭示狀態重來;全部顯示 ⇄ 重新遮住;換分頁回來保留遮罩", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(maskButton("中文"));
+    await user.click(screen.getByRole("button", { name: "顯示中文:あそびます" }));
+    expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
+
+    // 換到遮日文再回來:先前揭示的不沿用
+    await user.click(maskButton("日文"));
+    expect(screen.getAllByRole("button", { expanded: false })).toHaveLength(2);
+    await user.click(maskButton("中文"));
+    expect(screen.queryByText("玩、遊玩")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { expanded: false })).toHaveLength(2);
+
+    // 全部顯示 → 按鈕改為重新遮住
+    await user.click(screen.getByRole("button", { name: "全部顯示" }));
+    expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
+    expect(screen.getByText("想要")).toBeInTheDocument();
+    expect(screen.queryAllByRole("button", { expanded: false })).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "重新遮住" }));
+    expect(screen.queryByText("玩、遊玩")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { expanded: false })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "全部顯示" })).toBeInTheDocument();
+
+    // 換分頁再回來:遮罩模式保留(本頁 state),揭示狀態重新開始
+    await user.click(screen.getByRole("button", { name: "顯示中文:ほしい" }));
+    await user.click(screen.getByRole("button", { name: "文型" }));
+    await user.click(screen.getByRole("button", { name: "単語" }));
+    expect(maskButton("中文")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("想要")).not.toBeInTheDocument();
+
+    // 回到「無」:全部照常顯示,不寫入任何設定
+    await user.click(maskButton("無"));
+    expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "全部顯示" })).not.toBeInTheDocument();
+    expect(await db.settings.count()).toBe(0);
+  });
+
+  it("詞性篩選 chips:只列有字的組並顯示字數,篩選保留原順序", async () => {
+    getLesson.mockResolvedValue(lessonWithKanjiPitch); // 動I、い形、名、な形
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    // 其他(0 字)不顯示
+    expect(pressedChips()).toEqual([
+      ["全部 4", "true"],
+      ["名詞 1", "false"],
+      ["動詞 1", "false"],
+      ["形容詞 2", "false"],
+    ]);
+    for (const b of within(chips()).getAllByRole("button")) expect(b).toHaveClass("h-11");
+
+    await user.click(within(chips()).getByRole("button", { name: "形容詞 2" }));
+    expect(pressedChips()).toEqual([
+      ["全部 4", "false"],
+      ["名詞 1", "false"],
+      ["動詞 1", "false"],
+      ["形容詞 2", "true"],
+    ]);
+    expect(
+      within(vocabList())
+        .getAllByRole("listitem")
+        .map((li) => li.id),
+    ).toEqual(["L13-V002", "L13-V004"]);
+    expect(screen.queryByText("玩、遊玩")).not.toBeInTheDocument();
+
+    await user.click(within(chips()).getByRole("button", { name: "名詞 1" }));
+    expect(within(vocabList()).getAllByRole("listitem").map((li) => li.id)).toEqual(["L13-V003"]);
+    await user.click(within(chips()).getByRole("button", { name: "全部 4" }));
+    expect(within(vocabList()).getAllByRole("listitem")).toHaveLength(4);
+  });
+
+  it("篩選與遮罩並用:逐字揭示的狀態跨篩選保留", async () => {
+    getLesson.mockResolvedValue(lessonWithKanjiPitch);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(within(chips()).getByRole("button", { name: "動詞 1" }));
+    await user.click(maskButton("中文"));
+    // 只剩動詞一列、一顆揭示鈕
+    expect(screen.getAllByRole("button", { expanded: false })).toEqual([
+      screen.getByRole("button", { name: "顯示中文:あそびます" }),
+    ]);
+    await user.click(screen.getByRole("button", { name: "顯示中文:あそびます" }));
+    // 此組已全部顯示 → 重新遮住
+    expect(screen.getByRole("button", { name: "重新遮住" })).toBeInTheDocument();
+
+    await user.click(within(chips()).getByRole("button", { name: "全部 4" }));
+    expect(screen.getByText("玩、遊玩")).toBeInTheDocument(); // 剛才揭示的仍揭示
+    expect(screen.getAllByRole("button", { expanded: false })).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "全部顯示" })).toBeInTheDocument();
+
+    // 遮日文 + 形容詞:兩列標題字都遮住,其他列不渲染
+    await user.click(maskButton("日文"));
+    await user.click(within(chips()).getByRole("button", { name: "形容詞 2" }));
+    expect(
+      screen.getAllByRole("button", { expanded: false }).map((b) => b.getAttribute("aria-label")),
+    ).toEqual(["顯示日文:想要", "顯示日文:喜歡"]);
+    expect(screen.queryByText("車子")).not.toBeInTheDocument();
+  });
+
+  it("篩選中的全部顯示/重新遮住只作用於篩出的字:其他組不先揭示、也不被遮回", async () => {
+    getLesson.mockResolvedValue(lessonWithKanjiPitch); // 動I、い形、名、な形
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+    const collapsed = () =>
+      screen.queryAllByRole("button", { expanded: false }).map((b) => b.getAttribute("aria-label"));
+
+    await user.click(maskButton("中文"));
+    await user.click(screen.getByRole("button", { name: "顯示中文:あそびます" })); // 動詞逐字揭示
+
+    // 形容詞組:全部顯示只揭示這兩字
+    await user.click(within(chips()).getByRole("button", { name: "形容詞 2" }));
+    await user.click(screen.getByRole("button", { name: "全部顯示" }));
+    expect(screen.getByText("想要")).toBeInTheDocument();
+    expect(screen.getByText("喜歡")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新遮住" })).toBeInTheDocument();
+
+    // 還沒測的名詞仍遮住;動詞維持逐字揭示;按鈕依全部的字判定
+    await user.click(within(chips()).getByRole("button", { name: "全部 4" }));
+    expect(collapsed()).toEqual(["顯示中文:くるま"]);
+    expect(screen.queryByText("車子")).not.toBeInTheDocument();
+    expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "全部顯示" })).toBeInTheDocument();
+
+    // 形容詞組重新遮住:只遮回這兩字,動詞仍揭示
+    await user.click(within(chips()).getByRole("button", { name: "形容詞 2" }));
+    await user.click(screen.getByRole("button", { name: "重新遮住" }));
+    expect(collapsed()).toEqual(["顯示中文:ほしい", "顯示中文:すき［な］"]);
+    await user.click(within(chips()).getByRole("button", { name: "全部 4" }));
+    expect(collapsed()).toEqual([
+      "顯示中文:ほしい",
+      "顯示中文:くるま",
+      "顯示中文:すき［な］",
+    ]);
+    expect(screen.getByText("玩、遊玩")).toBeInTheDocument();
+  });
+
+  it("篩選中整課加入仍加入整課(不含補充單字),不只篩出的組", async () => {
+    getLesson.mockResolvedValue(withSections);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(within(chips()).getByRole("button", { name: /^動詞/ }));
+    await user.click(screen.getByRole("button", { name: "整課加入複習(不含補充 1 字)" }));
+    expect(addCards).toHaveBeenCalledWith(
+      ["L13-V001", "L13-V002", "L13-V005", "L13-V007"],
+      13,
+    );
+  });
+
+  it("單字錨點遇到篩選:回到全部再捲動(目標字不在篩出的組)", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(within(chips()).getByRole("button", { name: "動詞 1" }));
+    expect(screen.queryByText("想要")).not.toBeInTheDocument();
+
+    act(() => {
+      window.history.replaceState(null, "", "#L13-V002");
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+    expect(scrollIntoView.mock.contexts[0]).toBe(vocabRow("想要"));
+    expect(within(chips()).getByRole("button", { name: "全部 2" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("遮日文時列內鈕的連點防護照常(換鈕後 300ms 內忽略該列點擊)", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+    await user.click(maskButton("日文"));
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    await user.click(screen.getByRole("button", { name: "加入複習:玩、遊玩" }));
+    expect(addCards).toHaveBeenCalledWith(["L13-V001"], 13);
+    const known = await screen.findByRole("button", { name: "標記已會:玩、遊玩" });
+    await user.click(known); // 連點的第二下
+    expect(setWordSuspended).not.toHaveBeenCalled();
+    passTapGuard();
+    await user.click(known);
+    expect(setWordSuspended).toHaveBeenCalledWith("L13-V001", true);
+  });
+
+  it("隱藏中譯:文型與会話共用開關(aria-pressed),逐句點擊揭示", async () => {
+    getLesson.mockResolvedValue(sampleLesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+    // 単語分頁沒有這顆開關
+    expect(screen.queryByRole("button", { name: "隱藏中譯" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "文型" }));
+    const toggle = screen.getByRole("button", { name: "隱藏中譯" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("我想要車子。")).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("我想要車子。")).not.toBeInTheDocument();
+    // 文型說明(中文解說)不算中譯,照常顯示
+    expect(screen.getByText("表達想要某物。")).toBeInTheDocument();
+    const reveal = screen.getByRole("button", { name: "顯示中譯" });
+    expect(reveal).toHaveAttribute("aria-expanded", "false");
+    expect(reveal).toHaveClass("min-w-11", "-mt-5", "pt-5", "-mb-2", "pb-2"); // 20 + 16 + 8 = 44px
+    await user.click(reveal);
+    expect(screen.getByRole("button", { name: "我想要車子。", expanded: true })).toBe(reveal);
+    // 揭示後點擊區不再往上蓋到例句的日文字(長按查字)
+    expect(reveal).toHaveClass("-mt-2", "pt-2", "-mb-2", "pb-2");
+    expect(reveal).not.toHaveClass("-mt-5");
+
+    // 会話:開關狀態共用
+    await user.click(screen.getByRole("button", { name: "会話" }));
+    expect(screen.getByRole("button", { name: "隱藏中譯" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByText("要不要去京都?")).not.toBeInTheDocument();
+    expect(screen.getByText("ミラー")).toBeInTheDocument(); // 說話者照常
+    const line = screen.getByRole("button", { name: "顯示中譯" });
+    line.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByText("要不要去京都?")).toBeInTheDocument();
+    expect(line).toHaveFocus();
+
+    // 關閉開關:全部顯示;再開:重新遮住(不沿用先前揭示)
+    await user.click(screen.getByRole("button", { name: "隱藏中譯" }));
+    expect(screen.queryAllByRole("button", { expanded: false })).toHaveLength(0);
+    expect(screen.getByText("要不要去京都?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "隱藏中譯" }));
+    expect(screen.queryByText("要不要去京都?")).not.toBeInTheDocument();
+  });
+
+  it("文型/会話為空時不顯示隱藏中譯開關", async () => {
+    getLesson.mockResolvedValue({ ...sampleLesson, grammar: [], dialogues: [] });
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+
+    await user.click(screen.getByRole("button", { name: "文型" }));
+    expect(screen.getByText("本課沒有文型")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "隱藏中譯" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "会話" }));
+    expect(screen.queryByRole("button", { name: "隱藏中譯" })).not.toBeInTheDocument();
+  });
+});
+
+describe("LessonDetail 会話朗讀與角色扮演(T11.2)", () => {
+  /** 含標題行(L24 寫法:speaker「標題」)與兩位說話者的会話 */
+  const dialogueLesson: Lesson = {
+    ...sampleLesson,
+    id: 24,
+    dialogues: [
+      {
+        id: "L24-D01",
+        speaker: "標題",
+        ruby: [{ b: "手伝", r: "てつだ" }, { b: "って くれますか" }],
+        translation: "可以幫我嗎",
+      },
+      {
+        id: "L24-D02",
+        speaker: "カリナ",
+        ruby: [{ b: "あした 引", r: "ひ" }, { b: "っ越しですね。" }],
+        translation: "明天要搬家對吧。",
+      },
+      {
+        id: "L24-D03",
+        speaker: "ワン",
+        ruby: [{ b: "ありがとう ございます。" }],
+        translation: "謝謝你。",
+      },
+      {
+        id: "L24-D04",
+        speaker: "カリナ",
+        ruby: [{ b: "車", r: "くるま" }, { b: "は?" }],
+        translation: "車子呢?",
+      },
+      {
+        id: "L24-D05",
+        speaker: "ワン",
+        ruby: [{ b: "えーと……。" }],
+        translation: "嗯……。",
+      },
+    ],
+  };
+
+  /** 假的 Utterance:事件由測試觸發(模擬引擎讀完一句) */
+  class FakeUtterance {
+    text: string;
+    lang = "";
+    voice: unknown = null;
+    onend: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(text: string) {
+      this.text = text;
+    }
+  }
+
+  /** 安裝有日語 voice 的 speechSynthesis(無頭環境沒有語音;全部播放/扮演需要它) */
+  function installVoice(lang = "ja-JP") {
+    /** 語音清單(測試可清空再補上,模擬晚到) */
+    const voices = [{ lang, name: "Kyoko", localService: true }];
+    const synth = Object.assign(new EventTarget(), {
+      getVoices: vi.fn(() => voices),
+      speak: vi.fn(),
+      cancel: vi.fn(),
+    });
+    vi.stubGlobal("speechSynthesis", synth);
+    vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
+    return {
+      synth,
+      voices,
+      /** 已送出朗讀的文字(依序) */
+      spoken: () => synth.speak.mock.calls.map(([u]) => (u as FakeUtterance).text),
+      /** 引擎讀完目前這句 */
+      finish: () =>
+        act(() => {
+          (synth.speak.mock.lastCall?.[0] as FakeUtterance).onend?.();
+        }),
+    };
+  }
+
+  /** 台詞列(以中譯找) */
+  const line = (translation: string) => screen.getByText(translation).closest("li") as HTMLElement;
+  const currentLines = () =>
+    screen.getAllByRole("listitem").filter((li) => li.getAttribute("aria-current") === "step");
+  /** jsdom 沒有版面:指定台詞列在視窗中的位置(高 100px) */
+  const placeLine = (translation: string, top: number) => {
+    vi.spyOn(line(translation), "getBoundingClientRect").mockReturnValue({
+      top,
+      bottom: top + 100,
+    } as DOMRect);
+  };
+
+  async function openDialogue(lesson: Lesson = dialogueLesson) {
+    getLesson.mockResolvedValue(lesson);
+    const user = userEvent.setup();
+    render(<LessonDetail id={lesson.id} />);
+    await screen.findByText("玩、遊玩");
+    await user.click(screen.getByRole("button", { name: "会話" }));
+    return user;
+  }
+
+  afterEach(() => {
+    cancelSpeech(); // 不把進行中的序列留給下一個測試
+    vi.unstubAllGlobals();
+  });
+
+  it("標題行顯示為台詞上方的小標,不當說話者台詞;每句台詞有發音鈕(清理後的文字)", async () => {
+    installVoice();
+    const user = await openDialogue();
+
+    const heading = screen.getByRole("heading", { level: 2 });
+    expect(heading).toHaveTextContent("手伝てつだって くれますか");
+    expect(within(heading).getByText("手伝").closest("[lang]")).toHaveAttribute("lang", "ja");
+    expect(screen.getByText("可以幫我嗎")).toBeInTheDocument();
+    // 「標題」不是說話者,標題不在台詞列表中、也不能扮演
+    expect(screen.queryByText("標題")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(4);
+
+    const buttons = screen.getAllByRole("button", { name: /^播放 .* 的台詞$/ });
+    expect(buttons).toHaveLength(4);
+    await user.click(within(line("嗯……。")).getByRole("button", { name: "播放 ワン 的台詞" }));
+    expect(speak).toHaveBeenCalledWith("えーと。"); // …… 不送進 TTS
+  });
+
+  it("全部播放:跳過標題依序朗讀,目前句高亮並捲入畫面,讀完回到待機", async () => {
+    const { spoken, finish } = installVoice();
+    const user = await openDialogue();
+
+    // 第一句在視窗(jsdom 高 768)下方、第二句已在視窗內
+    placeLine("明天要搬家對吧。", 900);
+    placeLine("謝謝你。", 100);
+    await user.click(await screen.findByRole("button", { name: "全部播放" }));
+    expect(spoken()).toEqual(["あした 引っ越しですね。"]);
+    expect(currentLines()).toEqual([line("明天要搬家對吧。")]);
+    expect(line("明天要搬家對吧。")).toHaveClass("bg-link/10");
+    // 捲到整句剛好可見(下緣 1000 對齊視窗下緣 768)
+    expect(window.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 232, behavior: "smooth" });
+    // 同一顆鈕變成停止(焦點不動)
+    expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
+
+    await finish();
+    expect(spoken()).toEqual(["あした 引っ越しですね。", "ありがとう ございます。"]);
+    expect(currentLines()).toEqual([line("謝謝你。")]);
+    expect(window.scrollTo).toHaveBeenCalledTimes(1); // 已在畫面內:不捲
+
+    await finish();
+    await finish();
+    expect(spoken()).toHaveLength(4);
+    expect(currentLines()).toEqual([line("嗯……。")]);
+    await finish();
+    expect(currentLines()).toEqual([]);
+    expect(screen.getByRole("button", { name: "全部播放" })).toBeInTheDocument();
+  });
+
+  it("停止:取消朗讀、清除高亮;減少動態效果時不平滑捲動", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({ matches: q === "(prefers-reduced-motion: reduce)" })),
+    );
+    const { synth, spoken, finish } = installVoice();
+    const user = await openDialogue();
+
+    placeLine("明天要搬家對吧。", -50); // 在視窗上方
+    await user.click(await screen.findByRole("button", { name: "全部播放" }));
+    expect(window.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: -50, behavior: "auto" });
+    synth.cancel.mockClear();
+    await user.click(screen.getByRole("button", { name: "停止" }));
+    expect(synth.cancel).toHaveBeenCalledTimes(1);
+    expect(currentLines()).toEqual([]);
+    // 取消後引擎補發的 onend 不會接著讀下一句
+    await finish();
+    expect(spoken()).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "全部播放" })).toBeInTheDocument();
+  });
+
+  it("其他朗讀中斷播放(點另一句的發音鈕、離開頁面的 cancelSpeech):回到待機", async () => {
+    // 這次點擊用真實的 speak:與 speakSequence 共用 tts 模組狀態,才會中斷序列
+    // (Once:clearAllMocks 不重設實作,不留給其他測試)
+    const actual = await vi.importActual<typeof import("@/lib/tts")>("@/lib/tts");
+    speak.mockImplementationOnce((text: string) => actual.speak(text));
+    const { spoken, finish } = installVoice();
+    const user = await openDialogue();
+    await user.click(await screen.findByRole("button", { name: "全部播放" }));
+    expect(currentLines()).toEqual([line("明天要搬家對吧。")]);
+
+    await user.click(within(line("車子呢?")).getByRole("button", { name: "播放 カリナ 的台詞" }));
+    expect(spoken()).toEqual(["あした 引っ越しですね。", "車は?"]);
+    expect(currentLines()).toEqual([]);
+    expect(screen.getByRole("button", { name: "全部播放" })).toBeInTheDocument();
+    await finish(); // 單句讀完:不會接著播放会話
+    expect(spoken()).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: "全部播放" }));
+    expect(currentLines()).toHaveLength(1);
+    act(() => cancelSpeech());
+    expect(currentLines()).toEqual([]);
+    expect(screen.getByRole("button", { name: "全部播放" })).toBeInTheDocument();
+  });
+
+  it("播放中目前句的發音鈕換成停止鈕(工具列捲出畫面時也能停);鍵盤停止後焦點留在該列", async () => {
+    const { synth, finish } = installVoice();
+    const user = await openDialogue();
+    await user.click(await screen.findByRole("button", { name: "全部播放" }));
+
+    const first = line("明天要搬家對吧。");
+    expect(within(first).getByRole("button", { name: "停止播放" })).toBeInTheDocument();
+    expect(within(first).queryByRole("button", { name: /的台詞$/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "停止播放" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /的台詞$/ })).toHaveLength(3);
+
+    await finish();
+    const second = line("謝謝你。");
+    expect(within(first).getByRole("button", { name: "播放 カリナ 的台詞" })).toBeInTheDocument();
+    const stopLine = within(second).getByRole("button", { name: "停止播放" });
+    synth.cancel.mockClear();
+    stopLine.focus();
+    await user.keyboard("{Enter}");
+    expect(synth.cancel).toHaveBeenCalledTimes(1);
+    expect(currentLines()).toEqual([]);
+    expect(second).toHaveFocus();
+    expect(within(second).getByRole("button", { name: "播放 ワン 的台詞" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "全部播放" })).toBeInTheDocument();
+  });
+
+  it("使用者把畫面捲離目前句時不拉回;捲回後恢復跟隨,輪到扮演的台詞一律捲入", async () => {
+    const { finish } = installVoice();
+    const user = await openDialogue();
+    placeLine("明天要搬家對吧。", 100);
+    await user.click(await screen.findByRole("button", { name: "全部播放" }));
+    expect(window.scrollTo).not.toHaveBeenCalled(); // 已在畫面內
+
+    // 使用者往下捲(第一句捲出上緣),下一句在視窗下方:不拉回
+    placeLine("明天要搬家對吧。", -500);
+    placeLine("謝謝你。", 900);
+    await finish();
+    expect(currentLines()).toEqual([line("謝謝你。")]);
+    expect(window.scrollTo).not.toHaveBeenCalled();
+
+    // 捲回看得到目前句:恢復跟隨
+    placeLine("謝謝你。", 300);
+    placeLine("車子呢?", 900);
+    await finish();
+    expect(window.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 232, behavior: "smooth" });
+
+    // 扮演:輪到自己的台詞(要按「下一句」)時,即使捲離了也捲入
+    await user.click(screen.getByRole("button", { name: "停止" }));
+    await user.click(
+      within(screen.getByRole("group", { name: "扮演" })).getByRole("button", { name: "ワン" }),
+    );
+    vi.mocked(window.scrollTo).mockClear();
+    placeLine("明天要搬家對吧。", 100);
+    await user.click(screen.getByRole("button", { name: "全部播放" }));
+    placeLine("明天要搬家對吧。", -500);
+    placeLine("謝謝你。", 900);
+    await finish();
+    expect(screen.getByRole("button", { name: "下一句" })).toBeInTheDocument();
+    expect(window.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 232, behavior: "smooth" });
+  });
+
+  it("剛自動捲動過(短句讀完時平滑捲動還沒把上一句捲入)不算捲離,照樣跟隨;捲動穩定後才判斷", async () => {
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      const { finish } = installVoice();
+      const user = await openDialogue();
+      placeLine("明天要搬家對吧。", 900); // 在視窗下方:開始播放時捲入
+      await user.click(await screen.findByRole("button", { name: "全部播放" }));
+      expect(window.scrollTo).toHaveBeenCalledTimes(1);
+
+      // 200ms 後就讀完:平滑捲動還在進行,第一句仍在視窗下方
+      now = 200;
+      placeLine("謝謝你。", 1000);
+      await finish();
+      expect(currentLines()).toEqual([line("謝謝你。")]);
+      expect(window.scrollTo).toHaveBeenCalledTimes(2);
+
+      // 捲動穩定後,使用者把上一句捲出畫面:不拉回
+      now = 2000;
+      placeLine("謝謝你。", -500);
+      placeLine("車子呢?", 900);
+      await finish();
+      expect(currentLines()).toEqual([line("車子呢?")]);
+      expect(window.scrollTo).toHaveBeenCalledTimes(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("直接開啟 #dialogue 且語音清單晚到:查好語音才渲染会話,播放鈕不晚出現推擠台詞", async () => {
+    const { synth, voices } = installVoice();
+    const kyoko = voices.splice(0); // 清單尚未載入
+    // 語音清單的逾時(VOICE_TIMEOUT_MS)由測試掌握:測試跑得慢也不會先逾時定案為「沒有語音」
+    const voiceTimeout = holdTimeouts(VOICE_TIMEOUT_MS);
+    try {
+      window.history.replaceState(null, "", "#dialogue");
+      getLesson.mockResolvedValue(dialogueLesson);
+      render(<LessonDetail id={24} />);
+
+      expect(await screen.findByRole("button", { name: "会話" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("status")).toHaveTextContent("載入中");
+      expect(screen.queryByText("明天要搬家對吧。")).not.toBeInTheDocument();
+      expect(voiceTimeout.pending()).toBe(1);
+
+      voices.push(...kyoko);
+      act(() => {
+        synth.dispatchEvent(new Event("voiceschanged"));
+      });
+      expect(await screen.findByText("明天要搬家對吧。")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "全部播放" })).toBeInTheDocument();
+      // 語音到了就取消逾時
+      expect(voiceTimeout.pending()).toBe(0);
+    } finally {
+      voiceTimeout.restore();
+    }
+  });
+
+  it("語音清單在逾時後才到(voiceschanged):全部播放與扮演隨即出現", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { synth, voices } = installVoice();
+      const kyoko = voices.splice(0);
+      await openDialogue();
+      await act(() => vi.advanceTimersByTimeAsync(VOICE_TIMEOUT_MS));
+      expect(await screen.findByText("明天要搬家對吧。")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "全部播放" })).not.toBeInTheDocument();
+
+      voices.push(...kyoko);
+      act(() => {
+        synth.dispatchEvent(new Event("voiceschanged"));
+      });
+      expect(await screen.findByRole("button", { name: "全部播放" })).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "扮演" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("扮演的說話者在換分頁後保留(同隱藏中譯)", async () => {
+    installVoice();
+    const user = await openDialogue();
+    await user.click(
+      within(await screen.findByRole("group", { name: "扮演" })).getByRole("button", {
+        name: "ワン",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "文型" }));
+    await user.click(screen.getByRole("button", { name: "会話" }));
+
+    const roles = await screen.findByRole("group", { name: "扮演" });
+    expect(within(roles).getByRole("button", { name: "ワン" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getAllByRole("button", { name: /^顯示台詞/ })).toHaveLength(2);
+  });
+
+  it("換分頁時停止播放", async () => {
+    const { synth } = installVoice();
+    const user = await openDialogue();
+    await user.click(await screen.findByRole("button", { name: "全部播放" }));
+    synth.cancel.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "文型" }));
+    expect(synth.cancel).toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "会話" }));
+    expect(await screen.findByRole("button", { name: "全部播放" })).toBeInTheDocument();
+    expect(currentLines()).toEqual([]);
+  });
+
+  it("扮演:所選角色的台詞遮住(中譯作為提示),播到時暫停等「下一句」,繼續後揭示", async () => {
+    const { spoken, finish } = installVoice();
+    const user = await openDialogue();
+
+    const roles = await screen.findByRole("group", { name: "扮演" });
+    // 說話者依出現順序,不含標題
+    expect(within(roles).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "カリナ",
+      "ワン",
+    ]);
+    const wang = within(roles).getByRole("button", { name: "ワン" });
+    expect(wang).toHaveAttribute("aria-pressed", "false");
+    expect(wang).toHaveAttribute("lang", "ja");
+    await user.click(wang);
+    expect(wang).toHaveAttribute("aria-pressed", "true");
+
+    // ワン 的台詞遮住:日文不渲染、不給發音鈕;中譯照常(開口的提示);標示「你」
+    expect(screen.queryByText("ありがとう ございます。")).not.toBeInTheDocument();
+    // 名稱帶看得到的中譯,各句可分辨
+    expect(within(line("謝謝你。")).getByRole("button", { name: "顯示台詞:謝謝你。" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(within(line("謝謝你。")).getByText("你")).toBeInTheDocument();
+    expect(
+      within(line("謝謝你。")).queryByRole("button", { name: /的台詞$/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^顯示台詞/ })).toHaveLength(2);
+    // カリナ 的台詞照常
+    expect(screen.getByText("明天要搬家對吧。").closest("li")).toHaveTextContent("あした");
+
+    await user.click(screen.getByRole("button", { name: "全部播放" }));
+    expect(spoken()).toEqual(["あした 引っ越しですね。"]);
+    await finish();
+    // 輪到 ワン:不朗讀,停在該句並顯示「下一句」;焦點移到「下一句」(鍵盤可直接繼續)
+    expect(spoken()).toHaveLength(1);
+    expect(currentLines()).toEqual([line("謝謝你。")]);
+    const next = within(line("謝謝你。")).getByRole("button", { name: "下一句" });
+    expect(next).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    // 揭示該句,繼續朗讀下一句;焦點停放在剛說完的台詞列(不在停止鈕上:再按 Enter 不會誤停)
+    expect(within(line("謝謝你。")).getByText("ありがとう ございます。")).toBeInTheDocument();
+    expect(spoken()).toEqual(["あした 引っ越しですね。", "車は?"]);
+    expect(line("謝謝你。")).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "下一句" })).not.toBeInTheDocument();
+    await user.keyboard("{Enter}"); // 焦點在台詞列上:不影響播放
+    expect(currentLines()).toEqual([line("車子呢?")]);
+
+    await finish();
+    // 最後一句是自己的:按鈕為「完成」(焦點從台詞列移回),按下後結束
+    expect(currentLines()).toEqual([line("嗯……。")]);
+    expect(screen.getByRole("button", { name: "完成" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "完成" }));
+    expect(currentLines()).toEqual([]);
+    expect(spoken()).toHaveLength(2);
+    expect(screen.queryAllByRole("button", { name: /^顯示台詞/ })).toHaveLength(0);
+
+    // 重新播放:再遮住
+    await user.click(screen.getByRole("button", { name: "全部播放" }));
+    expect(screen.getAllByRole("button", { name: /^顯示台詞/ })).toHaveLength(2);
+  });
+
+  it("扮演:第一句就是自己的台詞時直接暫停;點佔位可先偷看,換角色或取消扮演時重來", async () => {
+    const { spoken } = installVoice();
+    const user = await openDialogue();
+    const roles = await screen.findByRole("group", { name: "扮演" });
+    await user.click(within(roles).getByRole("button", { name: "カリナ" }));
+
+    await user.click(screen.getByRole("button", { name: "全部播放" }));
+    expect(spoken()).toEqual([]);
+    expect(currentLines()).toEqual([line("明天要搬家對吧。")]);
+    expect(screen.getByRole("button", { name: "下一句" })).toBeInTheDocument();
+
+    // 偷看另一句:點佔位揭示(鍵盤操作時焦點交給同一句的下一顆鈕)
+    const peek = within(line("車子呢?")).getByRole("button", { name: /^顯示台詞/ });
+    peek.focus();
+    await user.keyboard("{Enter}");
+    expect(within(line("車子呢?")).getByText("車")).toBeInTheDocument();
+    expect(within(line("車子呢?")).getByRole("button", { name: "播放 カリナ 的台詞" })).toHaveFocus();
+
+    // 換角色:停止播放、揭示狀態重來
+    await user.click(within(roles).getByRole("button", { name: "ワン" }));
+    expect(currentLines()).toEqual([]);
+    expect(screen.getByRole("button", { name: "全部播放" })).toBeInTheDocument();
+    expect(within(roles).getByRole("button", { name: "カリナ" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByText("車子呢?").closest("li")).toHaveTextContent("車");
+    expect(screen.getAllByRole("button", { name: /^顯示台詞/ })).toHaveLength(2);
+
+    // 再按一次取消扮演:全部顯示
+    await user.click(within(roles).getByRole("button", { name: "ワン" }));
+    expect(screen.queryAllByRole("button", { name: /^顯示台詞/ })).toHaveLength(0);
+  });
+
+  it("扮演 × 隱藏中譯:被遮台詞的中譯也不顯示(不另給揭示鈕);揭示台詞後同其他句可點擊揭示", async () => {
+    installVoice();
+    const user = await openDialogue();
+    await user.click(
+      within(await screen.findByRole("group", { name: "扮演" })).getByRole("button", {
+        name: "ワン",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "隱藏中譯" }));
+
+    expect(screen.queryByText("謝謝你。")).not.toBeInTheDocument();
+    // 揭示鈕只剩標題與 カリナ 的兩句中譯,以及 ワン 的兩個台詞佔位
+    expect(screen.getAllByRole("button", { name: "顯示中譯" })).toHaveLength(3);
+    // 中譯隱藏:佔位的名稱不帶中譯(不從名稱洩漏)
+    const placeholders = screen.getAllByRole("button", { name: "顯示台詞" });
+    expect(placeholders).toHaveLength(2);
+
+    await user.click(placeholders[0]);
+    expect(screen.getByText("ありがとう ございます。")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "顯示中譯" })).toHaveLength(4);
+    const li = screen.getByText("ありがとう ございます。").closest("li") as HTMLElement;
+    await user.click(within(li).getByRole("button", { name: "顯示中譯" }));
+    expect(within(li).getByText("謝謝你。")).toBeInTheDocument();
+  });
+
+  it("文型例句也有發音鈕(清理後的文字)", async () => {
+    getLesson.mockResolvedValue({
+      ...sampleLesson,
+      grammar: [
+        {
+          ...sampleLesson.grammar[0],
+          examples: [
+            ...sampleLesson.grammar[0].examples,
+            {
+              id: "L13-S02",
+              ruby: [{ b: "Ａ:かきます → かいて" }],
+              translation: "寫",
+            },
+          ],
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+    await user.click(screen.getByRole("button", { name: "文型" }));
+
+    // 名稱帶朗讀的句子:一課數十顆鈕可分辨
+    const buttons = screen.getAllByRole("button", { name: /^播放例句發音:/ });
+    expect(buttons).toHaveLength(2);
+    expect(buttons[1]).toHaveAccessibleName("播放例句發音:かきます、かいて");
+    await user.click(buttons[0]);
+    expect(speak).toHaveBeenLastCalledWith("車が ほしいです");
+    await user.click(buttons[1]);
+    expect(speak).toHaveBeenLastCalledWith("かきます、かいて");
+    // 文型分頁沒有播放與扮演
+    expect(screen.queryByRole("button", { name: "全部播放" })).not.toBeInTheDocument();
+  });
+
+  it("TTS 關閉:文型與会話都沒有發音鈕、全部播放與扮演(隱藏中譯照常)", async () => {
+    installVoice();
+    await setSetting("ttsEnabled", false);
+    const user = await openDialogue();
+
+    expect(screen.getByRole("button", { name: "隱藏中譯" })).toBeInTheDocument();
+    expect(screen.queryAllByRole("button", { name: /的台詞$/ })).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "全部播放" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "扮演" })).not.toBeInTheDocument();
+    // 標題照常是小標
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("くれますか");
+
+    await user.click(screen.getByRole("button", { name: "文型" }));
+    expect(screen.queryAllByRole("button", { name: /^播放例句發音/ })).toHaveLength(0);
+  });
+
+  it("沒有日語 voice:逐句發音鈕照常(靜默降級),全部播放與扮演隱藏", async () => {
+    const { synth } = installVoice("en-US");
+    await openDialogue();
+    await waitFor(() => expect(synth.getVoices).toHaveBeenCalled());
+    await act(async () => {}); // 等語音查詢的 promise 結算
+
+    expect(screen.getAllByRole("button", { name: /的台詞$/ })).toHaveLength(4);
+    expect(screen.queryByRole("button", { name: "全部播放" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "扮演" })).not.toBeInTheDocument();
   });
 });

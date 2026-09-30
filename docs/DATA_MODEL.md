@@ -81,6 +81,8 @@ export type VocabItem = z.infer<typeof VocabItemSchema>;
 export type GrammarPoint = z.infer<typeof GrammarPointSchema>;
 ```
 
+`VocabItem.note` 的教材寫法由執行期解讀(pipeline 改動 note 格式時須一併確認):note 恰為「読み物」「会話」「補充單字(自行練習發音)」者是段落標記(`notes.ts`);助詞搭配「［たばこを〜］」「〔〜を します:做作業〕」(〜 = 單字本身,冒號後為中譯)由 `particles.ts` 解析出題(F7.5)。
+
 ### 1.3 範例(`public/data/lessons/L13.json` 縮樣)
 
 ```json
@@ -182,6 +184,7 @@ settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAl
 | `ttsEnabled` | true(false 時課程頁、複習、練習都不顯示發音鈕) |
 | `furigana` | `"show"`(`show` \| `hide`;課程頁/複習/練習/測驗的初始值,課程頁內切換只影響本頁、不寫回) |
 | `installPromptDismissed` | false(加入主畫面提示已被關閉) |
+| `quizTypes` | `["jp-to-zh","zh-to-jp","input","cloze","listen"]`(單字測驗的題型選擇,`QuestionType[]`;聽力只在 TTS 開啟且有日語語音時出題,不可用時保留原選擇;讀回時只留已知題型,無有效值則用預設) |
 
 ## 3. 匯出 / 匯入格式
 

@@ -1,17 +1,21 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { LessonSchema, type VocabItem } from "@/schemas/lesson";
+import { LessonSchema, type Sentence, type VocabItem } from "@/schemas/lesson";
 import { speechText } from "./tts";
 
 // 以實際教材資料(public/data)驗證單字的朗讀文字:記號不送進 TTS。
 const lessonsDir = join(process.cwd(), "public", "data", "lessons");
-const vocab: VocabItem[] = readdirSync(lessonsDir)
+const lessons = readdirSync(lessonsDir)
   .filter((f) => f.endsWith(".json"))
-  .flatMap(
-    (f) =>
-      LessonSchema.parse(JSON.parse(readFileSync(join(lessonsDir, f), "utf-8")))
-        .vocab,
+  .map((f) =>
+    LessonSchema.parse(JSON.parse(readFileSync(join(lessonsDir, f), "utf-8"))),
   );
+const vocab: VocabItem[] = lessons.flatMap((l) => l.vocab);
+/** 文型例句與会話(課程頁逐句發音、会話全部播放) */
+const sentences: Sentence[] = lessons.flatMap((l) => [
+  ...l.grammar.flatMap((g) => g.examples),
+  ...l.dialogues,
+]);
 const byId = new Map(vocab.map((v) => [v.id, v]));
 
 function word(id: string): VocabItem {
@@ -55,6 +59,42 @@ describe("speechText × 教材單字(T10.6)", () => {
       .map((v) => ({ id: v.id, text: speechText(v) }))
       .filter(({ text }) => !/^[ぁ-ゖァ-ヺーゝゞヽヾ]+$/.test(text))
       .map(({ id, text }) => `${id} ${text}`);
+    expect(bad).toEqual([]);
+  });
+});
+
+describe("speechText × 教材例句與会話(T11.2)", () => {
+  const text = (s: Sentence) => speechText(s.ruby.map((seg) => seg.b).join(""));
+
+  it("資料載入完整", () => {
+    expect(sentences.length).toBeGreaterThan(1400);
+  });
+
+  const byId = new Map(sentences.map((s) => [s.id, s]));
+
+  // 朗讀內容與畫面一致:並列的 ／ 逐一讀出、語尾（ない）保留,替代說法（…）才只讀括號外
+  it.each([
+    ["L03-S14", "ここ、そこ、あそこ、どこ"],
+    ["L20-S10", "うん、暇、暇だ、暇だよ。"],
+    ["L20-S11", "うん、暇、暇よ。"],
+    ["L27-S01", "かける、かけない、かけて"],
+    ["L30-S15", "そこに 置いといてください。"],
+    ["L41-S01", "わたしは 息子に お菓子を やりました。"],
+  ])("%s → %s", (id, expected) => {
+    const s = byId.get(id);
+    if (!s) throw new Error(`找不到 ${id}`);
+    expect(text(s)).toBe(expected);
+  });
+
+  it("每句的朗讀文字都非空,且不含教材記號(括號、／、〜…、→、行首 Ａ:、語幹分隔 -)", () => {
+    const bad = sentences
+      .map((s) => ({ id: s.id, t: text(s) }))
+      .filter(
+        ({ t }) =>
+          t === "" ||
+          /[［］〔〕（）()／〜～…‥→―—]|^[A-ZＡ-Ｚ][:：]|[ぁ-ゖ]-/.test(t),
+      )
+      .map(({ id, t }) => `${id} ${t}`);
     expect(bad).toEqual([]);
   });
 });

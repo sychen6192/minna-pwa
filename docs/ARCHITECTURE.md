@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TD
-  A["50 份 PDF<br/>pipeline/input(不入庫)"] --> B["抽取與結構化<br/>PyMuPDF + Claude Batch API"]
+  A["50 份 PDF<br/>repo 外的本機資料夾(不入庫)"] --> B["抽取與結構化<br/>pdftotext -layout + Claude Code"]
   B --> C["lessons JSON ×50 + index.json<br/>Zod 驗證(pnpm validate:content)"]
   C --> D["Git repo(private)"]
   D --> E["GitHub Actions → Cloudflare Pages<br/>(公開網址,noindex)"]
@@ -39,10 +39,13 @@ flowchart TD
 
 ### 建置期管線
 
+PDF 皆含文字層,原規劃的 PyMuPDF + Claude Message Batches 改為下表(ADR 變更見 `docs/PIPELINE.md`)。
+
 | 步驟 | 工具 |
 |---|---|
-| 文字層偵測 / 抽取 / 頁面渲染 | PyMuPDF(Python 3.12,uv 管理) |
-| 結構化抽取 | Claude API(Message Batches,掃描頁走 vision) |
+| 文字層抽取 | `pdftotext -layout`(poppler) |
+| 結構化抽取 | Claude Code 依 `docs/PIPELINE.md` 慣例直抽為 JSON;讀音由使用者人工校讀 |
+| 重音回填 | `pnpm enrich:accents`(kanjium,`scripts/enrich-accents.ts`) |
 | 最終驗證 | `pnpm validate:content`(Zod,單一真相) |
 
 ### 部署
@@ -55,26 +58,28 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
 ├── CLAUDE.md / README.md / IMPLEMENTATION_PLAN.md
 ├── docs/                       # 本資料夾:規格與決策
 ├── .claude/skills/             # next-task、verify 工作流技能
-├── pipeline/                   # Python,一次性(Phase 5)
-│   ├── input/                  # 原始 PDF L01.pdf–L50.pdf(gitignored)
-│   ├── work/                   # 中間產物(gitignored)
-│   ├── review/                 # 驗證失敗待人工確認
-│   ├── prompts/extract.md      # 抽取 prompt(版本控管)
-│   └── extract.py              # CLI:--lesson N / --all / --batch
+├── pipeline/                   # (未建立)原規劃的 Python 管線;input/、work/ 仍 gitignored,PDF 永不入庫
 ├── public/
 │   ├── data/
 │   │   ├── index.json          # 課程索引(generated)
 │   │   └── lessons/L01.json…L50.json   # generated,手改禁止
 │   ├── icons/
 │   └── manifest.json
-├── scripts/validate-content.ts # pnpm validate:content
+├── scripts/
+│   ├── validate-content.ts     # pnpm validate:content
+│   ├── build-index.ts          # pnpm build:index(index.json)
+│   ├── enrich-accents.ts       # pnpm enrich:accents(重音回填)
+│   └── precache-entries.ts     # SW precache 條目(/data/**、public/)
 └── src/
     ├── app/
     │   ├── layout.tsx          # 全域 shell + 底部導覽
     │   ├── page.tsx            # 今日儀表板(佇列 Hero、今日目標、安裝提示;資料層動態載入)
     │   ├── lessons/            # F1(/lessons、/lessons/[id])
     │   ├── review/             # F2
-    │   ├── quiz/[id]/          # F3
+    │   ├── practice/           # 頑固卡(leech)練習(T8.2;純曝光,不改 FSRS 排程)
+    │   ├── quiz/[id]/          # F3:題型選擇(日→中/中→日/輸入/例句填空/聽力,存於設定 quizTypes)→ 10 題 → 結果(/quiz 頂端「練習」區塊連到各練習)
+    │   ├── drill/              # F7.3 活用練習、F7.5 助詞搭配(/drill,?mode=particle:類型、範圍(與形)→ 10 題 → 結果;不寫入 DB)
+    │   ├── reorder/            # F7.4 例句重組(/reorder 選課、/reorder/[id]:至多 8 句 → 結果;不寫入 DB)
     │   ├── grammar/            # F4
     │   ├── stats/              # F5
     │   └── settings/           # F6
@@ -83,21 +88,37 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     ├── lib/
     │   ├── content.ts          # 載入 + Zod parse + 記憶體快取
     │   ├── db.ts               # Dexie 定義(唯一 DB 入口)
+    │   ├── backup.ts           # 匯出/匯入(單一 JSON;驗 version 與頂層結構)/重置學習紀錄(保留設定)
     │   ├── srs.ts              # ts-fsrs 唯一入口
     │   ├── cardId.ts           # cardId / 方向工具(baseVocabId 等;不依賴 ts-fsrs,srs 轉匯出)
     │   ├── relearn.ts          # 複習 session 內重看的插入規則(純函式)
     │   ├── notes.ts            # 單字 note 呈現:段落標記過濾與徽章分類、補充單字判定(純函式)
     │   ├── lessonHash.ts       # 課程內頁 URL hash:分頁與文法/單字錨點解析(純函式)
+    │   ├── urlParams.ts        # app 查詢參數(/drill?upto=N&mode=particle)與 SW precache 查找時忽略的參數(sw.ts 共用)
+    │   ├── vocabFilter.ts      # 課程頁単語的詞性篩選:13 種詞性併為 名詞/動詞/形容詞/其他(純函式)
+    │   ├── dialogue.ts         # 会話朗讀與角色扮演:標題行判定、說話者、播放步驟 speak/wait(純函式)
+    │   ├── conjugate.ts        # 活用引擎:動詞/形容詞基本形與進階形(可能…使役、條件形)推導(例外表、排除清單)、各形導入文法點 FORM_INTRO(純函式)
+    │   ├── conjugateExclusions.ts # 進階形的語意排除清單(id → 不練的形與理由;寧缺勿錯)
+    │   ├── drill.ts            # 活用練習:出題池、依範圍開放的形、錯誤規則與易混淆形干擾項、出題與判分(純函式)
+    │   ├── particles.ts        # 助詞搭配:解析單字 note 的教材搭配(〔たばこを〜〕〔〜を します〕)、出題池、選項(同義也自然的助詞不當干擾項 ALSO_NATURAL)與回合(純函式)
+    │   ├── reorder.ts          # 例句重組:依分かち書き切塊(併回抽取痕跡的空格)、可否出題、各課出題池、固定首尾的打亂、以塊文字判分(純函式)
     │   ├── lang.ts             # isJapanese / jaLang:日文字串的 lang="ja" 判定(純函式)
+    │   ├── pitch.ts            # 東京式重音:拍分割與高低型(純函式;資料由 enrich-accents 回填)
+    │   ├── pwa.ts              # PWA 環境判定、storage.persist()(永不 throw)
+    │   ├── utils.ts            # cn():合併 Tailwind class(shadcn 慣例)
+    │   ├── useTapGuard.ts      # 點擊防護(TAP_GUARD_MS 300ms):換題/作答/進結果頁後忽略雙擊的第二下(useShownAt 於 layout 階段起算、結果頁 useEntryClickGuard)
+    │   ├── scroll.ts           # revealAboveNav:「下一題」被固定的底部導覽列擋住時捲出來
     │   ├── queueNote.ts        # 今日佇列因每日上限而空時的說明(純函式;首頁、課程頁共用)
     │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)
-    │   ├── quiz.ts             # 出題引擎(純函式)
+    │   ├── quiz.ts             # 出題引擎:選擇/輸入/例句填空(挖空)/聽力題型、干擾項(聽力、填空排除可互換的字)、輸入判分、聽力朗讀文字(純函式)
+    │   ├── examples.ts         # 語境例句:詞邊界比對找同課例句(findExampleSentence;findExampleMatch 另回傳位置與比對種類 exact/conjugated,例句填空只用 exact);動詞全課無ます形時改比對 conjugate.ts 推導的活用形(分かち書き詞首、右邊界、讀音一致;一字語幹/同課同形字須 note 搭配名詞)(純函式)
     │   ├── stats.ts            # 統計聚合(純函式 + DB 查詢)
-    │   ├── tts.ts              # Web Speech API 包裝 + 朗讀文字清理(speechText)
-    │   ├── useSetting.ts       # 讀取全域設定的 hook(useSetting / useTtsEnabled;經 db.ts)
+    │   ├── tts.ts              # Web Speech API 包裝(speak、可取消的連續朗讀 speakSequence)+ 朗讀文字清理(speechText)
+    │   ├── useSetting.ts       # 讀取全域設定的 hook(useSetting / useTtsEnabled;經 db.ts)與日語語音可用性(useJaVoiceAvailable)
     │   └── search.ts           # MiniSearch 索引建立與查詢
     ├── schemas/lesson.ts       # Zod:資料契約唯一真相
-    └── sw.ts                   # Serwist service worker
+    ├── test/                   # 測試共用 helper(時鐘與點擊防護、長計時器、焦點等待、底部導覽遮擋、慢測試逾時)
+    └── sw.ts                   # Serwist service worker(precache 查找忽略 _rsc 與 app 查詢參數,離線可開帶參數的網址)
 ```
 
 ## 4. 資料流

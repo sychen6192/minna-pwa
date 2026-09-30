@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
 import QuizIndexPage from "./page";
 
@@ -23,6 +23,27 @@ describe("QuizIndexPage 測驗選課入口", () => {
       "/quiz/13",
     );
     expect(screen.getByText("〜が ほしいです")).toHaveAttribute("lang", "ja");
+  });
+
+  it("頂端「練習」區塊:活用・助詞練習連到 /drill、例句重組連到 /reorder", async () => {
+    getLessonIndex.mockResolvedValue({ lessons: [] });
+
+    render(<QuizIndexPage />);
+
+    const practice = screen.getByRole("region", { name: "練習" });
+    const drill = within(practice).getByRole("link", { name: /活用・助詞練習/ });
+    expect(drill).toHaveAttribute("href", "/drill");
+    // 同一頁的兩種練習(T11.7):說明提到助詞搭配
+    expect(drill).toHaveTextContent("助詞搭配");
+    // 說明中的日文術語標 lang="ja"
+    expect(within(practice).getByText("て形")).toHaveAttribute("lang", "ja");
+    expect(within(practice).getByRole("link", { name: /例句重組/ })).toHaveAttribute(
+      "href",
+      "/reorder",
+    );
+    expect(within(practice).getByText("会話")).toHaveAttribute("lang", "ja");
+    expect(screen.getByRole("heading", { name: "單字測驗" })).toBeInTheDocument();
+    await screen.findByText("選擇一課開始測驗。");
   });
 
   it("載入失敗:顯示錯誤訊息", async () => {

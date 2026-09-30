@@ -5,15 +5,19 @@ import {
   loadJaVoice,
   pickJaVoice,
   speak,
+  speakSequence,
   speechText,
   VOICE_TIMEOUT_MS,
 } from "./tts";
 
-// 假的 Utterance:記錄建構參數
+// 假的 Utterance:記錄建構參數;事件由測試手動觸發(onend/onerror)
 class FakeUtterance {
   text: string;
   lang = "";
   voice: unknown = null;
+  rate?: number;
+  onend: (() => void) | null = null;
+  onerror: ((e: { error: string }) => void) | null = null;
   constructor(text: string) {
     this.text = text;
   }
@@ -320,6 +324,176 @@ describe("cancelSpeech", () => {
   });
 });
 
+describe("speakSequence", () => {
+  /** 最後送出的 utterance(目前正在讀的那句) */
+  function last(
+    synth: ReturnType<typeof installSynth>["synth"],
+  ): FakeUtterance {
+    return synth.speak.mock.lastCall?.[0] as FakeUtterance;
+  }
+  /** 模擬引擎讀完目前這句 */
+  function finishCurrent(synth: ReturnType<typeof installSynth>["synth"]) {
+    last(synth).onend?.();
+  }
+
+  it("串接:前一句 onend 後才送出下一句,依序通知 onStart,全部讀完 onEnd(true)", () => {
+    const { synth } = installSynth([enVoice, jaVoice]);
+    const onStart = vi.fn();
+    const onEnd = vi.fn();
+    speakSequence(["いち", "に", "さん"], { onStart, onEnd });
+
+    // 語音已載入:第一句同步送出(維持在點擊事件內)
+    expect(spoken(synth)).toEqual([{ text: "いち", voice: jaVoice }]);
+    expect(onStart.mock.calls).toEqual([[0]]);
+    expect(last(synth).lang).toBe("ja-JP");
+
+    finishCurrent(synth);
+    expect(spoken(synth).map((u) => u.text)).toEqual(["いち", "に"]);
+    expect(onStart.mock.calls).toEqual([[0], [1]]);
+    expect(onEnd).not.toHaveBeenCalled();
+
+    finishCurrent(synth);
+    finishCurrent(synth);
+    expect(spoken(synth).map((u) => u.text)).toEqual(["いち", "に", "さん"]);
+    expect(onStart.mock.calls).toEqual([[0], [1], [2]]);
+    expect(onEnd).toHaveBeenCalledExactlyOnceWith(true);
+    // 開始時中斷進行中的朗讀一次;串接的句子之間不再 cancel
+    expect(synth.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("中途取消:停止底層朗讀,之後的 onend 不再送出下一句,也不通知 onEnd", () => {
+    const { synth } = installSynth([jaVoice]);
+    const onEnd = vi.fn();
+    const cancel = speakSequence(["いち", "に", "さん"], { onEnd });
+    finishCurrent(synth); // 讀到第二句
+    const second = last(synth);
+    synth.cancel.mockClear();
+
+    cancel();
+    expect(synth.cancel).toHaveBeenCalledTimes(1);
+    // 引擎在 cancel 後補發被中斷那句的事件:忽略
+    second.onerror?.({ error: "interrupted" });
+    second.onend?.();
+    expect(spoken(synth).map((u) => u.text)).toEqual(["いち", "に"]);
+    expect(onEnd).not.toHaveBeenCalled();
+
+    // 重複取消無作用
+    cancel();
+    expect(synth.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("讀完後才呼叫取消:不 cancel 底層(不會切掉之後的單次朗讀)", () => {
+    const { synth } = installSynth([jaVoice]);
+    const cancel = speakSequence(["いち"]);
+    finishCurrent(synth);
+    speak("に");
+    synth.cancel.mockClear();
+    cancel();
+    expect(synth.cancel).not.toHaveBeenCalled();
+  });
+
+  it("與單次 speak 不重疊:speak() 中斷序列並通知 onEnd(false)", () => {
+    const { synth } = installSynth([jaVoice]);
+    const onEnd = vi.fn();
+    speakSequence(["いち", "に"], { onEnd });
+    const first = last(synth);
+
+    speak("ほか");
+    expect(onEnd).toHaveBeenCalledExactlyOnceWith(false);
+    first.onend?.(); // 被中斷那句的 onend:不接著讀「に」
+    expect(spoken(synth).map((u) => u.text)).toEqual(["いち", "ほか"]);
+  });
+
+  it("cancelSpeech 與新的序列也會中斷進行中的序列", () => {
+    const { synth } = installSynth([jaVoice]);
+    const a = vi.fn();
+    speakSequence(["いち"], { onEnd: a });
+    cancelSpeech();
+    expect(a).toHaveBeenCalledExactlyOnceWith(false);
+
+    const b = vi.fn();
+    const c = vi.fn();
+    speakSequence(["に"], { onEnd: b });
+    const old = last(synth);
+    speakSequence(["さん"], { onEnd: c });
+    expect(b).toHaveBeenCalledExactlyOnceWith(false);
+    old.onend?.();
+    expect(spoken(synth).map((u) => u.text)).toEqual(["いち", "に", "さん"]);
+    finishCurrent(synth);
+    expect(c).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it("開始時作廢等待語音清單中的單次 speak", async () => {
+    const { synth, loadVoices } = installSynth([]);
+    speak("まえ");
+    speakSequence(["いち"]);
+    loadVoices([jaVoice]);
+    await flush();
+    expect(spoken(synth).map((u) => u.text)).toEqual(["いち"]);
+  });
+
+  it("語音清單晚到:等載入後才開始;等待中取消則不朗讀", async () => {
+    const { synth, loadVoices } = installSynth([]);
+    const onStart = vi.fn();
+    speakSequence(["いち", "に"], { onStart });
+    expect(synth.speak).not.toHaveBeenCalled();
+    loadVoices([jaVoice]);
+    await flush();
+    expect(spoken(synth)).toEqual([{ text: "いち", voice: jaVoice }]);
+    expect(onStart).toHaveBeenCalledWith(0);
+
+    const second = installSynth([]);
+    const onEnd = vi.fn();
+    const cancel = speakSequence(["さん"], { onEnd });
+    cancel();
+    second.loadVoices([jaVoice]);
+    await flush();
+    expect(second.synth.speak).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
+  it("rate:設在每一句的 utterance 上;未指定時不設", () => {
+    const { synth } = installSynth([jaVoice]);
+    speakSequence(["いち", "に"], { rate: 0.8 });
+    expect(last(synth).rate).toBe(0.8);
+    finishCurrent(synth);
+    expect(last(synth).rate).toBe(0.8);
+
+    speakSequence(["さん"]);
+    expect(last(synth).rate).toBeUndefined();
+  });
+
+  it("引擎出錯:停止序列並通知 onEnd(false)", () => {
+    const { synth } = installSynth([jaVoice]);
+    const onEnd = vi.fn();
+    speakSequence(["いち", "に"], { onEnd });
+    last(synth).onerror?.({ error: "synthesis-failed" });
+    expect(onEnd).toHaveBeenCalledExactlyOnceWith(false);
+    expect(synth.speak).toHaveBeenCalledTimes(1);
+  });
+
+  it("無日語 voice 或不支援:不朗讀,非同步通知 onEnd(false);沒有句子:onEnd(true)", async () => {
+    const { synth } = installSynth([enVoice]);
+    const noVoice = vi.fn();
+    speakSequence(["いち"], { onEnd: noVoice });
+    expect(noVoice).not.toHaveBeenCalled(); // 呼叫端先拿到取消函式
+    await flush();
+    expect(noVoice).toHaveBeenCalledExactlyOnceWith(false);
+    expect(synth.speak).not.toHaveBeenCalled();
+
+    const empty = vi.fn();
+    speakSequence([], { onEnd: empty });
+    await flush();
+    expect(empty).toHaveBeenCalledExactlyOnceWith(true);
+
+    vi.stubGlobal("speechSynthesis", undefined);
+    const unsupported = vi.fn();
+    expect(() => speakSequence(["いち"], { onEnd: unsupported })).not.toThrow();
+    await flush();
+    expect(unsupported).toHaveBeenCalledExactlyOnceWith(false);
+  });
+});
+
 describe("speechText(字串:例句)", () => {
   it("［］〔〕保留內容、只去括號", () => {
     expect(speechText("［お］酒")).toBe("お酒");
@@ -340,8 +514,20 @@ describe("speechText(字串:例句)", () => {
     );
   });
 
-  it("／ 只讀第一個候選", () => {
-    expect(speechText("ここ／そこ／あそこ／どこ")).toBe("ここ");
+  it("／ 並列的形讀成停頓(四個都讀);單字的 ／ 仍只讀第一個候選", () => {
+    expect(speechText("ここ／そこ／あそこ／どこ")).toBe("ここ、そこ、あそこ、どこ");
+    expect(speechText("…うん、暇 ／暇だ ／暇だよ。")).toBe("うん、暇、暇だ、暇だよ。");
+    expect(speechText({ ruby: [{ b: "おっと／しゅじん" }], kana: "おっと／しゅじん" })).toBe(
+      "おっと",
+    );
+  });
+
+  it("緊接假名的短平假名（…）是語尾:保留內容;其餘（…）仍是替代說法", () => {
+    expect(speechText("かける、かけ（ない）、かけて")).toBe("かける、かけない、かけて");
+    // 較長的假名(替代說法)、前有空白、半形括號:只讀括號外
+    expect(speechText("やりました（あげました）。")).toBe("やりました。");
+    expect(speechText("かけ （ない）")).toBe("かけ");
+    expect(speechText("かけ(ない)")).toBe("かけ");
   });
 
   it("〜 … 刪除,句中標點與空白保留", () => {
@@ -350,6 +536,17 @@ describe("speechText(字串:例句)", () => {
     );
     expect(speechText("ちょっと……。")).toBe("ちょっと。");
     expect(speechText("〜が、〜")).toBe("が");
+  });
+
+  it("行首對話者標記(Ａ:)去除;活用對照的 → 讀成停頓、語幹分隔 - 去除", () => {
+    expect(speechText("Ａ:あしたも 来ましょうか。")).toBe(
+      "あしたも 来ましょうか。",
+    );
+    expect(speechText("B: ええ。")).toBe("ええ。");
+    expect(speechText("かきます → かいて")).toBe("かきます、かいて");
+    expect(speechText("かき-ます → かか-ない")).toBe("かきます、かかない");
+    // 句中的英文字母與冒號不動
+    expect(speechText("ＣＤを 借りました。")).toBe("ＣＤを 借りました。");
   });
 
   it("―/— 視為長音;無記號的句子原樣", () => {
