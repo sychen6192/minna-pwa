@@ -6,7 +6,7 @@ import {
   LessonSchema,
   type Lesson,
 } from "../src/schemas/lesson";
-import { big5Charset, lintContent, RULES } from "./content-lint";
+import { big5Charset, lintContent, RULES, textFields } from "./content-lint";
 
 // 以真實教材資料(public/data)執行 content-lint。CI 只跑 pnpm verify、不跑 validate:content,
 // 故 Zod、檔名與 error 規則都在這裡把關(不 import validate-content.ts:它是 CLI 入口)。
@@ -63,8 +63,9 @@ describe("content-lint × 真實資料:Zod 與檔名", () => {
 });
 
 describe("content-lint × 真實資料:error 規則", () => {
+  // 沒有例外清單(T12.1 的待修清單 11 id 由 T12.2–T12.4 修完,T12.4 移除該機制)
   it.each(RULES.filter((r) => r.severity === "error").map((r) => r.id))(
-    "%s:待修清單以外 0 筆",
+    "%s:0 筆",
     (id) => {
       expect(ruleResult(id).issues.map((i) => `${i.id} ${i.message}`)).toEqual(
         [],
@@ -72,31 +73,27 @@ describe("content-lint × 真實資料:error 規則", () => {
     },
   );
 
-  // T12.2 已修 L04-V050、L41-G04、L43-D08、L48-V011,T12.3 已修 L47-V004..006(fix-content);
-  // T12.4 修会話標題行並移除待修機制。每修一筆,這裡與 PENDING_FIXES 同步刪除。
-  // 連訊息一起釘:待修清單以 id 比對,同一 id 新增的問題(如 L23-D01 被改成另一句仍缺 speaker
-  // 的行)只會改變訊息,不釘訊息就會被待修項目蓋掉。
-  it("待修命中恰為 4 id / 4 筆,待修清單沒有多餘項", () => {
-    expect(result.stalePending).toEqual([]);
-    expect(
-      Object.fromEntries(
-        result.rules
-          .filter((r) => r.pending.length > 0)
-          .map((r) => [
-            r.rule.id,
-            r.pending.map((i) => `${i.id} ${i.message}`),
-          ]),
-      ),
-    ).toEqual({
-      "dialogue-speaker": [
-        "L15-D01 speaker=「（標題）」 ご家族は?",
-        "L23-D01 speaker=(無) どうやって 行きますか",
-        "L24-D01 speaker=「標題」 手伝って くれますか",
-        "L41-D01 speaker=(無) 荷物を 預かって いただけませんか",
-      ],
-    });
-    expect(result.pendingCount).toBe(4);
+  it("error 15 條全過", () => {
+    expect(RULES.filter((r) => r.severity === "error")).toHaveLength(15);
     expect(result.errorCount).toBe(0);
+  });
+
+  it("会話標題(dialogueTitle,L15/L23/L24/L41)的表面與中譯也在檢查範圍", () => {
+    expect(
+      lessons
+        .flatMap(textFields)
+        .filter((f) => f.id.endsWith(":dialogueTitle"))
+        .map((f) => `${f.id} ${f.field} ${f.text}`),
+    ).toEqual([
+      "L15:dialogueTitle surface ご家族は?",
+      "L15:dialogueTitle translation 您的家人呢？",
+      "L23:dialogueTitle surface どうやって 行きますか",
+      "L23:dialogueTitle translation 怎麼去呢",
+      "L24:dialogueTitle surface 手伝って くれますか",
+      "L24:dialogueTitle translation 可以幫我嗎",
+      "L41:dialogueTitle surface 荷物を 預かって いただけませんか",
+      "L41:dialogueTitle translation 能不能請您幫我保管行李呢",
+    ]);
   });
 });
 

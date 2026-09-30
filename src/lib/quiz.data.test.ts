@@ -7,7 +7,6 @@ import {
   type VocabItem,
 } from "@/schemas/lesson";
 import { SLOW_TEST_TIMEOUT } from "@/test/timeouts";
-import { isTitleLine } from "./dialogue";
 import { findExampleMatch } from "./examples";
 import { isSupplementary } from "./notes";
 import {
@@ -168,17 +167,20 @@ describe("例句填空 × 全部教材(T11.8)", () => {
     expect(conjugatedOnly.filter((v) => ids.has(v.id))).toEqual([]);
   });
 
-  it("不出慣用語;不選含→的對照行、会話標題行與較晚課次的例句", () => {
+  it("不出慣用語;不選含→的對照行、較晚課次的例句與会話標題(dialogueTitle)", () => {
     expect(clozes.filter((c) => c.v.pos === "慣用")).toEqual([]);
     for (const { l, v, cloze } of clozes) {
       expect(surface(cloze.before) + surface(cloze.after), v.id).not.toContain(
         "→",
       );
       expect(cloze.translation, v.id).not.toMatch(/第\s*\d+\s*課[）)]\s*$/);
-      const titleIds = l.dialogues
-        .filter((line, i) => isTitleLine(line, i))
-        .map((line) => line.id);
-      expect(titleIds, v.id).not.toContain(cloze.sentenceId);
+      // 標題不在 dialogues(上一個測試已確認 sentenceId 是本課的例句或台詞)
+      if (l.dialogueTitle) {
+        expect(
+          surface(cloze.before) + surface(v.ruby) + surface(cloze.after),
+          v.id,
+        ).not.toBe(surface(l.dialogueTitle.ruby));
+      }
     }
   });
 });

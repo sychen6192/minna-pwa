@@ -1,4 +1,5 @@
 import {
+  DialogueTitleSchema,
   GrammarPointSchema,
   LessonIndexSchema,
   LessonSchema,
@@ -127,7 +128,50 @@ describe("SentenceSchema", () => {
   });
 });
 
+describe("DialogueTitleSchema(会話標題)", () => {
+  const title = {
+    ruby: [{ b: "手伝", r: "てつだ" }, { b: "って くれますか" }],
+    translation: "可以幫我嗎",
+  };
+
+  it("接受 ruby + 中譯", () => {
+    expect(DialogueTitleSchema.safeParse(title).success).toBe(true);
+  });
+
+  it.each([
+    { ...title, ruby: [] }, // ruby 至少 1 段
+    { ...title, translation: "" }, // 中譯不可空
+    { ruby: title.ruby }, // 缺中譯
+    { translation: title.translation }, // 缺 ruby
+  ])("拒絕非法標題 %o", (t) => {
+    expect(DialogueTitleSchema.safeParse(t).success).toBe(false);
+  });
+});
+
 describe("LessonSchema", () => {
+  const dialogueTitle = {
+    ruby: [{ b: "どうやって " }, { b: "行", r: "い" }, { b: "きますか" }],
+    translation: "怎麼去呢",
+  };
+
+  it("dialogueTitle 選填:有無皆可;有時保留在解析結果中(z.object 會丟棄 schema 沒有的 key)", () => {
+    const without = LessonSchema.safeParse(validLesson);
+    expect(without.success).toBe(true);
+    expect(without.data).not.toHaveProperty("dialogueTitle");
+    const withTitle = LessonSchema.safeParse({ ...validLesson, dialogueTitle });
+    expect(withTitle.success).toBe(true);
+    expect(withTitle.data?.dialogueTitle).toEqual(dialogueTitle);
+  });
+
+  it.each([
+    { ...dialogueTitle, ruby: [] }, // 空 ruby
+    { ...dialogueTitle, translation: "" }, // 空中譯
+  ])("拒絕非法的 dialogueTitle %o", (t) => {
+    expect(
+      LessonSchema.safeParse({ ...validLesson, dialogueTitle: t }).success,
+    ).toBe(false);
+  });
+
   it.each([
     validLesson,
     { ...validLesson, id: 1, grammar: [], dialogues: [validSentence] }, // grammar 可空、含会話

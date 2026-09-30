@@ -6,6 +6,7 @@ import {
   summarize,
   validateCorrections,
   verifyWritten,
+  type DialogueTitleCorrection,
   type FieldCorrection,
 } from "./fix-content";
 
@@ -225,6 +226,234 @@ describe("fixLesson:狀態與拒絕", () => {
   });
 });
 
+/** 合成課程檔:会話第一行是標題(L24 寫法:speaker「標題」);台詞有逐段換行與單行兩種 ruby 排版 */
+const RAW_T = `{
+  "id": 1,
+  "title": "はじめまして",
+  "vocab": [
+    {
+      "id": "L01-V001",
+      "ruby": [{ "b": "手伝", "r": "てつだ" }, { "b": "います" }],
+      "kana": "てつだいます",
+      "meaning": "幫忙",
+      "pos": "動I"
+    }
+  ],
+  "grammar": [],
+  "dialogues": [
+    {
+      "id": "L01-D01",
+      "ruby": [
+        { "b": "手伝", "r": "てつだ" },
+        { "b": "って くれますか" }
+      ],
+      "translation": "可以幫我嗎",
+      "speaker": "標題"
+    },
+    {
+      "id": "L01-D02",
+      "ruby": [{ "b": "何", "r": "なん" }, { "b": "ですか。" }],
+      "translation": "什麼事呢？",
+      "speaker": "ワン"
+    },
+    {
+      "id": "L01-D03",
+      "ruby": [
+        { "b": "引", "r": "ひ" },
+        { "b": "っ" },
+        { "b": "越", "r": "こ" },
+        { "b": "しです。" }
+      ],
+      "translation": "搬家。",
+      "speaker": "カリナ"
+    }
+  ]
+}
+`;
+
+/** RAW_T 修正後:標題移入 dialogueTitle(置於 dialogues 前、內縮 2 格),其餘台詞 id 遞補,其他位元不動 */
+const FIXED_T = `{
+  "id": 1,
+  "title": "はじめまして",
+  "vocab": [
+    {
+      "id": "L01-V001",
+      "ruby": [{ "b": "手伝", "r": "てつだ" }, { "b": "います" }],
+      "kana": "てつだいます",
+      "meaning": "幫忙",
+      "pos": "動I"
+    }
+  ],
+  "grammar": [],
+  "dialogueTitle": {
+    "ruby": [
+      { "b": "手伝", "r": "てつだ" },
+      { "b": "って くれますか" }
+    ],
+    "translation": "可以幫我嗎"
+  },
+  "dialogues": [
+    {
+      "id": "L01-D01",
+      "ruby": [{ "b": "何", "r": "なん" }, { "b": "ですか。" }],
+      "translation": "什麼事呢？",
+      "speaker": "ワン"
+    },
+    {
+      "id": "L01-D02",
+      "ruby": [
+        { "b": "引", "r": "ひ" },
+        { "b": "っ" },
+        { "b": "越", "r": "こ" },
+        { "b": "しです。" }
+      ],
+      "translation": "搬家。",
+      "speaker": "カリナ"
+    }
+  ]
+}
+`;
+
+const tc = (
+  from: DialogueTitleCorrection["from"],
+  over: Partial<DialogueTitleCorrection> = {},
+): DialogueTitleCorrection => ({
+  kind: "dialogueTitle",
+  lesson: 1,
+  from,
+  reason: "測試",
+  ...over,
+});
+
+/** RAW_T 的標題行 */
+const TITLE = tc({
+  id: "L01-D01",
+  ruby: [{ b: "手伝", r: "てつだ" }, { b: "って くれますか" }],
+  translation: "可以幫我嗎",
+  speaker: "標題",
+});
+
+describe("fixLesson:会話標題移入 dialogueTitle", () => {
+  it("標題移入 dialogueTitle(置於 dialogues 前)、刪除該行、後續 D id 遞補;其他位元不動", () => {
+    const fix = fixLesson(RAW_T, [TITLE]);
+    expect(fix.results.map((r) => r.status)).toEqual(["pending"]);
+    expect(fix.text).toBe(FIXED_T);
+    const l = JSON.parse(fix.text);
+    expect(Object.keys(l)).toEqual([
+      "id",
+      "title",
+      "vocab",
+      "grammar",
+      "dialogueTitle",
+      "dialogues",
+    ]);
+    expect(Object.keys(l.dialogueTitle)).toEqual(["ruby", "translation"]);
+    expect(l.dialogues.map((d: { speaker: string }) => d.speaker)).toEqual([
+      "ワン",
+      "カリナ",
+    ]);
+  });
+
+  it("重跑 0 變動、逐位元相同,狀態為已套用", () => {
+    const twice = fixLesson(FIXED_T, [TITLE]);
+    expect(twice.text).toBe(FIXED_T);
+    expect(twice.results.map((r) => r.status)).toEqual(["applied"]);
+  });
+
+  it("無 speaker(L23/L41 寫法)且單行 ruby 的標題:translation 原為最後一個屬性、ruby 單行帶逗號,逗號隨之調整", () => {
+    const raw = RAW_T.replace(
+      `      "ruby": [
+        { "b": "手伝", "r": "てつだ" },
+        { "b": "って くれますか" }
+      ],
+      "translation": "可以幫我嗎",
+      "speaker": "標題"`,
+      `      "ruby": [{ "b": "手伝", "r": "てつだ" }, { "b": "って くれますか" }],
+      "translation": "可以幫我嗎"`,
+    );
+    const { speaker: _omit, ...from } = TITLE.from;
+    void _omit;
+    const fix = fixLesson(raw, [tc(from)]);
+    expect(fix.text).toBe(
+      FIXED_T.replace(
+        `    "ruby": [
+      { "b": "手伝", "r": "てつだ" },
+      { "b": "って くれますか" }
+    ],`,
+        `    "ruby": [{ "b": "手伝", "r": "てつだ" }, { "b": "って くれますか" }],`,
+      ),
+    );
+    expect(fixLesson(fix.text, [tc(from)]).text).toBe(fix.text);
+  });
+
+  it("同課 D 的欄位修正排在標題之後、以遞補後的 id 宣告:第一次與重跑都指向同一行", () => {
+    const cs = [
+      TITLE,
+      fc({ id: "L01-D01", field: "translation", from: "呢", to: "啊" }),
+    ];
+    const fix = fixLesson(RAW_T, cs);
+    expect(JSON.parse(fix.text).dialogues[0]).toMatchObject({
+      speaker: "ワン",
+      translation: "什麼事啊？",
+    });
+    const again = fixLesson(fix.text, cs);
+    expect(again.text).toBe(fix.text);
+    expect(again.results.map((r) => r.status)).toEqual(["applied", "applied"]);
+  });
+
+  it("狀態:修正前 = 待套用、修正後 = 已套用;第一行不完全等於 from、已有標題但 D 未連號或仍含標題句即丟錯", () => {
+    const before = JSON.parse(RAW_T);
+    const after = JSON.parse(FIXED_T);
+    expect(statusOf(before, TITLE)).toBe("pending");
+    expect(statusOf(after, TITLE)).toBe("applied");
+    // 第一行只差 speaker(資料已被改動):不猜
+    expect(() =>
+      fixLesson(RAW_T, [tc({ ...TITLE.from, speaker: "（標題）" })]),
+    ).toThrow("既非修正前");
+    expect(() =>
+      fixLesson(RAW_T.replace("可以幫我嗎", "可以幫我嗎?"), [TITLE]),
+    ).toThrow("既非修正前");
+    // 已有 dialogueTitle,但 D 沒有自 01 連號
+    const unnumbered = structuredClone(after);
+    unnumbered.dialogues[0].id = "L01-D02";
+    unnumbered.dialogues[1].id = "L01-D03";
+    expect(() => statusOf(unnumbered, TITLE)).toThrow("既非修正前");
+    // 已有 dialogueTitle,重新抽取又把標題放回第一行
+    const readded = structuredClone(after);
+    readded.dialogues = [
+      { ...TITLE.from, id: "L01-D01" },
+      ...after.dialogues.map((d: { id: string }, i: number) => ({
+        ...d,
+        id: `L01-D0${i + 2}`,
+      })),
+    ];
+    expect(() => statusOf(readded, TITLE)).toThrow("既非修正前");
+    // 已有 dialogueTitle 但內容不同
+    const other = structuredClone(after);
+    other.dialogueTitle.translation = "幫忙";
+    expect(() => statusOf(other, TITLE)).toThrow("既非修正前");
+  });
+
+  it("前提不符即丟錯:会話只有標題一行", () => {
+    const only = RAW_T.replace(
+      /,\n    \{\n      "id": "L01-D02"[\s\S]*\n    \}\n  \]/,
+      "\n  ]",
+    );
+    expect(JSON.parse(only).dialogues).toHaveLength(1);
+    expect(() => fixLesson(only, [TITLE])).toThrow("会話只有這一行");
+  });
+
+  it("--check 與套用的標籤", () => {
+    expect(summarize([fixLesson(RAW_T, [TITLE])], { check: true })).toEqual({
+      lines: [
+        "⏳ 待套用 L01 会話標題「手伝って くれますか」(原 L01-D01)→ dialogueTitle",
+        "待套用 1/1 筆;執行 pnpm fix:content 套用",
+      ],
+      exitCode: 1,
+    });
+  });
+});
+
 describe("verifyWritten:寫入前核對", () => {
   const expected = () => JSON.parse(RAW);
 
@@ -310,6 +539,73 @@ describe("validateCorrections", () => {
         fc({ id: "L01-V001", field: "kana", from: "a", to: "a" }),
       ]),
     ).toThrow("from 與 to 相同");
+  });
+});
+
+describe("validateCorrections:会話標題", () => {
+  it("合法的宣告回傳空陣列(speaker 為標題標記或不寫 key)", () => {
+    const { speaker: _omit, ...noSpeaker } = TITLE.from;
+    void _omit;
+    expect(
+      validateCorrections(
+        [
+          TITLE,
+          tc({ ...TITLE.from, speaker: "（標題）" }, { lesson: 2 }),
+          tc(noSpeaker, { lesson: 3 }),
+        ].map((c) => ({ ...c, from: { ...c.from, id: `L0${c.lesson}-D01` } })),
+      ),
+    ).toEqual([]);
+  });
+
+  it("id 須為同課 D01、ruby/translation 非空、speaker 為標題標記、理由、每課一筆", () => {
+    expect(
+      validateCorrections([
+        tc({ ...TITLE.from, id: "L01-D02" }),
+        tc({ ...TITLE.from, id: "L02-D01" }),
+        tc(
+          { ...TITLE.from, id: "L03-D01", ruby: [], translation: "" },
+          { lesson: 3 },
+        ),
+        tc({ ...TITLE.from, id: "L04-D01", speaker: "ミラー" }, { lesson: 4 }),
+        tc({ ...TITLE.from, id: "L05-D01", speaker: undefined }, { lesson: 5 }),
+        tc({ ...TITLE.from, id: "L06-D01" }, { lesson: 6, reason: "" }),
+        tc({ ...TITLE.from, id: "L06-D01" }, { lesson: 6 }),
+      ]),
+    ).toEqual([
+      "L01-D02 会話標題:標題須為会話第一行 D01",
+      "L02-D01 会話標題:id 課號 ≠ lesson 1",
+      "L02-D01 会話標題:重複宣告", // 與第一筆同為第 1 課
+      "L03-D01 会話標題:ruby/translation 不得為空",
+      'L04-D01 会話標題:speaker "ミラー" 不是標題標記(應為「標題」「（標題）」或不寫 key)',
+      "L05-D01 会話標題:speaker undefined 不是標題標記(應為「標題」「（標題）」或不寫 key)",
+      "L06-D01 会話標題:缺 reason",
+      "L06-D01 会話標題:重複宣告",
+    ]);
+  });
+
+  it("同課 D 的欄位修正須排在標題修正之後(id 以遞補後為準);他課或 S 不受限", () => {
+    const d = fc({ id: "L01-D01", field: "translation", from: "呢", to: "啊" });
+    expect(validateCorrections([TITLE, d])).toEqual([]);
+    expect(validateCorrections([d, TITLE])).toEqual([
+      "L01-D01 translation:排在同課的会話標題修正之前(標題修正會遞補 D id,D 的欄位修正須排在其後、id 以遞補後為準)",
+    ]);
+    expect(
+      validateCorrections([
+        fc({ id: "L01-S01", field: "translation", from: "呢", to: "啊" }),
+        fc({
+          lesson: 2,
+          id: "L02-D01",
+          field: "translation",
+          from: "呢",
+          to: "啊",
+        }),
+        TITLE,
+      ]),
+    ).toEqual([]);
+    // 宣告錯誤時 fixLesson 拒絕
+    expect(() => fixLesson(RAW_T, [d, TITLE])).toThrow(
+      "排在同課的会話標題修正之前",
+    );
   });
 });
 

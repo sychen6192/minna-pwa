@@ -1,4 +1,3 @@
-import { isTitleLine } from "@/lib/dialogue";
 import type { Lesson, RubySeg, Sentence } from "@/schemas/lesson";
 
 /**
@@ -183,7 +182,6 @@ function movableIndices(count: number): number[] {
  * - 切成 3–8 塊
  * - 句末標點至多一個且只在句尾(多句的会話行排除;L22 名詞修飾的片語沒有句末標點,保留)
  * - 不含「→」(活用對照行,例:L19-S08 寒い → 寒く なります 切成 3 塊又沒有句末標點,上兩條擋不住)
- * - 不是会話標題行(傳入会話中的 `index` 時以 dialogue.ts 的 isTitleLine 判斷;文型例句不傳)
  * - 不以對話者標記(Ａ:)開頭;不含可省略/替代/並列記號(［ ］〔 〕（ ）／);不含外文片語
  * - 不在 REORDER_EXCLUDED_IDS(詞被切開的抽取痕跡)
  * - 可移動的塊至少有兩種不同文字(才打亂得出與原句不同的順序)
@@ -191,13 +189,11 @@ function movableIndices(count: number): number[] {
  * 中譯同樣以「…」開頭。
  */
 export function isReorderable(
-  sentence: Pick<Sentence, "id" | "ruby" | "speaker">,
-  index?: number,
+  sentence: Pick<Sentence, "id" | "ruby">,
 ): boolean {
   if (REORDER_EXCLUDED_IDS.has(sentence.id)) return false;
   const surface = surfaceText(sentence.ruby).trim();
   if (surface.includes(ARROW)) return false;
-  if (index !== undefined && isTitleLine(sentence, index)) return false;
   if (
     SPEAKER_PREFIX_RE.test(surface) ||
     MARKUP_RE.test(surface) ||
@@ -324,7 +320,8 @@ export function refersToLaterLesson(
 
 /**
  * 本課可出題的句子:文型例句與会話(依教材順序),同表面文字的重列句只留第一句;
- * 中譯標示較晚課次的例句(L04-S19 …かかります。(第 11 課))不出題
+ * 中譯標示較晚課次的例句(L04-S19 …かかります。(第 11 課))不出題。
+ * 会話標題(`Lesson.dialogueTitle`)不是台詞,不出題
  */
 export function reorderPool(lesson: Lesson): Sentence[] {
   const candidates = [
@@ -333,7 +330,7 @@ export function reorderPool(lesson: Lesson): Sentence[] {
         (s) => isReorderable(s) && !refersToLaterLesson(s, lesson.id),
       ),
     ),
-    ...lesson.dialogues.filter((s, i) => isReorderable(s, i)),
+    ...lesson.dialogues.filter((s) => isReorderable(s)),
   ];
   const seen = new Set<string>();
   return candidates.filter((s) => {

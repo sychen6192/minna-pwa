@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
+  DialogueTitle,
   GrammarPoint,
   Lesson,
   RubySeg,
@@ -12,7 +13,6 @@ import {
   JA_GLYPH_BLACKLIST,
   lintContent,
   parseReportArgs,
-  PENDING_FIXES,
   punctuationSummary,
   RULES,
   stripQuotedJapanese,
@@ -116,6 +116,16 @@ function withDialogues(...items: Partial<Sentence>[]): Lesson {
   }));
   return l;
 }
+/** 第 1 課,加上会話標題(預設為合法的標題) */
+function withTitle(title: Partial<DialogueTitle> = {}): Lesson {
+  const l = lesson(1);
+  l.dialogueTitle = {
+    ruby: [seg("行", "い"), seg("きますか")],
+    translation: "怎麼去呢",
+    ...title,
+  };
+  return l;
+}
 function withGrammar(...items: Partial<GrammarPoint>[]): Lesson {
   const l = lesson(1);
   l.grammar = items.map((g, i) => ({
@@ -175,14 +185,12 @@ describe("RULES", () => {
     ]);
   });
 
-  it("50 課基準資料:全部規則 0 筆", () => {
-    const result = lintContent(ctxOf(fifty()), { pending: {} });
+  it("50 課基準資料(含一課有会話標題):全部規則 0 筆", () => {
+    const lessons = fifty();
+    lessons[0] = withTitle();
+    const result = lintContent(ctxOf(lessons));
     expect(result.rules.flatMap((r) => r.issues)).toEqual([]);
-    expect([
-      result.errorCount,
-      result.pendingCount,
-      result.warningCount,
-    ]).toEqual([0, 0, 0]);
+    expect([result.errorCount, result.warningCount]).toEqual([0, 0]);
   });
 });
 
@@ -271,8 +279,8 @@ describe("error:課與 id", () => {
 });
 
 describe("error:ruby", () => {
-  it("ruby-han-has-r:含漢字的段(單字、例句、会話)必有 r", () => {
-    expect(ids("ruby-han-has-r", lesson(1))).toEqual([]);
+  it("ruby-han-has-r:含漢字的段(單字、例句、会話標題、会話)必有 r", () => {
+    expect(ids("ruby-han-has-r", lesson(1), withTitle())).toEqual([]);
     expect(ids("ruby-han-has-r", withVocab({ ruby: [seg("本")] }))).toEqual([
       "L01-V001",
     ]);
@@ -285,6 +293,10 @@ describe("error:ruby", () => {
         withDialogues({ ruby: [seg("行"), seg("きます")] }),
       ),
     ).toEqual(["L01-D01"]);
+    // 会話標題沒有 id:以「課:dialogueTitle」回報
+    expect(
+      ids("ruby-han-has-r", withTitle({ ruby: [seg("行"), seg("きますか")] })),
+    ).toEqual(["L01:dialogueTitle"]);
   });
 
   it("ruby-r-hiragana:r 只含平假名", () => {
@@ -297,6 +309,9 @@ describe("error:ruby", () => {
     expect(
       ids("ruby-r-hiragana", withExamples({ ruby: [seg("本", "ほーん")] })),
     ).toEqual(["L01-S01"]);
+    expect(
+      ids("ruby-r-hiragana", withTitle({ ruby: [seg("行", "イ")] })),
+    ).toEqual(["L01:dialogueTitle"]);
   });
 
   it("ruby-r-target:帶 r 的段須含漢字或數字", () => {
@@ -315,6 +330,9 @@ describe("error:ruby", () => {
     expect(
       ids("ruby-r-target", withDialogues({ ruby: [seg("〜", "から")] })),
     ).toEqual(["L01-D01"]);
+    expect(
+      ids("ruby-r-target", withTitle({ ruby: [seg("は", "わ")] })),
+    ).toEqual(["L01:dialogueTitle"]);
   });
 });
 
@@ -353,6 +371,10 @@ describe("error:字元", () => {
         ),
         withGrammar({ explanation: "表示\t斷定。" }),
         withDialogues({ speaker: "ミラー\u200b" }),
+        withTitle({
+          ruby: [seg("どうやって "), seg("行", "い"), seg("きますか ")],
+          translation: "怎麼\u3000去呢",
+        }),
       ),
     ).toEqual([
       "L01-V001 meaning:首尾空白",
@@ -364,6 +386,8 @@ describe("error:字元", () => {
       "L01-S02 translation:首尾空白、空白/控制字元 U+000A",
       "L01-G01 explanation:空白/控制字元 U+0009",
       "L01-D01 speaker:空白/控制字元 U+200B",
+      "L01:dialogueTitle surface:首尾空白",
+      "L01:dialogueTitle translation:空白/控制字元 U+3000",
     ]);
   });
 
@@ -380,9 +404,10 @@ describe("error:字元", () => {
         withGrammar({ pattern: "N は ～です" }),
         withDialogues({ speaker: "ミラ－" }),
         withVocab({ note: "〔～を〕" }),
+        withTitle({ ruby: [seg("え―と")] }),
         { ...lesson(2), title: "ど―ぞ" },
       ),
-    ).toEqual(["L01-G01", "L01-D01", "L01-V001", "L02"]);
+    ).toEqual(["L01-G01", "L01-D01", "L01-V001", "L01:dialogueTitle", "L02"]);
     // 正確的ー、〜;中文欄位的～不在此規則(見 warning zh-lookalike)
     expect(
       ids(
@@ -624,12 +649,14 @@ describe("error:zh-glyph 與 Big5", () => {
         withExamples({ translation: "渡辺先生來了。" }),
         withGrammar({ explanation: "作為証明;開会時" }),
         withDialogues({ translation: "是渡辺さん。" }),
+        withTitle({ translation: "幫忙搬家(伝)" }),
       ),
     ).toEqual([
       "L01-V001 meaning:証",
       "L01-S01 translation:辺",
       "L01-G01 explanation:証会",
       "L01-D01 translation:辺",
+      "L01:dialogueTitle translation:伝",
     ]);
   });
 });
@@ -837,57 +864,22 @@ describe("warning", () => {
   });
 });
 
-describe("lintContent:待修清單", () => {
-  // L01-V001 動I「します」:verb-class-shape 命中
-  const broken = () =>
-    withVocab({ pos: "動I", kana: "します", ruby: [seg("します")] });
-
-  it("命中待修清單者標為待修、不算失敗;未列入者照常失敗", () => {
-    const pending = { "verb-class-shape": ["L01-V001"] };
-    const result = lintContent(ctxOf([broken()]), { pending });
-    const shape = result.rules.find((r) => r.rule.id === "verb-class-shape");
-    expect(shape?.issues).toEqual([]);
-    expect(shape?.pending.map((i) => i.id)).toEqual(["L01-V001"]);
-    expect(result.stalePending).toEqual([]);
-    expect(result.pendingCount).toBe(1);
-    // 只有 1 課:lesson-set 失敗(未列入待修)
-    expect(result.errorCount).toBe(1);
+describe("lintContent", () => {
+  it("error 沒有例外清單:每筆命中都計入 errorCount(T12.4 移除待修清單)", () => {
+    // L01-V001 動I「します」:verb-class-shape 命中
+    const lessons = fifty();
+    lessons[0] = withVocab({
+      pos: "動I",
+      kana: "します",
+      ruby: [seg("します")],
+    });
+    const result = lintContent(ctxOf(lessons));
     expect(
-      result.rules.filter((r) => r.issues.length > 0).map((r) => r.rule.id),
-    ).toEqual(["lesson-set"]);
-  });
-
-  it("待修清單多一項(已修好、重複、warning 規則或不存在的規則)即失敗", () => {
-    const result = lintContent(
-      ctxOf([...fifty().slice(1), broken()].sort((a, b) => a.id - b.id)),
-      {
-        pending: {
-          "verb-class-shape": ["L01-V001", "L01-V002", "L01-V001"],
-          "kana-symbols": ["L01-V001"],
-          "no-such-rule": ["L01-V001"],
-        },
-      },
-    );
-    expect(result.stalePending).toEqual([
-      { rule: "verb-class-shape", id: "L01-V002", reason: "沒有命中(已修好)" },
-      { rule: "verb-class-shape", id: "L01-V001", reason: "重複列出" },
-      { rule: "kana-symbols", id: "L01-V001", reason: "不是 error 規則" },
-      { rule: "no-such-rule", id: "L01-V001", reason: "沒有這條規則" },
-    ]);
-    expect(result.errorCount).toBe(4);
-    expect(result.pendingCount).toBe(1);
-  });
-
-  it("PENDING_FIXES:只列 error 規則,4 個 id 不重複", () => {
-    const errorRules = new Set(
-      RULES.filter((r) => r.severity === "error").map((r) => r.id),
-    );
-    expect(
-      Object.keys(PENDING_FIXES).filter((k) => !errorRules.has(k)),
-    ).toEqual([]);
-    const all = Object.values(PENDING_FIXES).flat();
-    expect(all).toHaveLength(4);
-    expect(new Set(all).size).toBe(4);
+      result.rules
+        .filter((r) => r.issues.length > 0)
+        .map((r) => `${r.rule.id} ${r.issues.map((i) => i.id).join(",")}`),
+    ).toEqual(["verb-class-shape L01-V001"]);
+    expect([result.errorCount, result.warningCount]).toEqual([1, 0]);
   });
 });
 
@@ -895,22 +887,18 @@ describe("formatReport", () => {
   const many = () =>
     withVocab(...Array.from({ length: 7 }, () => ({ kana: "すき［な］" })));
 
-  it("每條規則「N 筆 — 說明」與前 5 筆、「…另 N 筆」;✗ error、⏳ 待修、⚠ warning,最後一行總結", () => {
+  it("每條規則「N 筆 — 說明」與前 5 筆、「…另 N 筆」;✗ error、⚠ warning,最後一行總結", () => {
     const l = many();
     l.dialogues[0].speaker = undefined;
     l.grammar[0].examples[0].ruby = [seg("本")];
     const rules = RULES.filter((r) =>
       ["ruby-han-has-r", "dialogue-speaker", "kana-symbols"].includes(r.id),
     );
-    const result = lintContent(ctxOf([l]), {
-      rules,
-      pending: { "dialogue-speaker": ["L01-D01"] },
-    });
-    const lines = formatReport(result);
+    const lines = formatReport(lintContent(ctxOf([l]), { rules }));
     expect(lines).toEqual([
-      "✗ [ruby-han-has-r] 1 筆 — 含漢字的 ruby 段必有讀音 r(單字、例句、会話)",
+      "✗ [ruby-han-has-r] 1 筆 — 含漢字的 ruby 段必有讀音 r(單字、例句、会話標題、会話)",
       "    L01-S01 「本」 缺 r",
-      "⏳ [dialogue-speaker] 待修 1 筆 — 会話每行 speaker 非空,且不是標題標記(含「標題」)",
+      "✗ [dialogue-speaker] 1 筆 — 会話每行 speaker 非空,且不是標題標記(含「標題」;会話標題存 dialogueTitle)",
       "    L01-D01 speaker=(無) はい。",
       "⚠ [kana-symbols] 7 筆 — kana 含假名以外的記號(［］／〜・、…;kana 契約待定)",
       "    L01-V001 すき［な］",
@@ -919,38 +907,31 @@ describe("formatReport", () => {
       "    L01-V004 すき［な］",
       "    L01-V005 すき［な］",
       "    …另 2 筆",
-      "✗ content-lint:error 2 條 1 筆未通過(待修 1 筆);warning 1 條 7 筆(不影響結束碼)",
+      "✗ content-lint:error 2 條 2 筆未通過;warning 1 條 7 筆(不影響結束碼)",
     ]);
   });
 
-  it("all 與 rule 列出完整清單;rule 只印該規則;待修清單多餘項印為 ✗", () => {
+  it("all 與 rule 列出完整清單;rule 只印該規則;error 全過印 ✓", () => {
     const rules = RULES.filter((r) =>
       ["kana-symbols", "zh-glyph"].includes(r.id),
     );
-    const result = lintContent(ctxOf([many()]), {
-      rules,
-      pending: { "zh-glyph": ["L01-G01"] },
-    });
+    const result = lintContent(ctxOf([many()]), { rules });
     expect(
       formatReport(result, { all: true }).filter((s) => s.includes("すき")),
     ).toHaveLength(7);
     expect(formatReport(result, { rule: "zh-glyph" })).toEqual([
-      "✗ [待修清單] 1 筆多餘 — 已修好、重複或不是 error 規則,須自 PENDING_FIXES 刪除",
-      "    L01-G01 (zh-glyph)沒有命中(已修好)",
-      "✗ content-lint:error 1 條 1 筆未通過(待修 0 筆);warning 1 條 7 筆(不影響結束碼)",
+      "✓ content-lint:error 1 條全過;warning 1 條 7 筆(不影響結束碼)",
     ]);
   });
 
   it("rule 篩掉的 error 仍影響結束碼:提示其他規則的 error 筆數", () => {
     const l = many();
+    l.vocab[0].ruby = [seg("本")];
     l.grammar[0].examples[0].ruby = [seg("本")];
     const rules = RULES.filter((r) =>
       ["ruby-han-has-r", "kana-symbols"].includes(r.id),
     );
-    const result = lintContent(ctxOf([l]), {
-      rules,
-      pending: { "ruby-han-has-r": ["L01-V001"] },
-    });
+    const result = lintContent(ctxOf([l]), { rules });
     expect(result.errorCount).toBe(2);
     expect(
       formatReport(result, { rule: "kana-symbols" }).filter(
@@ -959,7 +940,7 @@ describe("formatReport", () => {
     ).toEqual([
       "⚠ [kana-symbols] 7 筆 — kana 含假名以外的記號(［］／〜・、…;kana 契約待定)",
       "(其他規則另有 2 筆 error 未列出;不加 --rule 執行查看)",
-      "✗ content-lint:error 1 條 2 筆未通過(待修 0 筆);warning 1 條 7 筆(不影響結束碼)",
+      "✗ content-lint:error 1 條 2 筆未通過;warning 1 條 7 筆(不影響結束碼)",
     ]);
     // 不篩選、或篩到有 error 的規則時不提示
     expect(formatReport(result).some((s) => s.startsWith("(其他"))).toBe(false);

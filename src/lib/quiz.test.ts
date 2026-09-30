@@ -844,7 +844,7 @@ describe("makeCloze(T11.8)", () => {
     expect(cloze && segText(cloze.after)).toBe("。");
   });
 
-  it("句=字、含→的對照行、会話標題行、中譯標示較晚課次的例句不選", () => {
+  it("句=字、含→的對照行、中譯標示較晚課次的例句不選;会話標題(dialogueTitle)不是候選", () => {
     const samui: VocabItem = {
       id: "L08-V018",
       ruby: [{ b: "寒", r: "さむ" }, { b: "い" }],
@@ -852,26 +852,44 @@ describe("makeCloze(T11.8)", () => {
       meaning: "冷",
       pos: "い形",
     };
-    const bad = lessonWith(
-      8,
-      [samui],
-      [
-        sent("S1", [{ b: "寒", r: "さむ" }, { b: "い" }]),
-        sent("S2", [
-          { b: "寒", r: "さむ" },
-          { b: "い → " },
-          { b: "寒", r: "さむ" },
-          { b: "く なります" },
-        ]),
-        sent(
-          "S3",
-          [{ b: "きょうは " }, { b: "寒", r: "さむ" }, { b: "いですね。" }],
-          "今天很冷呢。(第 19 課)",
-        ),
-      ],
-      [sent("D1", [{ b: "寒", r: "さむ" }, { b: "い 日" }])], // 無 speaker 的第一行 = 標題
-    );
+    const bad: Lesson = {
+      ...lessonWith(
+        8,
+        [samui],
+        [
+          sent("S1", [{ b: "寒", r: "さむ" }, { b: "い" }]),
+          sent("S2", [
+            { b: "寒", r: "さむ" },
+            { b: "い → " },
+            { b: "寒", r: "さむ" },
+            { b: "く なります" },
+          ]),
+          sent(
+            "S3",
+            [{ b: "きょうは " }, { b: "寒", r: "さむ" }, { b: "いですね。" }],
+            "今天很冷呢。(第 19 課)",
+          ),
+        ],
+      ),
+      // 標題可挖空(寒い + 日),但不是台詞
+      dialogueTitle: {
+        ruby: [{ b: "寒", r: "さむ" }, { b: "い 日" }],
+        translation: "寒冷的日子",
+      },
+    };
     expect(makeCloze(samui, bad)).toBeNull();
+    // 同一句若是台詞則會出題:擋住標題的是資料結構
+    expect(
+      makeCloze(samui, {
+        ...bad,
+        dialogues: [
+          {
+            ...sent("D1", [{ b: "寒", r: "さむ" }, { b: "い 日" }]),
+            speaker: "ミラー",
+          },
+        ],
+      })?.sentenceId,
+    ).toBe("D1");
 
     const earlier = lessonWith(
       8,

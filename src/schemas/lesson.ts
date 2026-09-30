@@ -49,12 +49,20 @@ export const GrammarPointSchema = z.object({
   examples: z.array(SentenceSchema).min(1),
 });
 
+/** 会話標題:不是台詞,不佔 D id(教材有標題的課才有,目前 L15/L23/L24/L41) */
+export const DialogueTitleSchema = z.object({
+  ruby: z.array(RubySegSchema).min(1),
+  translation: z.string().min(1),
+});
+
 export const LessonSchema = z.object({
   id: z.number().int().min(1).max(50),
   title: z.string().min(1),
   vocab: z.array(VocabItemSchema).min(1),
   grammar: z.array(GrammarPointSchema),
-  dialogues: z.array(SentenceSchema),
+  // 課程檔中置於 dialogues 前;z.object 會丟棄未知 key,資料加欄位前 schema 須先有
+  dialogueTitle: DialogueTitleSchema.optional(),
+  dialogues: z.array(SentenceSchema), // 每行都是台詞(D 自 01 連號)
 });
 
 export const LessonIndexSchema = z.object({
@@ -74,6 +82,7 @@ export type Lesson = z.infer<typeof LessonSchema>;
 export type VocabItem = z.infer<typeof VocabItemSchema>;
 export type GrammarPoint = z.infer<typeof GrammarPointSchema>;
 export type Sentence = z.infer<typeof SentenceSchema>;
+export type DialogueTitle = z.infer<typeof DialogueTitleSchema>;
 export type RubySeg = z.infer<typeof RubySegSchema>;
 export type Pos = z.infer<typeof PosEnum>;
 export type LessonIndex = z.infer<typeof LessonIndexSchema>;

@@ -7,6 +7,9 @@
  * 其他 = 報錯中止(資料已被改動,需人工判斷,不猜)。日文與 enum 欄位(pos、kana、
  * ruby.<i>.b)比對整值;中文欄位(meaning、explanation、translation)比對子字串——from 恰
  * 出現一次 = 套用,不含 from 且含 to = 已套用,故與 T12.6 標點正規化的先後互不影響。
+ * 会話標題(kind "dialogueTitle",T12.4):会話第一行完全等於宣告的 D01 且尚無 dialogueTitle
+ * = 套用——ruby 與 translation 移入 `Lesson.dialogueTitle`(置於 dialogues 前)、刪除該行、
+ * 後續 D id 自 D01 遞補;dialogueTitle 等於預期、D 自 01 連號且会話不含該句 = 已套用。
  *
  * 寫法比照 enrich-accents.ts:純函式核心、直接執行才跑 main。課程檔排版不一,不得整檔
  * 重寫:以 scripts/lib/rawJson.ts 定位物件、只替換目標字串;套用後每筆須呈已套用(冪等);
@@ -17,8 +20,17 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { LessonSchema, type Lesson, type RubySeg } from "../src/schemas/lesson";
-import { findObjectById, replaceStringValue } from "./lib/rawJson";
+import {
+  LessonSchema,
+  type Lesson,
+  type RubySeg,
+  type Sentence,
+} from "../src/schemas/lesson";
+import {
+  findObjectById,
+  replaceStringValue,
+  type ObjectSpan,
+} from "./lib/rawJson";
 
 const LESSONS_DIR = "public/data/lessons";
 
@@ -42,8 +54,21 @@ export interface FieldCorrection {
   reason: string;
 }
 
-/** 修正種類(T12.4 加会話標題、T12.5 加 ruby 分段) */
-export type Correction = FieldCorrection;
+/**
+ * 会話標題行(speaker 為標題標記或缺漏的第一行)移入 `Lesson.dialogueTitle`,後續 D id 遞補。
+ * 同課 D 的欄位修正須排在其後,id 以遞補後為準(validateCorrections 檢查)。
+ */
+export interface DialogueTitleCorrection {
+  kind: "dialogueTitle";
+  lesson: number;
+  /** 現值:会話第一行(D01)的完整內容,speaker 為「標題」「（標題）」或缺漏(不寫 key) */
+  from: Sentence;
+  /** 修正理由(commit 逐筆列出) */
+  reason: string;
+}
+
+/** 修正種類(T12.5 加 ruby 分段) */
+export type Correction = FieldCorrection | DialogueTitleCorrection;
 
 export const CORRECTIONS: readonly Correction[] = [
   // ---- T12.2:資料修正清單 2、3 + 偵察補列 1 筆 ----
@@ -145,6 +170,58 @@ export const CORRECTIONS: readonly Correction[] = [
     to: "動III",
     reason: "〔においが〜〕します:同上",
   },
+  // ---- T12.4:資料修正清單 4(会話標題行) ----
+  {
+    kind: "dialogueTitle",
+    lesson: 15,
+    from: {
+      id: "L15-D01",
+      ruby: [{ b: "ご" }, { b: "家族", r: "かぞく" }, { b: "は?" }],
+      translation: "您的家人呢？",
+      speaker: "（標題）",
+    },
+    reason:
+      "会話標題(speaker「（標題）」)不是台詞:移入 dialogueTitle,D02..D12 遞補為 D01..D11",
+  },
+  {
+    kind: "dialogueTitle",
+    lesson: 23,
+    from: {
+      id: "L23-D01",
+      ruby: [{ b: "どうやって " }, { b: "行", r: "い" }, { b: "きますか" }],
+      translation: "怎麼去呢",
+    },
+    reason:
+      "会話標題(無 speaker)不是台詞:移入 dialogueTitle,D02..D12 遞補為 D01..D11",
+  },
+  {
+    kind: "dialogueTitle",
+    lesson: 24,
+    from: {
+      id: "L24-D01",
+      ruby: [{ b: "手伝", r: "てつだ" }, { b: "って くれますか" }],
+      translation: "可以幫我嗎",
+      speaker: "標題",
+    },
+    reason:
+      "会話標題(speaker「標題」)不是台詞:移入 dialogueTitle,D02..D12 遞補為 D01..D11",
+  },
+  {
+    kind: "dialogueTitle",
+    lesson: 41,
+    from: {
+      id: "L41-D01",
+      ruby: [
+        { b: "荷物", r: "にもつ" },
+        { b: "を " },
+        { b: "預", r: "あず" },
+        { b: "かって いただけませんか" },
+      ],
+      translation: "能不能請您幫我保管行李呢",
+    },
+    reason:
+      "会話標題(無 speaker)不是台詞:移入 dialogueTitle,D02..D13 遞補為 D01..D12",
+  },
 ];
 
 // ---------- 宣告檢查 ----------
@@ -158,6 +235,9 @@ const isSubstring = (c: FieldCorrection) => SUBSTRING_FIELDS.has(c.field);
 
 const RUBY_B_RE = /^ruby\.(0|[1-9]\d*)\.b$/;
 const ID_RE = /^L(\d{2})-([VGSD])\d+$/;
+const TITLE_ID_RE = /^L(\d{2})-D01$/;
+/** 教材資料中会話標題行的 speaker 寫法(另有缺漏者) */
+const TITLE_SPEAKERS: ReadonlySet<string> = new Set(["標題", "（標題）"]);
 
 /** 各種 id 可修正的欄位(ruby 以 ruby.<i>.b 表示) */
 const FIELDS_BY_KIND: Record<string, readonly string[]> = {
@@ -167,41 +247,110 @@ const FIELDS_BY_KIND: Record<string, readonly string[]> = {
   D: ["translation", "ruby"],
 };
 
-export const labelOf = (c: Correction) =>
-  `${c.id} ${c.field}「${c.from}」→「${c.to}」`;
+const surfaceOf = (ruby: readonly RubySeg[]) => ruby.map((s) => s.b).join("");
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+export function labelOf(c: Correction): string {
+  switch (c.kind) {
+    case "field":
+      return `${c.id} ${c.field}「${c.from}」→「${c.to}」`;
+    case "dialogueTitle":
+      // 套用後 D id 遞補,原 id 已指向另一行:以課號標示,原 id 只作註記
+      return `L${pad2(c.lesson)} 会話標題「${surfaceOf(c.from.ruby)}」(原 ${c.from.id})→ dialogueTitle`;
+    default:
+      return unknownKind(c);
+  }
+}
+
+/** 一筆宣告的錯誤;key 用於偵測重複宣告 */
+interface Declaration {
+  where: string;
+  key: string;
+  errors: string[];
+}
+
+function fieldDeclaration(c: FieldCorrection): Declaration {
+  const errors: string[] = [];
+  const where = `${c.id} ${c.field}`;
+  const m = ID_RE.exec(c.id);
+  if (!m) {
+    errors.push(`${where}:id 格式不符`);
+  } else {
+    if (Number(m[1]) !== c.lesson) {
+      errors.push(`${where}:id 課號 ≠ lesson ${c.lesson}`);
+    }
+    const field = RUBY_B_RE.test(c.field) ? "ruby" : c.field;
+    if (!FIELDS_BY_KIND[m[2]].includes(field)) {
+      errors.push(`${where}:${m[2]} 沒有可修正的欄位 ${c.field}`);
+    }
+  }
+  if (c.from === "" || c.to === "") errors.push(`${where}:from/to 不得為空`);
+  if (c.from === c.to) errors.push(`${where}:from 與 to 相同`);
+  if (isSubstring(c) && c.from !== "" && c.to.includes(c.from)) {
+    errors.push(`${where}:子字串修正的 to 含 from,重跑不冪等`);
+  }
+  if (c.reason.trim() === "") errors.push(`${where}:缺 reason`);
+  const key = isSubstring(c) ? `${where}「${c.from}」` : where;
+  return { where, key, errors };
+}
+
+function titleDeclaration(c: DialogueTitleCorrection): Declaration {
+  const errors: string[] = [];
+  const where = `${c.from.id} 会話標題`;
+  const m = TITLE_ID_RE.exec(c.from.id);
+  if (!m) {
+    errors.push(`${where}:標題須為会話第一行 D01`);
+  } else if (Number(m[1]) !== c.lesson) {
+    errors.push(`${where}:id 課號 ≠ lesson ${c.lesson}`);
+  }
+  if (c.from.ruby.length === 0 || c.from.translation === "") {
+    errors.push(`${where}:ruby/translation 不得為空`);
+  }
+  if ("speaker" in c.from && !TITLE_SPEAKERS.has(c.from.speaker ?? "")) {
+    errors.push(
+      `${where}:speaker ${JSON.stringify(c.from.speaker)} 不是標題標記(應為「標題」「（標題）」或不寫 key)`,
+    );
+  }
+  if (c.reason.trim() === "") errors.push(`${where}:缺 reason`);
+  // 每課只有一段会話,至多一筆
+  return { where, key: `L${c.lesson} dialogueTitle`, errors };
+}
 
 /**
- * CORRECTIONS 的宣告錯誤(課號與 id、欄位與 id 種類、from/to、重複);空陣列 = 合法。
+ * CORRECTIONS 的宣告錯誤(課號與 id、欄位與 id 種類、from/to、重複、先後);空陣列 = 合法。
  * 同一欄位:整值只能宣告一筆;子字串可有多筆(from 不同),彼此干擾由 fixLesson 套用後的
- * 冪等核對攔下。
+ * 冪等核對攔下。会話標題修正會遞補同課的 D id,該課 D 的欄位修正須排在其後(id 以遞補後為準)。
  */
 export function validateCorrections(cs: readonly Correction[]): string[] {
   const errors: string[] = [];
   const seen = new Set<string>();
-  for (const c of cs) {
-    const where = `${c.id} ${c.field}`;
-    const key = isSubstring(c) ? `${where}「${c.from}」` : where;
-    const m = ID_RE.exec(c.id);
-    if (!m) {
-      errors.push(`${where}:id 格式不符`);
-    } else {
-      if (Number(m[1]) !== c.lesson) {
-        errors.push(`${where}:id 課號 ≠ lesson ${c.lesson}`);
-      }
-      const field = RUBY_B_RE.test(c.field) ? "ruby" : c.field;
-      if (!FIELDS_BY_KIND[m[2]].includes(field)) {
-        errors.push(`${where}:${m[2]} 沒有可修正的欄位 ${c.field}`);
-      }
+  cs.forEach((c, i) => {
+    let decl: Declaration;
+    switch (c.kind) {
+      case "field":
+        decl = fieldDeclaration(c);
+        break;
+      case "dialogueTitle":
+        decl = titleDeclaration(c);
+        break;
+      default:
+        return unknownKind(c);
     }
-    if (c.from === "" || c.to === "") errors.push(`${where}:from/to 不得為空`);
-    if (c.from === c.to) errors.push(`${where}:from 與 to 相同`);
-    if (isSubstring(c) && c.from !== "" && c.to.includes(c.from)) {
-      errors.push(`${where}:子字串修正的 to 含 from,重跑不冪等`);
+    errors.push(...decl.errors);
+    if (seen.has(decl.key)) errors.push(`${decl.where}:重複宣告`);
+    seen.add(decl.key);
+    if (
+      c.kind === "field" &&
+      ID_RE.exec(c.id)?.[2] === "D" &&
+      cs
+        .slice(i + 1)
+        .some((t) => t.kind === "dialogueTitle" && t.lesson === c.lesson)
+    ) {
+      errors.push(
+        `${decl.where}:排在同課的会話標題修正之前(標題修正會遞補 D id,D 的欄位修正須排在其後、id 以遞補後為準)`,
+      );
     }
-    if (c.reason.trim() === "") errors.push(`${where}:缺 reason`);
-    if (seen.has(key)) errors.push(`${where}:重複宣告`);
-    seen.add(key);
-  }
+  });
   return errors;
 }
 
@@ -273,9 +422,45 @@ function fieldStatus(lesson: Lesson, c: FieldCorrection): Status {
 const correctedValue = (cur: string, c: FieldCorrection) =>
   isSubstring(c) ? cur.replace(c.from, () => c.to) : c.to;
 
+/** 第 n 行会話的 id(自 D01 連號) */
+const dialogueId = (lesson: number, n: number) =>
+  `L${pad2(lesson)}-D${pad2(n)}`;
+/** 比對用:去掉值為 undefined 的 key(宣告與 JSON.parse 的結果一致) */
+const plain = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
+
+/**
+ * 会話標題:無 dialogueTitle 且会話第一行完全等於 from = 待套用;dialogueTitle 等於
+ * from 的 ruby 與 translation、D 自 01 連號、会話不含標題句 = 已套用;其他丟錯。
+ */
+function titleStatus(lesson: Lesson, c: DialogueTitleCorrection): Status {
+  const first = lesson.dialogues[0];
+  if (
+    lesson.dialogueTitle === undefined &&
+    first !== undefined &&
+    isDeepStrictEqual(plain(first), plain(c.from))
+  ) {
+    return "pending";
+  }
+  const title = { ruby: c.from.ruby, translation: c.from.translation };
+  const sameAsTitle = (d: Sentence) =>
+    isDeepStrictEqual(plain(d.ruby), plain(c.from.ruby)) &&
+    d.translation === c.from.translation;
+  if (
+    lesson.dialogueTitle !== undefined &&
+    isDeepStrictEqual(plain(lesson.dialogueTitle), plain(title)) &&
+    lesson.dialogues.every((d, i) => d.id === dialogueId(lesson.id, i + 1)) &&
+    !lesson.dialogues.some(sameAsTitle)
+  ) {
+    return "applied";
+  }
+  throw new Error(
+    `${labelOf(c)}:既非修正前(無 dialogueTitle、会話第一行完全等於 from)也非修正後(dialogueTitle 等於預期、D 自 01 連號、会話不含標題句),拒絕修改;dialogueTitle ${JSON.stringify(lesson.dialogueTitle)}、第一行 ${JSON.stringify(first)}`,
+  );
+}
+
 /** 新增修正種類時,各 switch 漏寫的 case 在這裡成為型別錯誤 */
-function unknownKind(kind: never): never {
-  throw new Error(`未知的修正種類:${String(kind)}`);
+function unknownKind(c: never): never {
+  throw new Error(`未知的修正種類:${JSON.stringify(c)}`);
 }
 
 /** 一筆修正在課程上的狀態;現值既非修正前也非修正後即丟錯 */
@@ -283,9 +468,113 @@ export function statusOf(lesson: Lesson, c: Correction): Status {
   switch (c.kind) {
     case "field":
       return fieldStatus(lesson, c);
+    case "dialogueTitle":
+      return titleStatus(lesson, c);
     default:
-      return unknownKind(c.kind);
+      return unknownKind(c);
   }
+}
+
+/** 物件第一層各屬性的行範圍:屬性首行為「欄位縮排 + `"key": `」,延續到下一個屬性之前 */
+function propertySpans(
+  lines: readonly string[],
+  span: ObjectSpan,
+): { key: string; start: number; end: number }[] {
+  const indent = `${/^ */.exec(lines[span.open])?.[0] ?? ""}  `;
+  const props: { key: string; start: number; end: number }[] = [];
+  for (let i = span.open + 1; i < span.close; i++) {
+    const m = /^"([^"\\]*)": /.exec(
+      lines[i].startsWith(indent) ? lines[i].slice(indent.length) : "",
+    );
+    if (m) props.push({ key: m[1], start: i, end: i });
+    else if (props.length > 0) props[props.length - 1].end = i;
+    else throw new Error(`第 ${i + 1} 行不是屬性開頭`);
+  }
+  return props;
+}
+
+/**
+ * 原文:剪下会話第一行物件,其 ruby 與 translation 屬性(原樣、內縮 2 格、依原順序)組成
+ * `"dialogueTitle": { … },` 插在 `"dialogues": [` 之前;其後各行的 id 依序改為 D01…。
+ * `oldIds` 為其後各行原本的 id。前提不符(不是 dialogues 的第一個元素、只有這一行、
+ * 缺屬性、縮排不符)即丟錯。
+ */
+function moveTitleLines(
+  lines: string[],
+  lesson: number,
+  c: DialogueTitleCorrection,
+  oldIds: readonly string[],
+): void {
+  const span = findObjectById(lines, c.from.id);
+  const list = /^( *)"dialogues": \[$/.exec(lines[span.open - 1] ?? "");
+  if (!list) throw new Error(`${c.from.id}:不是 dialogues 的第一個元素`);
+  if (!lines[span.close].endsWith(",")) {
+    throw new Error(`${c.from.id}:会話只有這一行,拒絕修改`);
+  }
+  const fieldIndent = `${/^ */.exec(lines[span.open])?.[0] ?? ""}  `;
+  const titleIndent = `${list[1]}  `;
+  const props = propertySpans(lines, span).filter(
+    (p) => p.key === "ruby" || p.key === "translation",
+  );
+  if (props.length !== 2) {
+    throw new Error(`${c.from.id}:找不到 ruby 與 translation 屬性`);
+  }
+  const body = props.flatMap((p, k) => {
+    const out = lines.slice(p.start, p.end + 1).map((line) => {
+      if (!line.startsWith(fieldIndent)) {
+        throw new Error(`${c.from.id}:縮排不符「${line}」`);
+      }
+      return titleIndent + line.slice(fieldIndent.length);
+    });
+    // 屬性間的逗號:最後一個屬性不帶
+    const last = out.length - 1;
+    out[last] = out[last].replace(/,$/, "") + (k < props.length - 1 ? "," : "");
+    return out;
+  });
+  lines.splice(span.open, span.close - span.open + 1);
+  lines.splice(
+    span.open - 1,
+    0,
+    `${list[1]}"dialogueTitle": {`,
+    ...body,
+    `${list[1]}},`,
+  );
+  // 依序遞補:前一行的舊 id 已讓出,不會與尚未改的 id 撞號(撞號時 findObjectById 丟錯)
+  oldIds.forEach((oldId, i) => {
+    const newId = dialogueId(lesson, i + 1);
+    if (oldId !== newId) {
+      replaceStringValue(
+        lines,
+        findObjectById(lines, oldId),
+        "id",
+        oldId,
+        newId,
+      );
+    }
+  });
+}
+
+/** 模型:第一行的 ruby 與 translation(保留原 key 順序)成為 dialogueTitle,插在 dialogues 前;其後各行 id 遞補 */
+function moveTitleModel(model: Lesson): void {
+  const [first, ...rest] = model.dialogues;
+  const title = Object.fromEntries(
+    Object.entries(first).filter(([k]) => k === "ruby" || k === "translation"),
+  );
+  rest.forEach((d, i) => {
+    d.id = dialogueId(model.id, i + 1);
+  });
+  const entries = Object.entries(model).flatMap(
+    ([k, v]): [string, unknown][] =>
+      k === "dialogues"
+        ? [
+            ["dialogueTitle", title],
+            ["dialogues", rest],
+          ]
+        : [[k, v]],
+  );
+  const target = model as Record<string, unknown>;
+  for (const k of Object.keys(target)) delete target[k];
+  Object.assign(target, Object.fromEntries(entries));
 }
 
 /** 套用一筆待套用的修正:原文行(手術式)與記憶體模型同步修改 */
@@ -299,8 +588,14 @@ function applyCorrection(lines: string[], model: Lesson, c: Correction): void {
       writeField(findTarget(model, c.id), c.field, next);
       return;
     }
+    case "dialogueTitle": {
+      const oldIds = model.dialogues.slice(1).map((d) => d.id);
+      moveTitleLines(lines, model.id, c, oldIds);
+      moveTitleModel(model);
+      return;
+    }
     default:
-      unknownKind(c.kind);
+      unknownKind(c);
   }
 }
 
@@ -371,7 +666,7 @@ export function fixLesson(
   const lesson = parseLesson(raw);
   const other = corrections.find((c) => c.lesson !== lesson.id);
   if (other) {
-    throw new Error(`${other.id}:不屬於第 ${lesson.id} 課`);
+    throw new Error(`${labelOf(other)}:不屬於第 ${lesson.id} 課`);
   }
 
   const lines = raw.split("\n");

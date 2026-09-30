@@ -4,10 +4,9 @@
  * 純函式:不讀檔、無副作用。`scripts/validate-content.ts`(pnpm validate:content)
  * 與 `scripts/content-lint.data.test.ts`(pnpm verify,對真實資料)共用。
  *
- * - error:違反即失敗(validate:content exit 1、資料測試失敗)。現存且已排定修正的
- *   命中列在 `PENDING_FIXES`(規則 → 精確 id):標為待修、不算失敗;清單中沒有命中、
- *   重複或不是 error 規則的項目也算失敗,避免成為永久漏洞。修正任務以「待修清單少了
- *   哪些 id」驗收。
+ * - error:違反即失敗(validate:content exit 1、資料測試失敗),沒有例外清單:命中時修正
+ *   資料(不需 PDF 者加進 scripts/fix-content.ts)或規則,不得豁免。T12.1 的待修清單
+ *   (PENDING_FIXES)已於 T12.4 修完最後的会話標題行後移除。
  * - warning:需人工判斷(多半要對照 PDF),只列出、永不影響結束碼。
  */
 import type { Lesson, LessonIndex, RubySeg } from "../src/schemas/lesson";
@@ -36,9 +35,6 @@ export interface LintRule {
   check: (ctx: LintContext) => LintIssue[];
 }
 
-/** 規則 id → 待修的內容 id(只適用 error 規則) */
-export type PendingFixes = Readonly<Record<string, readonly string[]>>;
-
 // ---------- 共用 ----------
 
 const pad = (n: number, width: number) => String(n).padStart(width, "0");
@@ -62,8 +58,15 @@ interface Line extends RubyItem {
 }
 
 const examplesOf = (l: Lesson): Line[] => l.grammar.flatMap((g) => g.examples);
-const sentencesOf = (l: Lesson): Line[] => [...examplesOf(l), ...l.dialogues];
-/** 所有帶 ruby 的項目:單字、文法例句、会話 */
+/** 会話標題沒有 id:以「L15:dialogueTitle」回報 */
+const dialogueTitleId = (l: Lesson) => `${lessonTag(l.id)}:dialogueTitle`;
+/** 帶中譯的句子:文法例句、会話標題(有標題的課才有)、会話 */
+const sentencesOf = (l: Lesson): Line[] => [
+  ...examplesOf(l),
+  ...(l.dialogueTitle ? [{ id: dialogueTitleId(l), ...l.dialogueTitle }] : []),
+  ...l.dialogues,
+];
+/** 所有帶 ruby 的項目:單字、文法例句、会話標題、会話 */
 const rubyItemsOf = (l: Lesson): RubyItem[] => [...l.vocab, ...sentencesOf(l)];
 
 /** ja = 日文;zh = 中文(釋義、解說、中譯);mixed = 中日混寫(note、文型) */
@@ -106,7 +109,7 @@ const eachLesson =
   (ctx: LintContext): LintIssue[] =>
     ctx.lessons.flatMap((l) => fn(l, ctx));
 
-/** 逐一檢查 ruby 段(單字、例句、会話) */
+/** 逐一檢查 ruby 段(單字、例句、会話標題、会話) */
 const eachSegment =
   (fn: (s: RubySeg) => string | null) =>
   (ctx: LintContext): LintIssue[] =>
@@ -280,7 +283,7 @@ const rubyRules: LintRule[] = [
   {
     id: "ruby-han-has-r",
     severity: "error",
-    description: "含漢字的 ruby 段必有讀音 r(單字、例句、会話)",
+    description: "含漢字的 ruby 段必有讀音 r(單字、例句、会話標題、会話)",
     check: eachSegment((s) =>
       HAN_RE.test(s.b) && s.r === undefined ? `${segText(s)} 缺 r` : null,
     ),
@@ -447,7 +450,8 @@ const posRules: LintRule[] = [
   {
     id: "dialogue-speaker",
     severity: "error",
-    description: "会話每行 speaker 非空,且不是標題標記(含「標題」)",
+    description:
+      "会話每行 speaker 非空,且不是標題標記(含「標題」;会話標題存 dialogueTitle)",
     check: eachLesson((l) =>
       l.dialogues
         .filter((d) => !d.speaker?.trim() || d.speaker.includes("標題"))
@@ -744,85 +748,35 @@ export const RULES: readonly LintRule[] = [
   ...warningRules,
 ];
 
-/**
- * 待修清單(2026-09-30 實測 11 id / 12 筆;T12.2 修正 L04-V050、L41-G04、L43-D08、
- * L48-V011 後剩 7 id / 7 筆;T12.3 修正 L47-V004..006 後剩 4 id / 4 筆)。修正任務每完成
- * 一項就刪掉對應 id:T12.4 刪会話標題行並移除本機制。
- */
-export const PENDING_FIXES: PendingFixes = {
-  "dialogue-speaker": ["L15-D01", "L23-D01", "L24-D01", "L41-D01"], // 会話標題行
-};
-
 // ---------- 執行與報告 ----------
 
 export interface RuleResult {
   rule: LintRule;
-  /** 失敗(error)或提醒(warning);不含待修 */
+  /** 失敗(error)或提醒(warning) */
   issues: LintIssue[];
-  /** 命中待修清單的 error */
-  pending: LintIssue[];
-}
-
-/** 待修清單的多餘項目與原因 */
-export interface StalePending {
-  rule: string;
-  id: string;
-  reason: string;
 }
 
 export interface LintResult {
   rules: RuleResult[];
-  /** 待修清單的多餘項目(已修好未刪、重複或不是 error 規則):算失敗 */
-  stalePending: StalePending[];
-  /** error 筆數 + stalePending;> 0 即失敗 */
+  /** error 筆數;> 0 即失敗 */
   errorCount: number;
-  pendingCount: number;
   warningCount: number;
 }
 
 export function lintContent(
   ctx: LintContext,
-  {
-    rules = RULES,
-    pending = PENDING_FIXES,
-  }: { rules?: readonly LintRule[]; pending?: PendingFixes } = {},
+  { rules = RULES }: { rules?: readonly LintRule[] } = {},
 ): LintResult {
-  const results = rules.map((rule): RuleResult => {
-    const all = rule.check(ctx);
-    const listed = new Set(
-      rule.severity === "error" ? (pending[rule.id] ?? []) : [],
-    );
-    return {
-      rule,
-      issues: all.filter((i) => !listed.has(i.id)),
-      pending: all.filter((i) => listed.has(i.id)),
-    };
-  });
-  const stalePending = Object.entries(pending).flatMap(([ruleId, ids]) => {
-    const result = results.find((r) => r.rule.id === ruleId);
-    const hits = new Set(result?.pending.map((i) => i.id));
-    return ids.flatMap((id, i): StalePending[] => {
-      const reason = !result
-        ? "沒有這條規則"
-        : result.rule.severity !== "error"
-          ? "不是 error 規則"
-          : ids.indexOf(id) !== i
-            ? "重複列出"
-            : hits.has(id)
-              ? null
-              : "沒有命中(已修好)";
-      return reason === null ? [] : [{ rule: ruleId, id, reason }];
-    });
-  });
+  const results = rules.map(
+    (rule): RuleResult => ({ rule, issues: rule.check(ctx) }),
+  );
   const count = (severity: Severity) =>
     results
       .filter((r) => r.rule.severity === severity)
       .reduce((n, r) => n + r.issues.length, 0);
   return {
     rules: results,
-    stalePending,
-    errorCount: count("error") + stalePending.length,
-    pendingCount: results.reduce((n, r) => n + r.pending.length, 0),
+    errorCount: count("error"),
     warningCount: count("warning"),
   };
 }
@@ -864,7 +818,7 @@ export function parseReportArgs(
 }
 
 /**
- * 分組報告:✗ error、⏳ 待修、⚠ warning,每條規則「N 筆 — 說明」與前 samples 筆;
+ * 分組報告:✗ error、⚠ warning,每條規則「N 筆 — 說明」與前 samples 筆;
  * all 或指定 rule 時列出完整清單(PDF 校讀用)。最後一行為總結。
  */
 export function formatReport(
@@ -896,23 +850,6 @@ export function formatReport(
       );
     }
   }
-  const stale = result.stalePending.filter(
-    (s) => rule === undefined || s.rule === rule,
-  );
-  if (stale.length > 0) {
-    block(
-      `✗ [待修清單] ${stale.length} 筆多餘 — 已修好、重複或不是 error 規則,須自 PENDING_FIXES 刪除`,
-      stale.map((s) => ({ id: s.id, message: `(${s.rule})${s.reason}` })),
-    );
-  }
-  for (const r of shown) {
-    if (r.pending.length > 0) {
-      block(
-        `⏳ [${r.rule.id}] 待修 ${r.pending.length} 筆 — ${r.rule.description}`,
-        r.pending,
-      );
-    }
-  }
   for (const r of shown) {
     if (r.rule.severity === "warning" && r.issues.length > 0) {
       block(
@@ -925,7 +862,6 @@ export function formatReport(
   // 指定 rule 時其他規則的 error 不列出,但仍影響結束碼:提示一行,免得失敗卻看不到原因
   const hidden =
     result.errorCount -
-    stale.length -
     shown
       .filter((r) => r.rule.severity === "error")
       .reduce((n, r) => n + r.issues.length, 0);
@@ -938,7 +874,7 @@ export function formatReport(
   lines.push(
     `${result.errorCount === 0 ? "✓" : "✗"} content-lint:error ${nRules("error")} 條` +
       (result.errorCount === 0 ? "全過" : ` ${result.errorCount} 筆未通過`) +
-      `(待修 ${result.pendingCount} 筆);warning ${nRules("warning")} 條 ${result.warningCount} 筆(不影響結束碼)`,
+      `;warning ${nRules("warning")} 條 ${result.warningCount} 筆(不影響結束碼)`,
   );
   return lines;
 }

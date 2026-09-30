@@ -46,7 +46,7 @@ PDF 皆含文字層,原規劃的 PyMuPDF + Claude Message Batches 改為下表(A
 | 文字層抽取 | `pdftotext -layout`(poppler) |
 | 結構化抽取 | Claude Code 依 `docs/PIPELINE.md` 慣例直抽為 JSON;讀音由使用者人工校讀 |
 | 重音回填 | `pnpm enrich:accents`(kanjium,`scripts/enrich-accents.ts`) |
-| 資料修正 | `pnpm fix:content`(`scripts/fix-content.ts`):不需 PDF 的修正以宣告式清單 `CORRECTIONS`(現值 from → 修正值 to + 理由)手術式寫回(`scripts/lib/rawJson.ts` 以 id 行定位物件、只換目標字串,不整檔重寫),冪等;`--check` 只列狀態,有待套用項 exit 1。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住 |
+| 資料修正 | `pnpm fix:content`(`scripts/fix-content.ts`):不需 PDF 的修正以宣告式清單 `CORRECTIONS`(現值 from → 修正值 to + 理由;另有会話標題行移入 `dialogueTitle` 並遞補 D id)手術式寫回(`scripts/lib/rawJson.ts` 以 id 行定位物件、只換目標字串,不整檔重寫),冪等;`--check` 只列狀態,有待套用項 exit 1。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住 |
 | 最終驗證 | `pnpm validate:content`(Zod,單一真相;通過後跑 content-lint `scripts/content-lint.ts`:error 規則失敗 exit 1,warning 只列出,`--all`/`--rule <id>` 印完整清單)。error 規則另由 `scripts/content-lint.data.test.ts` 在 `pnpm verify` 對真實資料執行 |
 
 ### 部署
@@ -100,7 +100,7 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── lessonHash.ts       # 課程內頁 URL hash:分頁與文法/單字錨點解析(純函式)
     │   ├── urlParams.ts        # app 查詢參數(/drill?upto=N&mode=particle)與 SW precache 查找時忽略的參數(sw.ts 共用)
     │   ├── vocabFilter.ts      # 課程頁単語的詞性篩選:13 種詞性併為 名詞/動詞/形容詞/其他(純函式)
-    │   ├── dialogue.ts         # 会話朗讀與角色扮演:標題行判定、說話者、播放步驟 speak/wait(純函式)
+    │   ├── dialogue.ts         # 会話朗讀與角色扮演:說話者、播放步驟 speak/wait(純函式;会話標題在 Lesson.dialogueTitle,不在 dialogues)
     │   ├── conjugate.ts        # 活用引擎:動詞/形容詞基本形與進階形(可能…使役、條件形)推導(例外表、排除清單)、各形導入文法點 FORM_INTRO(純函式)
     │   ├── conjugateExclusions.ts # 進階形的語意排除清單(id → 不練的形與理由;寧缺勿錯)
     │   ├── drill.ts            # 活用練習:出題池、依範圍開放的形、錯誤規則與易混淆形干擾項、出題與判分(純函式)

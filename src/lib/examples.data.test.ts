@@ -88,6 +88,39 @@ describe("語境例句 × 全部教材(T10.5)", () => {
   });
 });
 
+describe("会話標題(T12.4)", () => {
+  it("標題不是例句:移入 dialogueTitle 後,原配到標題的 3 字改配真正的台詞", () => {
+    // 原配到 L15-D01「ご家族は?」、L24-D01「手伝って くれますか」、L41-D01「荷物を 預かって いただけませんか」
+    const marked = (vocabId: string) => {
+      const m = lessons
+        .flatMap((l) => l.vocab.map((v) => ({ l, v })))
+        .find(({ v }) => v.id === vocabId);
+      const x = m && findExampleMatch(m.v, m.l);
+      if (!x) return null;
+      const t = text(x.sentence.ruby);
+      return `${x.sentence.id} ${x.kind} ${t.slice(0, x.start)}【${t.slice(x.start, x.end)}】${t.slice(x.end)}`;
+    };
+    expect(marked("L15-V025")).toBe("L15-D09 exact 木村さんの 【ご家族】は?");
+    expect(marked("L24-V001")).toBe(
+      "L24-D04 exact 山田さんと ミラーさんが 来て 【くれます】。",
+    );
+    expect(marked("L41-V036")).toBe(
+      "L41-D05 conjugated それで 申し訳ありませんが、【預かって】 おいて いただけませんか。",
+    );
+    const titles = new Set(
+      lessons.flatMap((l) =>
+        l.dialogueTitle ? [text(l.dialogueTitle.ruby)] : [],
+      ),
+    );
+    expect(titles.size).toBe(4);
+    expect(
+      pairs
+        .filter((p) => p.example !== null && titles.has(text(p.example.ruby)))
+        .map((p) => p.v.id),
+    ).toEqual([]);
+  });
+});
+
 describe("findExampleMatch × 全部教材(T11.8)", () => {
   it("與 findExampleSentence 選同一句;exact 的位置處恰為單字表面形", () => {
     for (const l of lessons) {

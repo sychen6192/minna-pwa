@@ -1306,37 +1306,35 @@ describe("LessonDetail 自我測驗與詞性篩選(T11.1)", () => {
 });
 
 describe("LessonDetail 会話朗讀與角色扮演(T11.2)", () => {
-  /** 含標題行(L24 寫法:speaker「標題」)與兩位說話者的会話 */
+  /** 有会話標題(dialogueTitle,L24)與兩位說話者的会話 */
   const dialogueLesson: Lesson = {
     ...sampleLesson,
     id: 24,
+    dialogueTitle: {
+      ruby: [{ b: "手伝", r: "てつだ" }, { b: "って くれますか" }],
+      translation: "可以幫我嗎",
+    },
     dialogues: [
       {
         id: "L24-D01",
-        speaker: "標題",
-        ruby: [{ b: "手伝", r: "てつだ" }, { b: "って くれますか" }],
-        translation: "可以幫我嗎",
-      },
-      {
-        id: "L24-D02",
         speaker: "カリナ",
         ruby: [{ b: "あした 引", r: "ひ" }, { b: "っ越しですね。" }],
         translation: "明天要搬家對吧。",
       },
       {
-        id: "L24-D03",
+        id: "L24-D02",
         speaker: "ワン",
         ruby: [{ b: "ありがとう ございます。" }],
         translation: "謝謝你。",
       },
       {
-        id: "L24-D04",
+        id: "L24-D03",
         speaker: "カリナ",
         ruby: [{ b: "車", r: "くるま" }, { b: "は?" }],
         translation: "車子呢?",
       },
       {
-        id: "L24-D05",
+        id: "L24-D04",
         speaker: "ワン",
         ruby: [{ b: "えーと……。" }],
         translation: "嗯……。",
@@ -1406,7 +1404,7 @@ describe("LessonDetail 会話朗讀與角色扮演(T11.2)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("標題行顯示為台詞上方的小標,不當說話者台詞;每句台詞有發音鈕(清理後的文字)", async () => {
+  it("会話標題(dialogueTitle)顯示為台詞上方的小標,不在台詞列表中;每句台詞有發音鈕(清理後的文字)", async () => {
     installVoice();
     const user = await openDialogue();
 
@@ -1414,8 +1412,9 @@ describe("LessonDetail 会話朗讀與角色扮演(T11.2)", () => {
     expect(heading).toHaveTextContent("手伝てつだって くれますか");
     expect(within(heading).getByText("手伝").closest("[lang]")).toHaveAttribute("lang", "ja");
     expect(screen.getByText("可以幫我嗎")).toBeInTheDocument();
-    // 「標題」不是說話者,標題不在台詞列表中、也不能扮演
-    expect(screen.queryByText("標題")).not.toBeInTheDocument();
+    // 標題不在台詞列表中(沒有說話者、沒有發音鈕)
+    expect(heading.closest("li")).toBeNull();
+    expect(screen.getByText("可以幫我嗎").closest("li")).toBeNull();
     expect(screen.getAllByRole("listitem")).toHaveLength(4);
 
     const buttons = screen.getAllByRole("button", { name: /^播放 .* 的台詞$/ });
@@ -1424,7 +1423,36 @@ describe("LessonDetail 会話朗讀與角色扮演(T11.2)", () => {
     expect(speak).toHaveBeenCalledWith("えーと。"); // …… 不送進 TTS
   });
 
-  it("全部播放:跳過標題依序朗讀,目前句高亮並捲入畫面,讀完回到待機", async () => {
+  it("隱藏中譯:標題的中譯同台詞可點擊揭示,揭示狀態各自獨立", async () => {
+    installVoice();
+    const user = await openDialogue();
+    await user.click(screen.getByRole("button", { name: "隱藏中譯" }));
+
+    expect(screen.queryByText("可以幫我嗎")).not.toBeInTheDocument();
+    // 標題 + 4 句台詞
+    expect(screen.getAllByRole("button", { name: "顯示中譯" })).toHaveLength(5);
+    const titleBlock = screen.getByRole("heading", { level: 2 }).parentElement as HTMLElement;
+    await user.click(within(titleBlock).getByRole("button", { name: "顯示中譯" }));
+    expect(within(titleBlock).getByText("可以幫我嗎")).toBeInTheDocument();
+    // 台詞的中譯仍遮住
+    expect(screen.queryByText("謝謝你。")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "顯示中譯" })).toHaveLength(4);
+  });
+
+  it("沒有会話標題的課:沒有小標,第一行照常是台詞(朗讀、扮演)", async () => {
+    const { spoken } = installVoice();
+    const { dialogueTitle: _omit, ...noTitle } = dialogueLesson;
+    void _omit;
+    const user = await openDialogue(noTitle);
+
+    expect(screen.queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
+    expect(screen.queryByText("可以幫我嗎")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(4);
+    await user.click(await screen.findByRole("button", { name: "全部播放" }));
+    expect(spoken()).toEqual(["あした 引っ越しですね。"]);
+  });
+
+  it("全部播放:標題不朗讀,台詞依序朗讀,目前句高亮並捲入畫面,讀完回到待機", async () => {
     const { spoken, finish } = installVoice();
     const user = await openDialogue();
 
@@ -1780,7 +1808,7 @@ describe("LessonDetail 会話朗讀與角色扮演(T11.2)", () => {
     await user.click(screen.getByRole("button", { name: "隱藏中譯" }));
 
     expect(screen.queryByText("謝謝你。")).not.toBeInTheDocument();
-    // 揭示鈕只剩標題與 カリナ 的兩句中譯,以及 ワン 的兩個台詞佔位
+    // 揭示鈕只剩標題(dialogueTitle)與 カリナ 的兩句中譯,以及 ワン 的兩個台詞佔位
     expect(screen.getAllByRole("button", { name: "顯示中譯" })).toHaveLength(3);
     // 中譯隱藏:佔位的名稱不帶中譯(不從名稱洩漏)
     const placeholders = screen.getAllByRole("button", { name: "顯示台詞" });

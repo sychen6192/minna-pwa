@@ -43,6 +43,36 @@ describe("fix-content × 真實資料", () => {
     expect(fix.text).toBe(raw);
   });
 
+  it("会話標題(T12.4):移入 dialogueTitle,新的 D01 是第一句台詞,台詞 11/11/11/12 行", () => {
+    const titled = CORRECTIONS.flatMap((c) =>
+      c.kind === "dialogueTitle" ? [c] : [],
+    );
+    expect(titled.map((c) => c.lesson)).toEqual([15, 23, 24, 41]);
+    for (const c of titled) {
+      const l = lessonOf(c.lesson);
+      expect(l.dialogueTitle, tagOf(c.lesson)).toEqual({
+        ruby: c.from.ruby,
+        translation: c.from.translation,
+      });
+      // 課程檔中 dialogueTitle 緊接在 dialogues 前
+      const keys = Object.keys(l);
+      expect(keys.indexOf("dialogueTitle"), tagOf(c.lesson)).toBe(
+        keys.indexOf("dialogues") - 1,
+      );
+    }
+    expect(
+      titled.map((c) => {
+        const d = lessonOf(c.lesson).dialogues;
+        return `${d[0].id} ${d[0].speaker} ${d.length}`;
+      }),
+    ).toEqual([
+      "L15-D01 ミラー 11",
+      "L23-D01 図書館の人 11",
+      "L24-D01 カリナ 11",
+      "L41-D01 ミラー 12",
+    ]);
+  });
+
   it("L43-D08 只改中譯:speaker 與日文 ruby 的渡辺不動", () => {
     const d = lessonOf(43).dialogues.find((x) => x.id === "L43-D08");
     expect(d?.speaker).toBe("渡辺");

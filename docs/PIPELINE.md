@@ -43,12 +43,13 @@ pdftotext -layout N.pdf  →  Claude Code 結構化 + ruby 對齊  →  寫 Lxx.
 
 - **50 課的 PDF 皆含「文法」段**(在「問題」之後)。`GrammarPoint.explanation` 仍設為**選填**(防禦性:若某課缺解說則可留空),但實務上每課都應填入該段中文解說。
 - `会話` 中譯為自譯(來源無中文);`vocab`/`grammar` 中文皆取自 PDF。
-- **資料修正**(2026-09-30,T12.2):不需對照 PDF 的修正(稽核 2026-09 §D)列在 `scripts/fix-content.ts` 的 `CORRECTIONS`(每筆宣告現值、修正值與理由),以 `pnpm fix:content` 手術式寫回;`pnpm fix:content --check` 只列狀態,有待套用項 exit 1。它是 DATA_MODEL §4-2 所說的 fixture、允許寫入 `public/data` 的來源(pipeline 側另有只寫 accent 行的 `enrich:accents` 與產生 index.json 的 `build:index`),修正一律加進清單、不得手改 JSON。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住:日後從 PDF 重新抽取而蓋回時測試失敗,重跑 `pnpm fix:content` 即復原;現值既非修正前也非修正後(資料已另被改動)時腳本報錯中止,需人工判斷。
+- **会話標題**(2026-09-30,T12.4):会話前的標題(如 L24「手伝って くれますか」)存於課層級的 `dialogueTitle`(ruby + 自譯中譯,置於 `dialogues` 前),**不當 `dialogues` 的第一行台詞**;`dialogues` 只收有說話者的台詞,D 自 `D01` 連號(content-lint error dialogue-speaker、id-sequence 把關)。每課只有一段会話,課層級一個欄位即足夠。舊抽取把 L15/L23/L24/L41 的標題放在 D01(speaker 為「標題」「（標題）」或缺漏),已由 `fix:content` 移出;其餘 46 課目前沒有 `dialogueTitle`(教材是否有標題需對照 PDF)。
+- **資料修正**(2026-09-30,T12.2):不需對照 PDF 的修正(稽核 2026-09 §D)列在 `scripts/fix-content.ts` 的 `CORRECTIONS`(每筆宣告現值、修正值與理由;種類有欄位值修正與「会話標題行移入 `dialogueTitle` 並遞補 D id」,T12.4),以 `pnpm fix:content` 手術式寫回;`pnpm fix:content --check` 只列狀態,有待套用項 exit 1。它是 DATA_MODEL §4-2 所說的 fixture、允許寫入 `public/data` 的來源(pipeline 側另有只寫 accent 行的 `enrich:accents` 與產生 index.json 的 `build:index`),修正一律加進清單、不得手改 JSON。每筆由 `scripts/fix-content.data.test.ts` 在 `pnpm verify` 釘住:日後從 PDF 重新抽取而蓋回時測試失敗,重跑 `pnpm fix:content` 即復原;現值既非修正前也非修正後(資料已另被改動)時腳本報錯中止,需人工判斷。
 - `ことば` 末段「請自行練習發音」:**收國家/地名等實詞**(アメリカ、韓国…);**略過虛構專有名詞**(校名/公司名/店名/機構名,如 IMC、さくら大学),因其僅為課文範例且常無假名讀音。
 
 ## 3. 驗收標準
 
-- `pnpm validate:content` 對 50 課 + index **全數通過**(Zod + content-lint error 規則 0 筆;`PENDING_FIXES` 以外沒有例外)
+- `pnpm validate:content` 對 50 課 + index **全數通過**(Zod + content-lint error 規則 0 筆,沒有例外清單)
 - content-lint warning 逐項對照 PDF 判斷(`--all` 清單),確認為教材原樣者保留、抽取錯誤者修正
 - 隨機抽 5 課與 PDF 人工對照:單字遺漏率 < 2%;**讀音錯誤零容忍**(發現即修正並記錄改進)
 

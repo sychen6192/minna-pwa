@@ -3,8 +3,8 @@
  * 掃描 public/data/** 全部 JSON,以 Zod schema(唯一真相)驗證。
  * 任一失敗即印出「檔案 + 欄位路徑 + 訊息」並以 exit code 1 結束(略過 content-lint)。
  *
- * 全數通過後執行 content-lint(scripts/content-lint.ts):error 規則有命中即 exit 1;
- * 待修(⏳)與 warning(⚠)只列出、不影響結束碼。預設每條規則只印前 5 筆,
+ * 全數通過後執行 content-lint(scripts/content-lint.ts):error 規則有命中即 exit 1(沒有例外清單);
+ * warning(⚠)只列出、不影響結束碼。預設每條規則只印前 5 筆,
  * --all 印全部規則的完整清單、--rule <id> 只印該規則的完整清單(PDF 校讀用)。
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
