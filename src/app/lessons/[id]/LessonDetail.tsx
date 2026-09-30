@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Check, Eye, EyeOff, Play, Plus, Square } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Eye, EyeOff, Play, Plus, Square } from "lucide-react";
 import { Loading } from "@/components/Loading";
 import { PitchAccent, hasPitch } from "@/components/PitchAccent";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
@@ -15,6 +15,7 @@ import { lessonTabHash, parseLessonHash, type LessonTab } from "@/lib/lessonHash
 import { displayNote, isSupplementary, noteSection, type VocabSection } from "@/lib/notes";
 import { kanaHeadword } from "@/lib/pitch";
 import { capNote } from "@/lib/queueNote";
+import { lessonHasReorder } from "@/lib/reorder";
 import {
   addCards,
   existingCardIds,
@@ -109,6 +110,8 @@ export function LessonDetail({ id }: { id: number }) {
   const headerRef = useRef<HTMLElement>(null);
   // 本課有可練的動詞/形容詞、且到本課已教過至少一種活用形:標頭給「活用練習」(範圍到本課)
   const [hasDrill, setHasDrill] = useState(false);
+  // 本課有可重組的例句/台詞(reorder.ts,純函式、體積小,靜態載入):標頭給「例句重組」
+  const hasReorder = useMemo(() => lesson !== null && lessonHasReorder(lesson), [lesson]);
 
   useEffect(() => {
     let active = true;
@@ -263,7 +266,8 @@ export function LessonDetail({ id }: { id: number }) {
     return <Loading />;
   }
 
-  const navLink = buttonVariants({ variant: "ghost", size: "sm", className: "gap-1 font-normal" });
+  // 上/下一課只用箭頭圖示(名稱在 aria-label):三個練習入口與箭頭在 375px 寬排得進一列
+  const navLink = buttonVariants({ variant: "ghost", size: "icon" });
 
   return (
     <div>
@@ -291,8 +295,8 @@ export function LessonDetail({ id }: { id: number }) {
             假名
           </Button>
         </div>
-        {/* 流程互連:本課測驗、活用練習、上/下一課(不必回列表找) */}
-        <nav aria-label="課程導覽" className="mt-2 flex flex-wrap items-center gap-2">
+        {/* 流程互連:本課測驗、活用練習、例句重組、上/下一課(不必回列表找) */}
+        <nav aria-label="課程導覽" className="mt-2 flex flex-wrap items-center gap-1.5">
           <Link
             href={`/quiz/${lesson.id}`}
             className={buttonVariants({ variant: "outline", size: "sm", className: "font-normal" })}
@@ -307,15 +311,34 @@ export function LessonDetail({ id }: { id: number }) {
               活用練習
             </Link>
           )}
-          <div className="ml-auto flex items-center">
+          {hasReorder && (
+            <Link
+              href={`/reorder/${lesson.id}`}
+              className={buttonVariants({ variant: "outline", size: "sm", className: "font-normal" })}
+            >
+              例句重組
+            </Link>
+          )}
+          {/* -mr-3:箭頭圖示對齊內容右緣(與「假名」鈕切齊),觸控區延伸到頁面留白 */}
+          <div className="-mr-3 ml-auto flex items-center">
             {lesson.id > 1 && (
-              <Link href={`/lessons/${lesson.id - 1}`} className={navLink}>
-                <span aria-hidden>‹</span>上一課
+              <Link
+                href={`/lessons/${lesson.id - 1}`}
+                aria-label="上一課"
+                title="上一課"
+                className={navLink}
+              >
+                <ChevronLeft className="size-5" aria-hidden />
               </Link>
             )}
             {lesson.id < LAST_LESSON && (
-              <Link href={`/lessons/${lesson.id + 1}`} className={navLink}>
-                下一課<span aria-hidden>›</span>
+              <Link
+                href={`/lessons/${lesson.id + 1}`}
+                aria-label="下一課"
+                title="下一課"
+                className={navLink}
+              >
+                <ChevronRight className="size-5" aria-hidden />
               </Link>
             )}
           </div>

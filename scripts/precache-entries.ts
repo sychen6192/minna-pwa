@@ -52,7 +52,8 @@ export function buildRouteEntries(lessonIds: number[], revision: string): Precac
     "/settings",
     "/quiz",
     "/drill",
-    ...lessonIds.flatMap((id) => [`/lessons/${id}`, `/quiz/${id}`]),
+    "/reorder",
+    ...lessonIds.flatMap((id) => [`/lessons/${id}`, `/quiz/${id}`, `/reorder/${id}`]),
   ];
   return routes.flatMap((route) => [
     { url: route, revision },

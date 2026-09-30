@@ -25,7 +25,7 @@ describe("QuizIndexPage 測驗選課入口", () => {
     expect(screen.getByText("〜が ほしいです")).toHaveAttribute("lang", "ja");
   });
 
-  it("頂端「練習」區塊:活用練習連到 /drill", async () => {
+  it("頂端「練習」區塊:活用練習連到 /drill、例句重組連到 /reorder", async () => {
     getLessonIndex.mockResolvedValue({ lessons: [] });
 
     render(<QuizIndexPage />);
@@ -37,6 +37,11 @@ describe("QuizIndexPage 測驗選課入口", () => {
     );
     // 說明中的日文術語標 lang="ja"
     expect(within(practice).getByText("て形")).toHaveAttribute("lang", "ja");
+    expect(within(practice).getByRole("link", { name: /例句重組/ })).toHaveAttribute(
+      "href",
+      "/reorder",
+    );
+    expect(within(practice).getByText("会話")).toHaveAttribute("lang", "ja");
     expect(screen.getByRole("heading", { name: "單字測驗" })).toBeInTheDocument();
     await screen.findByText("選擇一課開始測驗。");
   });

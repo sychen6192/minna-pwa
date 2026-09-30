@@ -20,6 +20,15 @@ const PRACTICES: { href: string; title: string; description: ReactNode }[] = [
       </>
     ),
   },
+  {
+    href: "/reorder",
+    title: "例句重組",
+    description: (
+      <>
+        看中譯,把課本例句與<span lang="ja">会話</span>的詞塊排回原句,依課練習
+      </>
+    ),
+  },
 ];
 
 /** 測驗入口:上方「練習」(活用練習等),下方選一課開始 10 題單字測驗(T7.4) */

@@ -76,6 +76,7 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── review/             # F2
     │   ├── quiz/[id]/          # F3(/quiz 頂端「練習」區塊連到各練習)
     │   ├── drill/              # F7.3 活用練習(/drill:範圍與形 → 10 題 → 結果;不寫入 DB)
+    │   ├── reorder/            # F7.4 例句重組(/reorder 選課、/reorder/[id]:至多 8 句 → 結果;不寫入 DB)
     │   ├── grammar/            # F4
     │   ├── stats/              # F5
     │   └── settings/           # F6
@@ -95,6 +96,7 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
     │   ├── conjugate.ts        # 活用引擎:動詞/形容詞基本形與進階形(可能…使役、條件形)推導(例外表、排除清單)、各形導入文法點 FORM_INTRO(純函式)
     │   ├── conjugateExclusions.ts # 進階形的語意排除清單(id → 不練的形與理由;寧缺勿錯)
     │   ├── drill.ts            # 活用練習:出題池、依範圍開放的形、錯誤規則與易混淆形干擾項、出題與判分(純函式)
+    │   ├── reorder.ts          # 例句重組:依分かち書き切塊(併回抽取痕跡的空格)、可否出題、各課出題池、固定首尾的打亂、以塊文字判分(純函式)
     │   ├── lang.ts             # isJapanese / jaLang:日文字串的 lang="ja" 判定(純函式)
     │   ├── queueNote.ts        # 今日佇列因每日上限而空時的說明(純函式;首頁、課程頁共用)
     │   ├── studyDay.ts         # 學習日(凌晨 4 點換日)與 ts-fsrs 時間平移(純函式)

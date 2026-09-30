@@ -446,8 +446,10 @@ describe("LessonDetail", () => {
     );
     expect(within(nav).getByRole("link", { name: "上一課" })).toHaveAttribute("href", "/lessons/12");
     expect(within(nav).getByRole("link", { name: "下一課" })).toHaveAttribute("href", "/lessons/14");
-    // 觸控區 ≥ 44px(buttonVariants size sm = h-11)
-    for (const link of within(nav).getAllByRole("link")) expect(link).toHaveClass("h-11");
+    // 觸控區 ≥ 44px(buttonVariants size sm = h-11;上/下一課為 size icon = size-11)
+    for (const link of within(nav).getAllByRole("link")) {
+      expect(link.className).toMatch(/(^|\s)(h|size)-11(\s|$)/);
+    }
     unmount();
 
     getLesson.mockResolvedValue({ ...sampleLesson, id: 1 });
@@ -464,6 +466,41 @@ describe("LessonDetail", () => {
     await screen.findByText("玩、遊玩");
     expect(screen.getByRole("link", { name: "上一課" })).toHaveAttribute("href", "/lessons/49");
     expect(screen.queryByRole("link", { name: "下一課" })).not.toBeInTheDocument();
+  });
+
+  it("標頭「例句重組」:本課有可重組的句子(3–8 塊)時連到 /reorder/[id],沒有則不給", async () => {
+    // sampleLesson 的例句與台詞都只有 2 塊:不給入口
+    getLesson.mockResolvedValue(sampleLesson);
+    const { unmount } = render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+    expect(screen.queryByRole("link", { name: "例句重組" })).not.toBeInTheDocument();
+    unmount();
+
+    getLesson.mockResolvedValue({
+      ...sampleLesson,
+      grammar: [
+        {
+          ...sampleLesson.grammar[0],
+          examples: [
+            {
+              id: "L13-S02",
+              ruby: [
+                { b: "わたしは " },
+                { b: "車", r: "くるま" },
+                { b: "が ほしいです。" },
+              ],
+              translation: "我想要車子。",
+            },
+          ],
+        },
+      ],
+    });
+    render(<LessonDetail id={13} />);
+    await screen.findByText("玩、遊玩");
+    const nav = screen.getByRole("navigation", { name: "課程導覽" });
+    const link = within(nav).getByRole("link", { name: "例句重組" });
+    expect(link).toHaveAttribute("href", "/reorder/13");
+    expect(link).toHaveClass("h-11");
   });
 
   it("切換到文型分頁:顯示文型、隱藏単語", async () => {
