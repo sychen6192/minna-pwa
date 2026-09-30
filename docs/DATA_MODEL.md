@@ -14,6 +14,8 @@
 | 文法例句 | `L{課號2位}-S{流水2位}` | `L13-S01` |
 | 会話句 | `L{課號2位}-D{流水2位}` | `L13-D01` |
 
+Zod 只檢查 V、G 的格式(S、D 是 `z.string()`);四種 id 的格式、課號前綴 = 所在課、全域唯一,以及 V/G/D 依陣列順序自 `V001`/`G01`/`D01` 連號,由 content-lint(`scripts/content-lint.ts` 的 error 規則 id-format、id-unique、id-sequence)把關。S 不要求連號(L01 補收的 `S12`–`S15` 編號接在 `S11` 之後、位置穿插在 G03/G06,L37 自 `S00` 起;S id 被程式與測試引用,不重編),由 warning sentence-id-order 列出。
+
 ### 1.2 Zod schema(實作基準)
 
 ```ts
@@ -226,3 +228,4 @@ settings 預設值(不預先寫入 DB:未設定的 key 由 `getSetting` / `getAl
    - 補充單字(T10.11):note 恰為「補充單字(自行練習發音)」的字為選學——整課加入不含(`addCards` 回傳實際新建的正向卡數,即「已加入 N 字」)、測驗不出題,但可單字加入並照常排程。各課進度不計補充單字:`lessonProgress` 的 `supplementary`(`getSupplementaryWords` 由課程 JSON 取得的各課補充單字 id)從總數、已加入、已學會中扣除,故整課加入後全部學會即「已完成」;單字加入的補充單字只計入 `supplementaryAdded`(只加了補充單字的課算「進行中」)。課程列表只載入已有卡片的課,統計頁載入全部課;讀不到的課退回 index 總數。
    - 階段分布:已會(暫停)優先;學習中 = Review 且最後一次評分為「重來」(long-term scheduler 答錯後仍為 Review;state Learning/Relearning 僅可能來自匯入的舊資料,同歸學習中);其餘 Review 依 stability 分未成熟 / 已成熟(≥ `MATURE_STABILITY` = 21 天)。
    - 頑固卡:`lapses ≥ LEECH_THRESHOLD`(4)且 stability < `MATURE_STABILITY`;`lapses` 只增不減,成熟即解除,再遺忘而 stability 掉回門檻下時再次列入。
+7. **content-lint error 規則全過**(2026-09-30 追加,T12.1):`scripts/content-lint.ts` 的 error 規則(課號與檔名、index 計數、id 格式/唯一/連號、ruby 讀音、字元衛生、日文近似字、kana 字元、詞性形狀、会話 speaker、中文字形)在真實資料上為 0 筆;由 `scripts/content-lint.data.test.ts` 在 `pnpm verify` 把關,`pnpm validate:content` 另印 warning(需人工判斷,不影響結束碼)。現存且已排定修正的命中列在 `PENDING_FIXES`(精確 id;清單有多餘項也算失敗),修正任務完成時同步刪除。

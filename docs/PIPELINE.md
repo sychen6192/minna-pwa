@@ -15,7 +15,7 @@
 ```
 pdftotext -layout N.pdf  →  Claude Code 結構化 + ruby 對齊  →  寫 Lxx.json
                                                                   ↓
-                              人工對照 PDF 校讀  ←  pnpm validate:content(Zod 嚴格)
+                              人工對照 PDF 校讀  ←  pnpm validate:content(Zod + content-lint)
 ```
 
 1. **抽文字**:`pdftotext -layout <PDF> -`。每課頁面區塊順序固定:
@@ -36,7 +36,7 @@ pdftotext -layout N.pdf  →  Claude Code 結構化 + ruby 對齊  →  寫 Lxx.
    - 濾掉頁尾雜訊(`課:13 (頁:1/9)` 之類)。
    - 單字/文法依教材原順序編號(id 穩定性是硬需求,見 DATA_MODEL §4)。
    - **不得**增刪、潤飾或「補完」教材內容;唯一例外是 `会話` 中譯(來源無)。
-4. **驗證**:`pnpm validate:content`(Zod,單一真相)。失敗即修。
+4. **驗證**:`pnpm validate:content`——先以 Zod(單一真相)驗證全部檔案與檔名,通過後執行 content-lint(`scripts/content-lint.ts`,規則見該檔 `RULES`)。Zod 或 content-lint **error**(id 格式/連號、ruby 讀音、字元衛生、日文近似字、詞性形狀、会話 speaker、中文字形等)失敗即修(exit 1);**warning**(kana 記號、kana 與 ruby 不一致、furigana 跨越記號、跨課重複、詞性不一致等)是需要對照 PDF 判斷的可疑項,只列出、不影響結束碼。預設每條規則只印前 5 筆;`pnpm validate:content --all` 印全部清單、`--rule <id>` 只印一條規則的完整清單,作為校讀清單。warning 清單由 `scripts/content-lint.data.test.ts` 以 id 釘住(ratchet),資料修正須在同一個 commit 更新。
 5. **索引**:50 課全數通過後,由腳本產生 `public/data/index.json`。
 
 ## 2. 已知特例
@@ -47,7 +47,8 @@ pdftotext -layout N.pdf  →  Claude Code 結構化 + ruby 對齊  →  寫 Lxx.
 
 ## 3. 驗收標準
 
-- `pnpm validate:content` 對 50 課 + index **全數通過**
+- `pnpm validate:content` 對 50 課 + index **全數通過**(Zod + content-lint error 規則 0 筆;`PENDING_FIXES` 以外沒有例外)
+- content-lint warning 逐項對照 PDF 判斷(`--all` 清單),確認為教材原樣者保留、抽取錯誤者修正
 - 隨機抽 5 課與 PDF 人工對照:單字遺漏率 < 2%;**讀音錯誤零容忍**(發現即修正並記錄改進)
 
 ## 4. 安全與版權

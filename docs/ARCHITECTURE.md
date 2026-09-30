@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TD
   A["50 份 PDF<br/>repo 外的本機資料夾(不入庫)"] --> B["抽取與結構化<br/>pdftotext -layout + Claude Code"]
-  B --> C["lessons JSON ×50 + index.json<br/>Zod 驗證(pnpm validate:content)"]
+  B --> C["lessons JSON ×50 + index.json<br/>Zod + content-lint(pnpm validate:content)"]
   C --> D["Git repo(private)"]
   D --> E["GitHub Actions → Cloudflare Pages<br/>(公開網址,noindex)"]
   E --> F["PWA:Next.js App Shell<br/>+ Serwist Service Worker"]
@@ -46,7 +46,7 @@ PDF 皆含文字層,原規劃的 PyMuPDF + Claude Message Batches 改為下表(A
 | 文字層抽取 | `pdftotext -layout`(poppler) |
 | 結構化抽取 | Claude Code 依 `docs/PIPELINE.md` 慣例直抽為 JSON;讀音由使用者人工校讀 |
 | 重音回填 | `pnpm enrich:accents`(kanjium,`scripts/enrich-accents.ts`) |
-| 最終驗證 | `pnpm validate:content`(Zod,單一真相) |
+| 最終驗證 | `pnpm validate:content`(Zod,單一真相;通過後跑 content-lint `scripts/content-lint.ts`:error 規則失敗 exit 1,warning 只列出,`--all`/`--rule <id>` 印完整清單)。error 規則另由 `scripts/content-lint.data.test.ts` 在 `pnpm verify` 對真實資料執行 |
 
 ### 部署
 
@@ -66,7 +66,8 @@ GitHub Actions(CI:verify + build;CD:Cloudflare Pages)。部署為公開網址,�
 │   ├── icons/
 │   └── manifest.json
 ├── scripts/
-│   ├── validate-content.ts     # pnpm validate:content
+│   ├── validate-content.ts     # pnpm validate:content(Zod + content-lint)
+│   ├── content-lint.ts         # 內容 lint 規則(純函式;validate:content 與資料測試共用)
 │   ├── build-index.ts          # pnpm build:index(index.json)
 │   ├── enrich-accents.ts       # pnpm enrich:accents(重音回填)
 │   └── precache-entries.ts     # SW precache 條目(/data/**、public/)
