@@ -1033,6 +1033,23 @@ export function drillableCounts(
   return out;
 }
 
+/**
+ * 一回合實際的題數(設定畫面的開始鈕):每個 (字, 形) 至多出一題,勾選中能推導的組數不足
+ * `count` 時為全部(同 makeDrillRound)
+ */
+export function drillRoundSize(
+  pool: readonly DrillItem[],
+  selection: DrillSelection,
+  count: number = DRILL_COUNT,
+): number {
+  let pairs = 0;
+  for (const item of pool) {
+    pairs += selectedFormsFor(item, selection).length;
+    if (pairs >= count) return count;
+  }
+  return pairs;
+}
+
 export interface MakeDrillRoundOptions {
   count?: number;
   rng?: Rng;

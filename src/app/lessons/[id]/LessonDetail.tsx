@@ -26,6 +26,7 @@ import {
 import { speakSequence, speechText } from "@/lib/tts";
 import { drillHref } from "@/lib/urlParams";
 import { useJaVoiceAvailable, useSetting, useTtsEnabled } from "@/lib/useSetting";
+import { tapGuarded } from "@/lib/useTapGuard";
 import { cn } from "@/lib/utils";
 import { countByPosGroup, filterByPosGroup, POS_FILTERS, type PosFilter } from "@/lib/vocabFilter";
 import type { Lesson, Sentence } from "@/schemas/lesson";
@@ -432,9 +433,6 @@ const ROW_TEXT_BUTTON = cn(
   ROW_BUTTON_FEEDBACK,
 );
 
-/** 列內換鈕後這段時間內忽略該列的點擊(同 /review 換卡後的點擊防護) */
-const ROW_CHANGE_GUARD_MS = 300;
-
 /** note 為段落標記的字:以小徽章標示出處,不當註解顯示(読み物/会話 為日文用語) */
 const SECTION_BADGES: Record<VocabSection, { label: string; lang?: "ja"; title?: string }> = {
   supplementary: { label: "補充", title: "補充單字(自行練習發音),不含於整課加入" },
@@ -573,7 +571,7 @@ function VocabList({
     noticeRef.current?.focus();
   }, [addAllResult]);
   // 列內的鈕會換成同一位置的另一顆(+ → 已會 → 已會·恢復):
-  // - 換鈕後 ROW_CHANGE_GUARD_MS 內忽略該列的點擊:連點兩下的第二下會落在新鈕上(剛加入就被標為已會)
+  // - 換鈕後 TAP_GUARD_MS(useTapGuard,同 /review 換卡後)內忽略該列的點擊:連點兩下的第二下會落在新鈕上(剛加入就被標為已會)
   // - 焦點原在鈕上(鍵盤操作)時,換鈕後交給同一列的新鈕,不掉到 body
   const listRef = useRef<HTMLUListElement>(null);
   const changedAt = useRef(new Map<string, number>());
@@ -591,7 +589,7 @@ function VocabList({
 
   async function rowAction(id: string, button: HTMLElement, action: () => Promise<void>) {
     const last = changedAt.current.get(id);
-    if (last !== undefined && Date.now() - last < ROW_CHANGE_GUARD_MS) return;
+    if (last !== undefined && tapGuarded(last)) return;
     changedAt.current.set(id, Date.now());
     if (document.activeElement === button) refocusId.current = id;
     try {

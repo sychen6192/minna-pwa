@@ -13,7 +13,9 @@ import {
   type ReorderChunk,
   type ReorderItem,
 } from "@/lib/reorder";
+import { BOTTOM_NAV_SCROLL_MARGIN, revealAboveNav } from "@/lib/scroll";
 import { speechText } from "@/lib/tts";
+import { tapGuarded, useShownAt } from "@/lib/useTapGuard";
 import { cn } from "@/lib/utils";
 
 export type ReorderOutcome = "correct" | "wrong" | "skipped";
@@ -29,16 +31,6 @@ const CHUNK_BUTTON = cn(
   CHUNK,
   "border-input bg-card transition-colors hover:bg-muted active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
 );
-
-/**
- * 換題、作答、移回後的點擊防護(同複習頁):雙擊時第二下會落在剛換到同一位置的鈕上
- * (確認 → 下一題、下一題 → 下一題的略過、答案列移回後滑過來的下一塊),此時間內忽略
- */
-export const TAP_GUARD_MS = 300;
-
-/** 確認/下一題捲入畫面(聚焦)時讓出固定的底部導覽列(4rem + safe-area) */
-const BOTTOM_SCROLL_MARGIN =
-  "scroll-mb-[calc(4rem_+_env(safe-area-inset-bottom))]";
 
 /** 點選後焦點的去處(按下的鈕會消失:移到下一個可點的塊,不掉到 body) */
 type FocusTarget =
@@ -86,18 +78,16 @@ export function ReorderQuestion({
   const nextRef = useRef<HTMLButtonElement>(null);
   const chips = useRef(new Map<string, HTMLButtonElement>());
   const pendingFocus = useRef<FocusTarget | null>(null);
-  // 題目出現/作答的時刻、上次移回的時刻(TAP_GUARD_MS)
-  const changedAt = useRef(0);
+  // 點擊防護(useTapGuard):題目出現/作答的時刻、上次移回的時刻。雙擊時第二下會落在剛換到
+  // 同一位置的鈕上(再練一次/下一題 → 新題的詞塊與略過、確認 → 下一題、移回後滑過來的下一塊)
+  const changedAt = useShownAt();
   const removedAt = useRef(0);
-  const guarded = (at: { current: number }) =>
-    Date.now() - at.current < TAP_GUARD_MS;
   const chipRef = (key: string) => (el: HTMLButtonElement | null) => {
     if (el) chips.current.set(key, el);
     else chips.current.delete(key);
   };
 
   useEffect(() => {
-    changedAt.current = Date.now();
     if (focusOnMount) promptRef.current?.focus({ preventScroll: true });
     // 只在掛載時(每題以 key 重新掛載)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,13 +100,18 @@ export function ReorderQuestion({
     if (target.area === "check") checkRef.current?.focus();
     else chips.current.get(`${target.area}-${target.chunk}`)?.focus();
   }, [placed]);
-  // 作答後答案列的鈕改為靜態、確認鈕卸載:焦點移到「下一題」
+  // 作答後答案列的鈕改為靜態、確認鈕卸載:焦點移到「下一題」(長句的回饋把它推到底部導覽列下時捲出來)
   useEffect(() => {
-    if (answered) nextRef.current?.focus();
+    const next = nextRef.current;
+    if (!answered || !next) return;
+    next.focus();
+    revealAboveNav(next);
   }, [answered]);
 
   function place(chunk: number) {
-    if (answered || placed.includes(chunk)) return;
+    if (answered || placed.includes(chunk) || tapGuarded(changedAt.current)) {
+      return;
+    }
     const next = [...placed, chunk];
     const pool = item.shuffled;
     const at = pool.indexOf(chunk);
@@ -131,7 +126,7 @@ export function ReorderQuestion({
   }
 
   function remove(position: number) {
-    if (answered || guarded(removedAt)) return;
+    if (answered || tapGuarded(removedAt.current)) return;
     removedAt.current = Date.now();
     const chunk = placed[position];
     const next = placed.filter((_, i) => i !== position);
@@ -159,12 +154,12 @@ export function ReorderQuestion({
   }
 
   function skip() {
-    if (guarded(changedAt)) return;
+    if (tapGuarded(changedAt.current)) return;
     answer("skipped");
   }
 
   function next() {
-    if (guarded(changedAt)) return;
+    if (tapGuarded(changedAt.current)) return;
     onNext();
   }
 
@@ -386,7 +381,7 @@ export function ReorderQuestion({
           <Button
             ref={nextRef}
             onClick={next}
-            className={cn("h-12 w-full", BOTTOM_SCROLL_MARGIN)}
+            className={cn("h-12 w-full", BOTTOM_NAV_SCROLL_MARGIN)}
           >
             {index + 1 >= total ? "看結果" : "下一題"}
           </Button>
@@ -403,7 +398,7 @@ export function ReorderQuestion({
               ref={checkRef}
               onClick={check}
               disabled={!complete}
-              className={cn("h-12 flex-[2]", BOTTOM_SCROLL_MARGIN)}
+              className={cn("h-12 flex-[2]", BOTTOM_NAV_SCROLL_MARGIN)}
             >
               確認
             </Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type MouseEvent } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { SpeakButton } from "@/components/SpeakButton";
@@ -12,8 +12,9 @@ import {
   type ReorderItem,
 } from "@/lib/reorder";
 import { speechText } from "@/lib/tts";
+import { useEntryClickGuard } from "@/lib/useTapGuard";
 import { cn } from "@/lib/utils";
-import { TAP_GUARD_MS, type ReorderOutcome } from "./ReorderQuestion";
+import type { ReorderOutcome } from "./ReorderQuestion";
 
 export interface ReorderResultItem {
   item: ReorderItem;
@@ -42,19 +43,11 @@ export function ReorderResult({
   const correct = results.length - missed.length;
   // 進結果頁時「看結果」鈕已卸載:焦點移到標題(不掉到 body),螢幕閱讀器從成績開始念
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const shownAt = useRef(0);
   useEffect(() => {
-    shownAt.current = Date.now();
     headingRef.current?.focus();
   }, []);
-  // 剛進結果頁(TAP_GUARD_MS 內)的點擊不觸發按鈕與連結(雙擊「看結果」的第二下不會再練一次或換課):
-  // capture 階段攔下,preventDefault 擋掉 <a> 的導覽、stopPropagation 擋掉 onClick
-  const guardClick = (e: MouseEvent) => {
-    if (Date.now() - shownAt.current < TAP_GUARD_MS) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  };
+  // 剛進結果頁(TAP_GUARD_MS 內)的點擊不觸發按鈕與連結(雙擊「看結果」的第二下不會再練一次或換課)
+  const guardClick = useEntryClickGuard();
 
   return (
     <div className="px-4 py-8" onClickCapture={guardClick}>

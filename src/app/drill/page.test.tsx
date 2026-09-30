@@ -11,6 +11,8 @@ import { StrictMode } from "react";
 import { afterEach, beforeEach, vi } from "vitest";
 import { db, setSetting, type CardRow } from "@/lib/db";
 import type { Lesson } from "@/schemas/lesson";
+import { freezeClock, passTapGuard, useSteppingClock } from "@/test/clock";
+import { coverByBottomNav } from "@/test/layout";
 import { clearDrillState } from "./drillState";
 import DrillPage from "./page";
 
@@ -172,6 +174,9 @@ async function start(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("DrillPage 設定:範圍", () => {
+  // 不測點擊防護:時鐘每讀一次前進 1 秒,換題/作答/進結果頁後的防護永遠不擋
+  useSteppingClock();
+
   it("預設為卡片中最大的課號(讀 db.cards)", async () => {
     await db.cards.bulkAdd([
       card("L05-V001", 5),
@@ -223,7 +228,7 @@ describe("DrillPage 設定:範圍", () => {
     expect(screen.getByRole("button", { name: /開始練習/ })).toBeDisabled();
   });
 
-  it("只開放範圍內已導入的形;未導入的形 disabled 並標示「第 N 課學」", async () => {
+  it("只開放範圍內已導入的形;未導入的形 disabled 並標示「第 N 課起」", async () => {
     window.history.replaceState(null, "", "/drill?upto=14");
     render(<DrillPage />);
     await rangeSelect();
@@ -234,10 +239,10 @@ describe("DrillPage 設定:範圍", () => {
     const nai = within(verbs).getByRole("button", { name: /ない形/ });
     expect(nai).toBeDisabled();
     expect(nai).toHaveAttribute("aria-pressed", "false");
-    expect(nai).toHaveTextContent("第 17 課學");
+    expect(nai).toHaveTextContent("第 17 課起");
     expect(
       within(verbs).getByRole("button", { name: /辞書形/ }),
-    ).toHaveTextContent("第 18 課學");
+    ).toHaveTextContent("第 18 課起");
     // 範圍內沒有形容詞(第 1–14 課的教材只有 書きます):形容詞的形不可選
     const adjs = screen.getByRole("group", { name: /^形容詞/ });
     await waitFor(() => expect(adjs).toHaveAccessibleName("形容詞 0 個"));
@@ -257,6 +262,8 @@ describe("DrillPage 設定:範圍", () => {
 });
 
 describe("DrillPage 設定:進階形(T11.5)", () => {
+  useSteppingClock();
+
   const ADVANCED = [
     ["可能形", 27],
     ["意向形", 31],
@@ -290,7 +297,7 @@ describe("DrillPage 設定:進階形(T11.5)", () => {
     locked.forEach((chip, i) => {
       expect(chip).toBeDisabled();
       expect(chip).toHaveAttribute("aria-pressed", "false");
-      expect(chip).toHaveTextContent(`第 ${ADVANCED[i][1]} 課學`);
+      expect(chip).toHaveTextContent(`第 ${ADVANCED[i][1]} 課起`);
     });
     // 鎖住的列沒有全選鈕
     const advRow = within(
@@ -301,7 +308,7 @@ describe("DrillPage 設定:進階形(T11.5)", () => {
     ).not.toBeInTheDocument();
     const adjAdv = chipsOf(/^形容詞/, "進階");
     expect(adjAdv).toHaveLength(1);
-    expect(adjAdv[0]).toHaveTextContent("條件形(〜ければ/〜なら)第 35 課學");
+    expect(adjAdv[0]).toHaveTextContent("條件形(〜ければ/〜なら)第 35 課起");
     expect(adjAdv[0]).toBeDisabled();
     // 基本形照常開放
     expect(
@@ -318,7 +325,7 @@ describe("DrillPage 設定:進階形(T11.5)", () => {
     ]) {
       expect(chip).toBeEnabled();
       expect(chip).toHaveAttribute("aria-pressed", "true");
-      expect(chip).not.toHaveTextContent(/課學/);
+      expect(chip).not.toHaveTextContent(/課起/);
     }
   });
 
@@ -354,6 +361,8 @@ describe("DrillPage 設定:進階形(T11.5)", () => {
 });
 
 describe("DrillPage 作答:進階形(T11.5)", () => {
+  useSteppingClock();
+
   it("可能形:題目標明答辞書形;選項含常見錯誤與易混淆的被動形;答錯連到 L27-G01", async () => {
     window.history.replaceState(null, "", "/drill?upto=50");
     const user = userEvent.setup();
@@ -477,12 +486,20 @@ describe("DrillPage 作答:進階形(T11.5)", () => {
 });
 
 describe("DrillPage 作答", () => {
+  useSteppingClock();
+
   it("選擇題答對:回饋、正解、朗讀、文法連結;結果頁", async () => {
     window.history.replaceState(null, "", "/drill?upto=14");
     const user = userEvent.setup();
     render(<DrillPage />);
     await rangeSelect();
     await onlyForms(user, /^動詞/, ["て形"]);
+    // 範圍內只有 書きます × て形 一組:開始鈕標實際題數(不是固定的 10 題)
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /開始練習/ }),
+      ).toHaveAccessibleName("開始練習(1 題)"),
+    );
     await start(user);
 
     expect(screen.getByText("第 1 / 1 題")).toBeInTheDocument();
@@ -581,6 +598,24 @@ describe("DrillPage 作答", () => {
     await user.click(screen.getByRole("button", { name: "作答" }));
     expect(screen.getByText("答對 ✓")).toBeInTheDocument();
     expect(input).toBeDisabled();
+  });
+
+  it("作答後「下一題」被固定的底部導覽列擋住時往下捲出來", async () => {
+    window.history.replaceState(null, "", "/drill?upto=14");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    await onlyForms(user, /^動詞/, ["否定(丁寧)", "て形"]);
+    const { scrollTo, restore } = coverByBottomNav("下一題");
+    try {
+      await start(user);
+      expect(scrollTo).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: ruby("書きません") }));
+      expect(screen.getByRole("button", { name: "下一題" })).toHaveFocus();
+      expect(scrollTo).toHaveBeenCalledWith({ top: window.scrollY + 40 });
+    } finally {
+      restore();
+    }
   });
 
   it("輸入題答錯:列出正解與你的答案", async () => {
@@ -706,6 +741,8 @@ describe("DrillPage 作答", () => {
 });
 
 describe("DrillPage 狀態", () => {
+  useSteppingClock();
+
   it("不寫入 SRS/DB:練完一回合後卡片、紀錄、進度皆不變", async () => {
     await db.cards.add(card("L14-V001", 14));
     const cards = await db.cards.toArray();
@@ -839,6 +876,79 @@ describe("DrillPage 狀態", () => {
   });
 });
 
+describe("DrillPage 活用:雙擊防護(換題、作答、進結果頁後 300ms 內的點擊忽略)", () => {
+  // 時鐘停住:防護由 passTapGuard 明確撥過
+  beforeEach(() => {
+    freezeClock();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("開始/再練一次後立刻點選項不作答;作答後立刻點「看結果」不換頁;結果頁剛出現時的點擊(換範圍、看文法、再練一次)不作用", async () => {
+    window.history.replaceState(null, "", "/drill?upto=14");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    await onlyForms(user, /^動詞/, ["て形"]);
+    await start(user);
+
+    // 開始鈕的第二下落在選項上:不作答
+    const status = screen.getByRole("status");
+    fireEvent.click(screen.getByRole("button", { name: ruby("書いて") }));
+    expect(status).toBeEmptyDOMElement();
+    expect(screen.getByRole("button", { name: ruby("書いて") })).toBeEnabled();
+
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: ruby("書きて") }));
+    expect(status).toHaveTextContent("答錯 ✗");
+    // 作答後立刻再點「看結果」:回饋留在畫面上
+    fireEvent.click(screen.getByRole("button", { name: "看結果" }));
+    expect(screen.getByText("第 1 / 1 題")).toBeInTheDocument();
+
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: "看結果" }));
+    const heading = screen.getByRole("heading", { name: "練習完成" });
+    // 「看結果」的第二下落在結果頁的按鈕或錯題的「看文法」上:都不作用
+    fireEvent.click(screen.getByRole("button", { name: "換範圍" }));
+    fireEvent.click(screen.getByRole("button", { name: "再練一次" }));
+    // fireEvent 回傳 false = 預設動作(連結導覽)被擋下
+    expect(
+      fireEvent.click(screen.getByRole("link", { name: "看文法:第 14 課" })),
+    ).toBe(false);
+    expect(heading).toBeInTheDocument();
+    expect(screen.getByText("0 / 1")).toBeInTheDocument();
+
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: "再練一次" }));
+    expect(screen.getByText("第 1 / 1 題")).toBeInTheDocument();
+    // 「再練一次」的第二下落在新題的選項上:不作答
+    fireEvent.click(screen.getByRole("button", { name: ruby("書きて") }));
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: ruby("書いて") }));
+    expect(screen.getByRole("status")).toHaveTextContent("答對 ✓");
+  });
+
+  it("作答後立刻點「下一題」不換題", async () => {
+    window.history.replaceState(null, "", "/drill?upto=14");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    await onlyForms(user, /^動詞/, ["否定(丁寧)", "て形"]);
+    await start(user);
+
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: ruby("書きません") }));
+    fireEvent.click(screen.getByRole("button", { name: "下一題" }));
+    expect(screen.getByText("第 1 / 2 題")).toBeInTheDocument();
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: "下一題" }));
+    expect(screen.getByText("第 2 / 2 題")).toBeInTheDocument();
+  });
+});
+
 describe("DrillPage 助詞搭配(T11.7)", () => {
   const L06: Lesson = {
     id: 6,
@@ -888,17 +998,12 @@ describe("DrillPage 助詞搭配(T11.7)", () => {
       ),
     );
     // 時鐘停住:換題/作答/進結果頁後的點擊防護(300ms)由 passTapGuard 明確撥過
-    vi.useFakeTimers({ toFake: ["Date"] });
+    freezeClock();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  /** 把時鐘撥過點擊防護 */
-  function passTapGuard() {
-    vi.setSystemTime(Date.now() + 1_000);
-  }
 
   const modeButton = (name: "活用" | "助詞") =>
     within(screen.getByRole("group", { name: "練習類型" })).getByRole(
@@ -1032,10 +1137,13 @@ describe("DrillPage 助詞搭配(T11.7)", () => {
       } else {
         await user.click(option(answer));
       }
-      // 作答後:空格填入正解、選項鎖住、焦點移到下一步
+      // 作答後:空格填入正解(螢幕閱讀器念的正解標日文)、選項鎖住、焦點移到下一步
       expect(
         document.querySelector("[aria-hidden].border-success"),
       ).toHaveTextContent(answer);
+      expect(
+        screen.getByText(answer, { selector: ".sr-only > span" }),
+      ).toHaveAttribute("lang", "ja");
       for (const b of options()) expect(b).toBeDisabled();
       const next = screen.getByRole("button", {
         name: i === 2 ? "看結果" : "下一題",
@@ -1108,6 +1216,28 @@ describe("DrillPage 助詞搭配(T11.7)", () => {
       );
     }
     expect(checked).toEqual(new Set(["吸います", "宿題"]));
+  });
+
+  it("作答後「下一題」被固定的底部導覽列擋住時往下捲出來", async () => {
+    window.history.replaceState(null, "", "/drill?upto=6&mode=particle");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    const startButton = await screen.findByRole("button", {
+      name: "開始練習(3 題)",
+    });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    const { scrollTo, restore } = coverByBottomNav("下一題");
+    try {
+      await user.click(startButton);
+      expect(scrollTo).not.toHaveBeenCalled();
+      passTapGuard();
+      await user.click(option(currentAnswer()));
+      expect(screen.getByRole("button", { name: "下一題" })).toHaveFocus();
+      expect(scrollTo).toHaveBeenCalledWith({ top: window.scrollY + 40 });
+    } finally {
+      restore();
+    }
   });
 
   it("雙擊防護:換題後 300ms 內點選項不作答;作答後 300ms 內點「下一題」不換題;結果頁同", async () => {

@@ -6,6 +6,7 @@ import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { queueCounts, requeueWrong, type RequeueResult } from "@/lib/srs";
 import type { QuizCandidate } from "@/lib/quiz";
+import { useEntryClickGuard } from "@/lib/useTapGuard";
 
 export interface QuizResultItem {
   card: QuizCandidate;
@@ -66,6 +67,9 @@ export function QuizResult({
   useEffect(() => {
     headingRef.current?.focus();
   }, []);
+  // 剛進結果頁(TAP_GUARD_MS 內)的點擊不觸發按鈕與連結:雙擊「看結果」的第二下不會
+  // 再測一次、換到下一課或把錯題加入複習(結果只在記憶體,離開就看不到)
+  const guardClick = useEntryClickGuard();
   // 同步防重入(state 要等重繪才生效)
   const submitting = useRef(false);
 
@@ -93,7 +97,7 @@ export function QuizResult({
   const requeueLocked = busy || outcome !== null;
 
   return (
-    <div className="px-4 py-8">
+    <div className="px-4 py-8" onClickCapture={guardClick}>
       <h1 ref={headingRef} tabIndex={-1} className="text-center text-lg font-bold outline-none">
         測驗完成
       </h1>

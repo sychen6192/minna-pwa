@@ -24,8 +24,10 @@ import {
   type QuestionType,
   type QuizCandidate,
 } from "@/lib/quiz";
+import { BOTTOM_NAV_SCROLL_MARGIN, revealAboveNav } from "@/lib/scroll";
 import { cancelSpeech, speak } from "@/lib/tts";
 import { useJaVoiceAvailable, useTtsEnabled } from "@/lib/useSetting";
+import { tapGuarded } from "@/lib/useTapGuard";
 import { cn } from "@/lib/utils";
 import type { Lesson } from "@/schemas/lesson";
 import { QuizResult } from "./QuizResult";
@@ -57,28 +59,6 @@ const TYPE_PROMPTS: Readonly<Record<QuestionType, string>> = {
 
 /** 例句填空的句子超過此字數時縮小字級 */
 const LONG_CLOZE_CHARS = 30;
-
-/**
- * 題目出現(開始測驗、再測一次、下一題)後這段時間內點選項不作答:雙擊「開始測驗」/「下一題」的
- * 第二下會落在新題的選項上(同例句重組、助詞練習、複習頁的點擊防護)
- */
-const TAP_GUARD_MS = 300;
-
-/** 「下一題」捲入畫面時讓出固定的底部導覽列(4rem + safe-area) */
-const NEXT_SCROLL_MARGIN =
-  "scroll-mb-[calc(4rem_+_env(safe-area-inset-bottom))]";
-
-/**
- * 元素被固定的底部導覽列擋住(長句填空在小螢幕上把「下一題」推到導覽列下)時往下捲,
- * 讓出它的 scroll-margin-bottom。不用 scrollIntoView({ block: "nearest" }):Chromium 只看元素
- * 本身是否在視窗內,被導覽列擋住時不會捲動(同課程頁会話的 scrollIntoViewNearest)。
- */
-function revealAboveNav(el: HTMLElement) {
-  const margin = parseFloat(getComputedStyle(el).scrollMarginBottom) || 0;
-  const hidden =
-    el.getBoundingClientRect().bottom - (window.innerHeight - margin);
-  if (hidden > 0) window.scrollTo({ top: window.scrollY + hidden });
-}
 
 type Phase = "loading" | "error" | "setup" | "quiz" | "done";
 
@@ -147,7 +127,8 @@ export function QuizRunner({ id }: { id: number }) {
   const nextRef = useRef<HTMLButtonElement>(null);
   const stemRef = useRef<HTMLDivElement>(null);
   const focusStem = useRef(false);
-  // 題目出現的時刻(TAP_GUARD_MS)
+  // 題目出現的時刻(點擊防護:開始測驗、再測一次、下一題時在點擊內記下;雙擊的第二下
+  // 落在新題的選項上不作答)
   const shownAt = useRef(0);
   const answered =
     phase === "quiz" && questions[index] !== undefined
@@ -295,7 +276,7 @@ export function QuizRunner({ id }: { id: number }) {
   }
 
   function selectOption(option: McqQuestion["options"][number]) {
-    if (selectedId !== null || Date.now() - shownAt.current < TAP_GUARD_MS) {
+    if (selectedId !== null || tapGuarded(shownAt.current)) {
       return;
     }
     setSelectedId(option.id);
@@ -417,7 +398,7 @@ export function QuizRunner({ id }: { id: number }) {
           ref={nextRef}
           onClick={next}
           disabled={!answered}
-          className={cn("h-12 w-full", NEXT_SCROLL_MARGIN)}
+          className={cn("h-12 w-full", BOTTOM_NAV_SCROLL_MARGIN)}
         >
           {index + 1 >= questions.length ? "看結果" : "下一題"}
         </Button>
@@ -505,16 +486,18 @@ function QuizSetup({
             );
           })}
         </div>
+        {/* mt-3.5:「設定」連結的觸控區上下各伸出 14px,不蓋到上方的題型鈕 */}
         <p
           id={listenHintId}
-          className="mt-2 text-xs text-muted-foreground empty:hidden"
+          className="mt-3.5 text-xs text-muted-foreground empty:hidden"
         >
           {listen === "tts-off" ? (
             <>
               聽力題需要開啟發音(
+              {/* 觸控區 44px:負 margin 抵銷,不撐高這行小字 */}
               <Link
                 href="/settings"
-                className="text-link underline underline-offset-4"
+                className="-mx-1 -my-3.5 inline-flex min-h-11 items-center px-1 text-link underline underline-offset-4"
               >
                 設定
               </Link>

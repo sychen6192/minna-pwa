@@ -205,6 +205,17 @@ describe("acceptedAnswers / checkAnswer(教材表記,T10.4)", () => {
     expect(checkAnswer("seisenn", sensei)).toBe(false);
   });
 
+  it("促音 + ch 以平文式「tch」打亦可(出張 shutchou、こっち kotchi),cch 照常", () => {
+    const shutchou = word([{ b: "出張", r: "しゅっちょう" }], "しゅっちょう");
+    for (const input of ["shutchou", "shucchou", "SHUTCHOU", "しゅっちょう"]) {
+      expect(checkAnswer(input, shutchou), input).toBe(true);
+    }
+    const kotchi = word([{ b: "こっち" }], "こっち");
+    expect(checkAnswer("kotchi", kotchi)).toBe(true);
+    // 漏打促音仍判錯
+    expect(checkAnswer("shuchou", shutchou)).toBe(false);
+  });
+
   it("多個可省略段展開所有組合;〜…段、「〜を」語境與同讀音並列不成為答案", () => {
     expect(
       acceptedAnswers(

@@ -10,6 +10,7 @@ import {
   grammarHref,
   grammarLinks,
 } from "@/lib/drill";
+import { useEntryClickGuard } from "@/lib/useTapGuard";
 import { markLeftForGrammar, type DrillResultItem } from "./drillState";
 
 /** 一回合的結果:分數、錯題(基底 → 正解、所問的形、作答內容、文法連結);不寫入 SRS */
@@ -36,9 +37,12 @@ export function DrillResult({
   useEffect(() => {
     headingRef.current?.focus();
   }, []);
+  // 剛進結果頁(TAP_GUARD_MS 內)的點擊不觸發按鈕與連結:雙擊「看結果」的第二下不會落在
+  // 換範圍/再練一次或錯題的「看文法」上(結果只在記憶體,換範圍就看不到)
+  const guardClick = useEntryClickGuard();
 
   return (
-    <div className="px-4 py-8">
+    <div className="px-4 py-8" onClickCapture={guardClick}>
       <h1
         ref={headingRef}
         tabIndex={-1}

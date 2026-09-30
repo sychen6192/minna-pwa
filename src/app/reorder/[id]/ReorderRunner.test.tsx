@@ -11,6 +11,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, vi } from "vitest";
 import { db, setSetting } from "@/lib/db";
 import { LessonSchema, type Lesson, type Sentence } from "@/schemas/lesson";
+import { freezeClock, passTapGuard, useSteppingClock } from "@/test/clock";
+import { coverByBottomNav } from "@/test/layout";
 import { ReorderRunner } from "./ReorderRunner";
 
 vi.mock("next/link", () => ({
@@ -88,19 +90,12 @@ beforeEach(async () => {
   await setSetting("furigana", "hide");
   // 出題順序固定:Fisher–Yates 的 j 恆等於 i(洗牌 = 原順序);題目的打亂洗出原順序時改為左移一位
   vi.spyOn(Math, "random").mockReturnValue(0.99);
-  // 時鐘停住:換題/作答/移回後的點擊防護(300ms)由 passTapGuard 明確撥過
-  vi.useFakeTimers({ toFake: ["Date"] });
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
-
-/** 把時鐘撥過點擊防護(換題、作答、移回、進結果頁後 300ms) */
-function passTapGuard() {
-  vi.setSystemTime(Date.now() + 1_000);
-}
 
 /**
  * 含 ruby 的按鈕名稱:jsdom 把 <ruby> 當成非行內元素,名稱會在漢字段前後多出空白,
@@ -136,6 +131,9 @@ const S06_ORDER = [
 ];
 
 describe("ReorderRunner 題目", () => {
+  // 不測點擊防護:時鐘每讀一次前進 1 秒,防護永遠不擋
+  useSteppingClock();
+
   it("題幹為中譯;詞塊打亂後放在待選區,答案列有同數量的空格", async () => {
     render(<ReorderRunner id={36} />);
     expect(
@@ -251,13 +249,34 @@ describe("ReorderRunner 題目", () => {
     );
   });
 
+  it("答錯後「下一題」被固定的底部導覽列擋住(長句的回饋把它推下去)時往下捲出來", async () => {
+    const user = userEvent.setup();
+    render(<ReorderRunner id={36} />);
+    await screen.findByText("長胖了、喜歡的衣服都穿不下了。");
+    const { scrollTo, restore } = coverByBottomNav("下一題");
+    try {
+      await place(user, [
+        "太りましたから、",
+        "服が",
+        "好きな",
+        "着られなく",
+        "なりました。",
+      ]);
+      expect(scrollTo).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "確認" }));
+      expect(screen.getByRole("button", { name: "下一題" })).toHaveFocus();
+      expect(scrollTo).toHaveBeenCalledWith({ top: window.scrollY + 40 });
+    } finally {
+      restore();
+    }
+  });
+
   it("略過:不必排完,顯示教材原句後進下一題", async () => {
     const user = userEvent.setup();
     render(<ReorderRunner id={36} />);
     await screen.findByText("長胖了、喜歡的衣服都穿不下了。");
 
     await place(user, ["好きな"]);
-    passTapGuard();
     await user.click(screen.getByRole("button", { name: "略過" }));
     const status = screen.getByRole("status");
     expect(within(status).getByText("已略過")).toBeInTheDocument();
@@ -268,7 +287,6 @@ describe("ReorderRunner 題目", () => {
       screen.queryByRole("list", { name: "你的答案" }),
     ).not.toBeInTheDocument();
 
-    passTapGuard();
     await user.click(screen.getByRole("button", { name: "下一題" }));
     expect(
       await screen.findByText("對不起,請你告訴我這個漢字的念法。"),
@@ -319,7 +337,6 @@ describe("ReorderRunner 題目", () => {
     await user.keyboard("{Enter}");
     expect(answerChip("着られなく")).toHaveFocus();
     // 移回唯一的一塊 → 焦點到待選區中的這一塊
-    passTapGuard();
     await user.keyboard("{Enter}");
     expect(poolChip("着られなく")).toHaveFocus();
 
@@ -338,7 +355,6 @@ describe("ReorderRunner 題目", () => {
     await screen.findByText("長胖了、喜歡的衣服都穿不下了。");
     expect(within(pool()).getByText("ふと").tagName).toBe("RT");
 
-    passTapGuard();
     await user.click(screen.getByRole("button", { name: "略過" }));
     expect(
       within(screen.getByRole("status")).getByText("教材原句"),
@@ -350,10 +366,16 @@ describe("ReorderRunner 題目", () => {
 });
 
 describe("ReorderRunner 雙擊防護(換題、作答、移回、進結果頁後 300ms 內的點擊忽略)", () => {
+  // 時鐘停住:防護由 passTapGuard 明確撥過
+  beforeEach(() => {
+    freezeClock();
+  });
+
   it("確認後立刻再點(落在「下一題」上)不換題,回饋留在畫面上", async () => {
     const user = userEvent.setup();
     render(<ReorderRunner id={36} />);
     await screen.findByText("長胖了、喜歡的衣服都穿不下了。");
+    passTapGuard();
     await place(user, S06_ORDER);
 
     fireEvent.click(screen.getByRole("button", { name: "確認" }));
@@ -399,6 +421,7 @@ describe("ReorderRunner 雙擊防護(換題、作答、移回、進結果頁後 
     const user = userEvent.setup();
     render(<ReorderRunner id={36} />);
     await screen.findByText("長胖了、喜歡的衣服都穿不下了。");
+    passTapGuard();
     await place(user, ["太りましたから、", "好きな", "服が"]);
     const answerTexts = () =>
       within(answerRow())
@@ -419,6 +442,7 @@ describe("ReorderRunner 雙擊防護(換題、作答、移回、進結果頁後 
     const user = userEvent.setup();
     render(<ReorderRunner id={36} />);
     await screen.findByText("長胖了、喜歡的衣服都穿不下了。");
+    passTapGuard();
     await place(user, S06_ORDER);
     await user.click(screen.getByRole("button", { name: "確認" }));
     passTapGuard();
@@ -439,9 +463,38 @@ describe("ReorderRunner 雙擊防護(換題、作答、移回、進結果頁後 
       await screen.findByText("長胖了、喜歡的衣服都穿不下了。"),
     ).toBeInTheDocument();
   });
+
+  it("換題後立刻點詞塊不排入(雙擊「下一題」/「再練一次」的第二下落在新題的詞塊上)", async () => {
+    getLesson.mockResolvedValue(lessonWith(36, [S06]));
+    const user = userEvent.setup();
+    render(<ReorderRunner id={36} />);
+    await screen.findByText("長胖了、喜歡的衣服都穿不下了。");
+    // 題目剛出現(時鐘未前進)
+    fireEvent.click(poolChip("好きな"));
+    expect(within(answerRow()).queryAllByRole("button")).toHaveLength(0);
+
+    passTapGuard();
+    await place(user, S06_ORDER);
+    await user.click(screen.getByRole("button", { name: "確認" }));
+    passTapGuard();
+    await user.click(screen.getByRole("button", { name: "看結果" }));
+    await screen.findByRole("heading", { name: "練習完成" });
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: "再練一次" }));
+    await screen.findByText("第 1 / 1 題");
+    fireEvent.click(poolChip("好きな"));
+    expect(within(answerRow()).queryAllByRole("button")).toHaveLength(0);
+    expect(poolChip("好きな")).toBeInTheDocument();
+
+    passTapGuard();
+    fireEvent.click(poolChip("好きな"));
+    expect(answerChip("好きな")).toBeInTheDocument();
+  });
 });
 
 describe("ReorderRunner 結果", () => {
+  useSteppingClock();
+
   it("分數、答錯與略過的句子(教材原句與中譯)、再練一次、下一課", async () => {
     const user = userEvent.setup();
     render(<ReorderRunner id={36} />);
@@ -456,12 +509,9 @@ describe("ReorderRunner 結果", () => {
       "なりました。",
     ]);
     await user.click(screen.getByRole("button", { name: "確認" }));
-    passTapGuard();
     await user.click(screen.getByRole("button", { name: "下一題" }));
     await screen.findByText("對不起,請你告訴我這個漢字的念法。");
-    passTapGuard();
     await user.click(screen.getByRole("button", { name: "略過" }));
-    passTapGuard();
     await user.click(screen.getByRole("button", { name: "看結果" }));
 
     const heading = await screen.findByRole("heading", { name: "練習完成" });
@@ -480,7 +530,6 @@ describe("ReorderRunner 結果", () => {
       "太りましたから、好きな 服が 着られなく なりました。",
     );
     expect(within(items[1]).getByText("略過")).toBeInTheDocument();
-    passTapGuard();
     await user.click(
       within(items[1]).getByRole("button", { name: /播放例句發音/ }),
     );
@@ -498,7 +547,6 @@ describe("ReorderRunner 結果", () => {
     );
 
     // 再練一次:同一課重新出題,焦點移到題幹
-    passTapGuard();
     await user.click(screen.getByRole("button", { name: "再練一次" }));
     expect(
       await screen.findByText("長胖了、喜歡的衣服都穿不下了。"),
@@ -514,7 +562,6 @@ describe("ReorderRunner 結果", () => {
     await screen.findByText("長胖了、喜歡的衣服都穿不下了。");
     await place(user, S06_ORDER);
     await user.click(screen.getByRole("button", { name: "確認" }));
-    passTapGuard();
     await user.click(screen.getByRole("button", { name: "看結果" }));
 
     expect(await screen.findByText("1 / 1")).toBeInTheDocument();

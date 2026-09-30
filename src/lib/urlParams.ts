@@ -13,11 +13,15 @@ export const MODE_PARAM = "mode";
 /** /drill 的練習類型:活用、助詞搭配 */
 export type DrillMode = "conj" | "particle";
 
+/** 文法速查的搜尋字串(/grammar?q=…,打字後以 replaceState 寫回,返回時還原) */
+export const GRAMMAR_QUERY_PARAM = "q";
+
 /** SW precache 比對時忽略的參數:App Router 客端導覽抓 RSC payload 的 ?_rsc=<hash>,與 app 參數 */
 export const PRECACHE_IGNORED_URL_PARAMS: readonly RegExp[] = [
   /^_rsc$/,
   new RegExp(`^${UPTO_PARAM}$`),
   new RegExp(`^${MODE_PARAM}$`),
+  new RegExp(`^${GRAMMAR_QUERY_PARAM}$`),
 ];
 
 /** /drill 的查詢字串:範圍(null = 不指定)與類型(活用為預設,不寫出);都沒有時為空字串 */

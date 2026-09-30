@@ -14,7 +14,9 @@ import {
   type DrillOption,
   type DrillQuestion,
 } from "@/lib/drill";
+import { BOTTOM_NAV_SCROLL_MARGIN, revealAboveNav } from "@/lib/scroll";
 import { speechText } from "@/lib/tts";
+import { tapGuarded, useShownAt } from "@/lib/useTapGuard";
 import { cn } from "@/lib/utils";
 import type { RubySeg } from "@/schemas/lesson";
 import { markLeftForGrammar, type DrillAnswer } from "./drillState";
@@ -47,6 +49,10 @@ export function DrillQuestionView({
   // 作答後被選的選項/輸入框會 disabled(焦點掉到 body)→ 移到「下一題」
   const stemRef = useRef<HTMLDivElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
+  // 點擊防護(useTapGuard,同助詞搭配):題目出現、作答的時刻。雙擊「下一題」/「再練一次」的
+  // 第二下不會落在新題的選項上,作答後連點也不會直接跳過回饋
+  const shownAt = useShownAt();
+  const answeredAt = useRef(0);
   useEffect(() => {
     if (answer.answered) nextRef.current?.focus();
     else stemRef.current?.focus({ preventScroll: true });
@@ -54,8 +60,12 @@ export function DrillQuestionView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const answered = answer.answered;
+  // 作答後:焦點移到「下一題」(回饋把它推到底部導覽列下時捲出來)
   useEffect(() => {
-    if (answered) nextRef.current?.focus();
+    const next = nextRef.current;
+    if (!answered || !next) return;
+    next.focus();
+    revealAboveNav(next);
   }, [answered]);
 
   // 形名與作答的形狀(可能形(辞書形)…)
@@ -65,7 +75,8 @@ export function DrillQuestionView({
   const answerFurigana: FuriganaMode = q.forceReading ? "show" : furigana;
 
   function select(option: DrillOption) {
-    if (answer.answered) return;
+    if (answer.answered || tapGuarded(shownAt.current)) return;
+    answeredAt.current = Date.now();
     onAnswer(
       {
         ...answer,
@@ -79,10 +90,16 @@ export function DrillQuestionView({
 
   function submit() {
     if (answer.answered || answer.input.trim() === "") return;
+    answeredAt.current = Date.now();
     onAnswer(
       { ...answer, answered: true, correct: checkDrillAnswer(answer.input, q) },
       [{ b: answer.input.trim() }],
     );
+  }
+
+  function next() {
+    if (tapGuarded(answeredAt.current)) return;
+    onNext();
   }
 
   return (
@@ -246,9 +263,9 @@ export function DrillQuestionView({
       <div className="px-4 pb-4">
         <Button
           ref={nextRef}
-          onClick={onNext}
+          onClick={next}
           disabled={!answer.answered}
-          className="h-12 w-full"
+          className={cn("h-12 w-full", BOTTOM_NAV_SCROLL_MARGIN)}
         >
           {index + 1 >= total ? "看結果" : "下一題"}
         </Button>

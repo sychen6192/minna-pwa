@@ -12,14 +12,10 @@ import {
   type Particle,
   type ParticleQuestion,
 } from "@/lib/particles";
+import { BOTTOM_NAV_SCROLL_MARGIN, revealAboveNav } from "@/lib/scroll";
 import { speechText } from "@/lib/tts";
+import { tapGuarded, useShownAt } from "@/lib/useTapGuard";
 import { cn } from "@/lib/utils";
-
-/**
- * 換題、作答後的點擊防護(同例句重組、複習頁):雙擊「下一題」的第二下不會落在新題的選項上,
- * 點選項後連點也不會直接跳過回饋,此時間內忽略
- */
-export const TAP_GUARD_MS = 300;
 
 /** 設定畫面、回饋與結果頁共用的說明:教材搭配之外的助詞不一定錯(已知者不列為選項,particles.ts ALSO_NATURAL) */
 export function CollocationCaveat({ className }: { className?: string }) {
@@ -59,28 +55,32 @@ export function ParticleQuestionView({
   // 作答後選項 disabled(焦點掉到 body)→ 移到「下一題」
   const stemRef = useRef<HTMLDivElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
-  // 題目出現、作答的時刻(TAP_GUARD_MS)
-  const shownAt = useRef(0);
+  // 點擊防護(useTapGuard):題目出現、作答的時刻。雙擊「下一題」/「再練一次」的第二下不會落在
+  // 新題的選項上,點選項後連點也不會直接跳過回饋
+  const shownAt = useShownAt();
   const answeredAt = useRef(0);
   useEffect(() => {
-    shownAt.current = Date.now();
     if (answered) nextRef.current?.focus();
     else stemRef.current?.focus({ preventScroll: true });
     // 只在掛載時(每題以 key 重新掛載)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // 作答後:焦點移到「下一題」(回饋把它推到底部導覽列下時捲出來)
   useEffect(() => {
-    if (answered) nextRef.current?.focus();
+    const next = nextRef.current;
+    if (!answered || !next) return;
+    next.focus();
+    revealAboveNav(next);
   }, [answered]);
 
   function select(particle: Particle) {
-    if (answered || Date.now() - shownAt.current < TAP_GUARD_MS) return;
+    if (answered || tapGuarded(shownAt.current)) return;
     answeredAt.current = Date.now();
     onAnswer(particle);
   }
 
   function next() {
-    if (Date.now() - answeredAt.current < TAP_GUARD_MS) return;
+    if (tapGuarded(answeredAt.current)) return;
     onNext();
   }
 
@@ -123,7 +123,13 @@ export function ParticleQuestionView({
               {answered ? q.answer : ""}
             </span>
             <span className="sr-only">
-              {answered ? `(${q.answer})` : "(空格)"}
+              {answered ? (
+                <>
+                  (<span lang="ja">{q.answer}</span>)
+                </>
+              ) : (
+                "(空格)"
+              )}
             </span>
             <RubyText segments={q.after} furigana={furigana} />
           </div>
@@ -206,7 +212,7 @@ export function ParticleQuestionView({
           ref={nextRef}
           onClick={next}
           disabled={!answered}
-          className="h-12 w-full"
+          className={cn("h-12 w-full", BOTTOM_NAV_SCROLL_MARGIN)}
         >
           {index + 1 >= total ? "看結果" : "下一題"}
         </Button>

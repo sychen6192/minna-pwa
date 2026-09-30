@@ -2,6 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 import type { Lesson } from "@/schemas/lesson";
+import { freezeClock, passTapGuard } from "@/test/clock";
+import { coverByBottomNav } from "@/test/layout";
 import type {
   ClozeQuestion,
   McqQuestion,
@@ -114,17 +116,12 @@ beforeEach(async () => {
     Promise.resolve(n === lesson.id ? lesson : { ...lesson, id: n }),
   );
   generateQuiz.mockReturnValue([mcq, inputQ]);
-  // 時鐘停住:題目出現後的點擊防護(300ms)由 passTapGuard 明確撥過
-  vi.useFakeTimers({ toFake: ["Date"] });
+  // 時鐘停住:題目出現、進結果頁後的點擊防護(300ms)由 passTapGuard 明確撥過
+  freezeClock();
 });
 
 /** 「開始測驗(N 題)」 */
 const START = /^開始測驗/;
-
-/** 把時鐘撥過點擊防護(開始測驗、再測一次、下一題後 300ms) */
-function passTapGuard() {
-  vi.setSystemTime(Date.now() + 1_000);
-}
 
 /** 載入後的題型選擇畫面按「開始測驗」(預設題型),並撥過點擊防護 */
 async function startQuiz(user: ReturnType<typeof userEvent.setup>) {
@@ -233,16 +230,8 @@ describe("QuizRunner 無障礙:回饋 live region 與焦點(T10.10)", () => {
 
   it("作答後「下一題」被固定的底部導覽列擋住時往下捲出來", async () => {
     const user = userEvent.setup();
-    const scrollTo = vi.fn();
-    vi.stubGlobal("scrollTo", scrollTo);
     // jsdom 不排版:「下一題」的下緣在視窗下緣之下 40px,其餘元素在畫面頂端
-    const rect = vi
-      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockImplementation(function (this: HTMLElement) {
-        const bottom =
-          this.textContent === "下一題" ? window.innerHeight + 40 : 0;
-        return DOMRect.fromRect({ y: bottom - 48, height: 48 });
-      });
+    const { scrollTo, restore } = coverByBottomNav("下一題");
     try {
       render(<QuizRunner id={13} />);
       await startQuiz(user);
@@ -252,8 +241,7 @@ describe("QuizRunner 無障礙:回饋 live region 與焦點(T10.10)", () => {
       expect(screen.getByRole("button", { name: "下一題" })).toHaveFocus();
       expect(scrollTo).toHaveBeenCalledWith({ top: window.scrollY + 40 });
     } finally {
-      rect.mockRestore();
-      vi.unstubAllGlobals();
+      restore();
     }
   });
 });
@@ -383,6 +371,7 @@ describe("QuizRunner 判分、提示與再測(T10.4)", () => {
     );
 
     generateQuiz.mockReturnValue([inputQ]);
+    passTapGuard(); // 結果頁的進場防護
     await user.click(screen.getByRole("button", { name: "再測一次" }));
     expect(generateQuiz).toHaveBeenCalledTimes(2);
     expect(generateQuiz.mock.calls[1][0]).toBe(13);
@@ -651,6 +640,7 @@ describe("QuizRunner 題型選擇、聽力與例句填空(T11.8)", () => {
     await user.click(await screen.findByRole("button", { name: /猫/ }));
     await user.click(screen.getByRole("button", { name: "看結果" }));
     expect(cancelSpeech).toHaveBeenCalled();
+    passTapGuard(); // 結果頁的進場防護
     await user.click(screen.getByRole("button", { name: "再測一次" }));
     expect(generateQuiz).toHaveBeenCalledTimes(2);
     expect(generateQuiz.mock.calls[1][2]).toMatchObject({

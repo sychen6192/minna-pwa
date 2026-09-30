@@ -8,8 +8,9 @@ import {
   collocationRuby,
   collocationText,
 } from "@/lib/particles";
+import { useEntryClickGuard } from "@/lib/useTapGuard";
 import type { ParticleResultItem } from "./drillState";
-import { CollocationCaveat, TAP_GUARD_MS } from "./ParticleQuestionView";
+import { CollocationCaveat } from "./ParticleQuestionView";
 
 /** 助詞搭配一回合的結果(T11.7):分數、錯題(教材搭配、你選的助詞、中譯);不寫入 SRS */
 export function ParticleResult({
@@ -32,19 +33,14 @@ export function ParticleResult({
   const correct = results.length - wrong.length;
   // 進結果頁時「看結果」鈕已卸載:焦點移到標題(不掉到 body),螢幕閱讀器從成績開始念
   const headingRef = useRef<HTMLHeadingElement>(null);
-  // 剛進結果頁(TAP_GUARD_MS 內)的點擊不作用:雙擊「看結果」的第二下不會再練一次或換範圍
-  const shownAt = useRef(0);
   useEffect(() => {
-    shownAt.current = Date.now();
     headingRef.current?.focus();
   }, []);
-  const guarded = (action: () => void) => () => {
-    if (Date.now() - shownAt.current < TAP_GUARD_MS) return;
-    action();
-  };
+  // 剛進結果頁(TAP_GUARD_MS 內)的點擊不作用:雙擊「看結果」的第二下不會再練一次或換範圍
+  const guardClick = useEntryClickGuard();
 
   return (
-    <div className="px-4 py-8">
+    <div className="px-4 py-8" onClickCapture={guardClick}>
       <h1
         ref={headingRef}
         tabIndex={-1}
@@ -101,13 +97,13 @@ export function ParticleResult({
         <div className="flex w-full max-w-xs gap-2">
           <Button
             variant="outline"
-            onClick={guarded(onChangeRange)}
+            onClick={onChangeRange}
             className="flex-1 px-4"
           >
             換範圍
           </Button>
           <Button
-            onClick={guarded(onRestart)}
+            onClick={onRestart}
             disabled={!canRestart}
             className="flex-1 px-4"
           >

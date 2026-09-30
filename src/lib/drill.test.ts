@@ -16,6 +16,7 @@ import {
   checkDrillAnswer,
   drillPool,
   drillableCounts,
+  drillRoundSize,
   formLabel,
   formLabelLang,
   formLevel,
@@ -30,6 +31,7 @@ import {
   parseUpto,
   wrongConjugations,
   type DrillItem,
+  type DrillSelection,
 } from "./drill";
 import { normalizeReading } from "./quiz";
 
@@ -819,6 +821,14 @@ describe("checkDrillAnswer:輸入題判分(沿用 quiz.ts 正規化)", () => {
     expect(masen && checkDrillAnswer("yomimasenn", masen)).toBe(true);
   });
 
+  it("平文式的 tch:出張します → shutchoushite(wanakana toRomaji 的寫法)亦對", () => {
+    const shutchou = item("動III", "出張(しゅっちょう)|します");
+    const te = makeDrillQuestion(shutchou, "te", "input");
+    for (const input of ["shutchoushite", "shucchoushite", "しゅっちょうして"]) {
+      expect(te && checkDrillAnswer(input, te), input).toBe(true);
+    }
+  });
+
   it("進階形:只接受題目要求的形狀(辞書形 書ける;書けます、ら抜き 食べれる 為錯)", () => {
     const potential = makeDrillQuestion(kaku, "potential", "input");
     expect(potential && checkDrillAnswer("kakeru", potential)).toBe(true);
@@ -951,6 +961,26 @@ describe("makeDrillRound", () => {
       verb: 0,
       adj: 0,
     });
+  });
+
+  it("drillRoundSize:開始鈕的題數與 makeDrillRound 實際出的題數相同((字, 形)不足 10 組時為全部)", () => {
+    const wakaru = item("動I", "わかります");
+    const cases: [DrillItem[], DrillSelection][] = [
+      [[...verbs, ...adjs], { verb: ["te", "nai"], adj: [] }],
+      [[kaku, taberu], { verb: ["masen", "te", "nai"], adj: [] }],
+      [[kaku, taberu], { verb: ["masen"], adj: [] }],
+      [[wakaru, kaku], { verb: ["te", "potential"], adj: [] }],
+      [[wakaru], { verb: ["potential"], adj: [] }],
+      [[kirei, takai], { verb: ["te"], adj: ["te", "adv"] }],
+      [[], { verb: ["te"], adj: ["neg"] }],
+    ];
+    for (const [pool, selection] of cases) {
+      expect(drillRoundSize(pool, selection)).toBe(
+        makeDrillRound(pool, selection, { rng: seeded(5) }).length,
+      );
+    }
+    expect(drillRoundSize([kaku, taberu], { verb: ["masen"], adj: [] })).toBe(2);
+    expect(drillRoundSize(verbs, { verb: ["te"], adj: [] })).toBe(10);
   });
 
   it("勾選中沒有適用的形:空陣列;同一種子結果相同", () => {

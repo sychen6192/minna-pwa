@@ -15,6 +15,7 @@ import {
   availableGroupForms,
   drillPool,
   drillableCounts,
+  drillRoundSize,
   formLabel,
   formLabelLang,
   groupFormLesson,
@@ -464,9 +465,16 @@ function DrillSetup({
     const group = groupOf(item.pos);
     if (group) counts[group]++;
   }
-  // 標題顯示的字數:勾選的形實際能出題者(進階形各有排除,只勾可能形時不算 わかります)
+  // 標題顯示的字數:勾選的形實際能出題者(進階形各有排除,只勾可能形時不算 わかります);
+  // 開始鈕的題數:(字, 形)不足 10 組時為全部
   const drillable = useMemo(
-    () => (pool === null ? null : drillableCounts(pool, selection)),
+    () =>
+      pool === null
+        ? null
+        : {
+            counts: drillableCounts(pool, selection),
+            round: drillRoundSize(pool, selection),
+          },
     [pool, selection],
   );
   const anyAvailable = DRILL_GROUPS.some(
@@ -491,10 +499,10 @@ function DrillSetup({
     mode === "conj"
       ? pool !== null && selectedCount > 0
       : particles !== null && particleCount > 0;
-  // 助詞搭配:範圍內的搭配不足 10 個時為全部;沒有搭配時不標題數
+  // 範圍內可出的題不足 10 題時為全部(活用:(字, 形)組數;助詞搭配:搭配數);沒有時不標題數
   const questionCount =
     mode === "conj"
-      ? DRILL_COUNT
+      ? (drillable?.round ?? DRILL_COUNT)
       : particles === null
         ? PARTICLE_COUNT
         : Math.min(PARTICLE_COUNT, particleCount);
@@ -611,7 +619,7 @@ function DrillSetup({
             >
               {label}{" "}
               <span className="text-xs font-normal text-muted-foreground tabular-nums">
-                {drillable === null ? "…" : `${drillable[group]} 個`}
+                {drillable === null ? "…" : `${drillable.counts[group]} 個`}
               </span>
             </h2>
             {/* 形 chips 分兩列:基本形、進階形(第 27 課起;形容詞為條件形),各列可全選/取消全選 */}
@@ -675,7 +683,7 @@ function DrillSetup({
                             <span lang={formLabelLang(name)}>{name}</span>
                             {locked && (
                               <span className="text-[11px] leading-3.5">
-                                第 {lesson} 課學
+                                第 {lesson} 課起
                               </span>
                             )}
                           </button>

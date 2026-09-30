@@ -1,4 +1,5 @@
 import {
+  GRAMMAR_QUERY_PARAM,
   MODE_PARAM,
   PRECACHE_IGNORED_URL_PARAMS,
   UPTO_PARAM,
@@ -38,10 +39,19 @@ describe("PRECACHE_IGNORED_URL_PARAMS:帶 app 參數的網址離線仍命中 pre
     );
   });
 
+  it("文法速查 /grammar?q=…(replaceState 寫入的搜尋字串)→ /grammar:離線重新整理仍開得了", () => {
+    expect(GRAMMAR_QUERY_PARAM).toBe("q");
+    expect(precacheKey(`/grammar?q=${encodeURIComponent("て")}`)).toBe(
+      "/grammar",
+    );
+    expect(precacheKey("/grammar.txt?q=tai&_rsc=abc123")).toBe("/grammar.txt");
+  });
+
   it("只去除這些參數(名稱完全相符)", () => {
     expect(precacheKey("/drill?utm_source=x")).toBe("/drill?utm_source=x");
     expect(precacheKey("/drill?uptox=1")).toBe("/drill?uptox=1");
     expect(precacheKey("/drill?modes=1")).toBe("/drill?modes=1");
+    expect(precacheKey("/grammar?query=1")).toBe("/grammar?query=1");
   });
 });
 

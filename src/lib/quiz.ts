@@ -92,6 +92,11 @@ const OPTIONAL_RE = /［([^［］]*)］|〔([^〔〕]*)〕/;
 const QUOTE_RE = /「([^「」]*)」/;
 /** IME 習慣以「nn」(或 nn')打「ん」;wanakana 則把 nn 轉成「んん」(sennsei → せんんせい) */
 const IME_NN_RE = /nn'?/g;
+/**
+ * 平文式(Hepburn)把促音 + ch 寫成「tch」(出張 shutchou、こっち kotchi;wanakana 的 toRomaji 也這樣
+ * 輸出),IME 亦接受;wanakana 的 toHiragana 只認「cch」(tch 會留下 t,不可能對上任何答案)
+ */
+const HEPBURN_TCH_RE = /tch/g;
 /** 片假名 オ段 + ー:toHiragana 展開為「う」(コーヒー → こうひい);另收「お」(koohii) */
 const O_ROW_LONG_RE = /([オコゴソゾトドノホボポモヨョロヲォ])ー/g;
 
@@ -208,11 +213,11 @@ export function answerLabel(v: Pick<VocabItem, "ruby" | "kana">): string {
 }
 
 /**
- * 輸入的比對鍵:照 wanakana 規則;羅馬字含「nn」時另以 IME 習慣(nn = ん)解讀,兩者皆可
- * (onna / konnyaku 走前者,sennsei / minasann / kinnyoubi 走後者)。
+ * 輸入的比對鍵:照 wanakana 規則(平文式的 tch 先改成 cch);羅馬字含「nn」時另以 IME 習慣
+ * (nn = ん)解讀,兩者皆可(onna / konnyaku 走前者,sennsei / minasann / kinnyoubi 走後者)。
  */
 function inputKeys(input: string): string[] {
-  const cleaned = clean(input);
+  const cleaned = clean(input).replace(HEPBURN_TCH_RE, "cch");
   const keys = [normalizeReading(cleaned)];
   if (cleaned.includes("nn")) {
     keys.push(normalizeReading(cleaned.replace(IME_NN_RE, "ん")));
