@@ -25,16 +25,16 @@ describe("QuizIndexPage 測驗選課入口", () => {
     expect(screen.getByText("〜が ほしいです")).toHaveAttribute("lang", "ja");
   });
 
-  it("頂端「練習」區塊:活用練習連到 /drill、例句重組連到 /reorder", async () => {
+  it("頂端「練習」區塊:活用・助詞練習連到 /drill、例句重組連到 /reorder", async () => {
     getLessonIndex.mockResolvedValue({ lessons: [] });
 
     render(<QuizIndexPage />);
 
     const practice = screen.getByRole("region", { name: "練習" });
-    expect(within(practice).getByRole("link", { name: /活用練習/ })).toHaveAttribute(
-      "href",
-      "/drill",
-    );
+    const drill = within(practice).getByRole("link", { name: /活用・助詞練習/ });
+    expect(drill).toHaveAttribute("href", "/drill");
+    // 同一頁的兩種練習(T11.7):說明提到助詞搭配
+    expect(drill).toHaveTextContent("助詞搭配");
     // 說明中的日文術語標 lang="ja"
     expect(within(practice).getByText("て形")).toHaveAttribute("lang", "ja");
     expect(within(practice).getByRole("link", { name: /例句重組/ })).toHaveAttribute(

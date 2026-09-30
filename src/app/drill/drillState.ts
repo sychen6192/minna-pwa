@@ -1,4 +1,6 @@
 import type { DrillQuestion } from "@/lib/drill";
+import type { Particle, ParticleQuestion } from "@/lib/particles";
+import type { DrillMode } from "@/lib/urlParams";
 import type { RubySeg } from "@/schemas/lesson";
 
 /** 一題的作答狀態 */
@@ -31,13 +33,39 @@ export interface DrillRound {
   done: boolean;
 }
 
-/** 頁面狀態:範圍、取消勾選的形(`${group}:${form}`)與回合;回合為 null = 設定畫面 */
+/** 助詞搭配(T11.7)一題的作答結果 */
+export interface ParticleResultItem {
+  question: ParticleQuestion;
+  /** 選的助詞 */
+  selected: Particle;
+  correct: boolean;
+}
+
+/** 助詞搭配進行中(或已完成)的一回合 */
+export interface ParticleRound {
+  questions: ParticleQuestion[];
+  index: number;
+  /** 本題選的助詞;未作答為 null */
+  selected: Particle | null;
+  results: ParticleResultItem[];
+  done: boolean;
+}
+
+/**
+ * 頁面狀態:練習類型、範圍、取消勾選的形(`${group}:${form}`)與回合;
+ * 目前類型的回合為 null = 設定畫面(切換類型只在設定畫面,另一類型的回合一併清空)
+ */
 export interface DrillState {
+  /** 活用 / 助詞搭配(網址 ?mode=,urlParams.ts) */
+  mode: DrillMode;
   maxLesson: number;
   /** 範圍的來源:網址 ?upto=、已有卡片的最大課號、沒有卡片時的預設值、讀取失敗、使用者調整 */
   source: "upto" | "cards" | "default" | "fallback" | "manual";
   excluded: readonly string[];
+  /** 活用練習的回合 */
   round: DrillRound | null;
+  /** 助詞搭配的回合 */
+  particleRound: ParticleRound | null;
 }
 
 export const EMPTY_ANSWER: DrillAnswer = {

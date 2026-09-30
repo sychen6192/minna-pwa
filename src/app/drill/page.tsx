@@ -26,12 +26,22 @@ import {
   type DrillItem,
   type DrillSelection,
 } from "@/lib/drill";
-import { UPTO_PARAM } from "@/lib/urlParams";
+import {
+  PARTICLE_COUNT,
+  PARTICLE_FIRST_LESSON,
+  makeParticleRound,
+  particlePool,
+  type ParticleItem,
+} from "@/lib/particles";
+import { drillSearch, parseDrillMode, type DrillMode } from "@/lib/urlParams";
 import { useSetting, useTtsEnabled } from "@/lib/useSetting";
 import { cn } from "@/lib/utils";
 import type { Lesson, RubySeg } from "@/schemas/lesson";
 import { DrillQuestionView } from "./DrillQuestionView";
 import { DrillResult } from "./DrillResult";
+import { ParticleQuestionView } from "./ParticleQuestionView";
+import { ParticleResult } from "./ParticleResult";
+import { ParticleSetup } from "./ParticleSetup";
 import {
   EMPTY_ANSWER,
   loadDrillState,
@@ -40,6 +50,7 @@ import {
   type DrillAnswer,
   type DrillRound,
   type DrillState,
+  type ParticleRound,
 } from "./drillState";
 
 /** 開關鈕按下時的樣子(同課程頁的分段鈕) */
@@ -47,6 +58,28 @@ const TOGGLE_BUTTON =
   "font-normal text-muted-foreground aria-pressed:border-link aria-pressed:bg-link/10 aria-pressed:text-link";
 
 const formKey = (group: DrillGroup, form: ConjForm) => `${group}:${form}`;
+
+/** 練習類型的分段鈕 */
+const MODES: readonly { mode: DrillMode; label: string }[] = [
+  { mode: "conj", label: "活用" },
+  { mode: "particle", label: "助詞" },
+];
+
+/** 目前類型的回合(活用 / 助詞搭配) */
+function currentRound(state: DrillState): DrillRound | ParticleRound | null {
+  return state.mode === "conj" ? state.round : state.particleRound;
+}
+
+/**
+ * 網址寫回範圍與類型(replaceState 不新增歷史紀錄):從「看文法」返回或重新整理時一致
+ * (SW 查 precache 時忽略這些參數,離線重新整理亦可,urlParams.ts)。範圍只在來自網址或
+ * 使用者調整時寫出,其餘(依卡片推算)留給下次重新推算
+ */
+function syncUrl(state: Pick<DrillState, "mode" | "maxLesson" | "source">) {
+  const explicit = state.source === "manual" || state.source === "upto";
+  const search = drillSearch(explicit ? state.maxLesson : null, state.mode);
+  window.history.replaceState(null, "", search || window.location.pathname);
+}
 
 function clampLesson(n: number): number {
   return Math.min(LAST_LESSON, Math.max(1, Math.round(n)));
@@ -68,7 +101,10 @@ async function initialRange(
   }
 }
 
-/** 活用練習(T11.4、T11.5,F7.3):範圍與形的設定 → 10 題(選擇/輸入)→ 結果。不寫入 SRS/DB。 */
+/**
+ * 活用練習(T11.4、T11.5,F7.3)與助詞搭配(T11.7,F7.5):類型、範圍(與形)的設定 → 10 題 → 結果。
+ * 不寫入 SRS/DB。
+ */
 export default function DrillPage() {
   const [state, setState] = useState<DrillState | null>(null);
   const [lessons, setLessons] = useState<ReadonlyMap<number, Lesson>>(
@@ -80,28 +116,47 @@ export default function DrillPage() {
   // 從結果頁「換範圍」回到設定畫面:焦點移到標題(按鈕已卸載,不掉到 body)
   const [focusSetup, setFocusSetup] = useState(false);
 
-  // 初始化(記憶體中的狀態,?upto= 指定了別的範圍則一律重新設定):
+  // 初始化(記憶體中的狀態,?upto= / ?mode= 指定了別的範圍或類型則一律重新設定):
+  // - 類型:?mode= → 帶 ?upto= 而沒有 mode 者為活用(課程頁的「活用練習」連結;本頁寫回的網址
+  //   助詞搭配必帶 mode)→ 記憶體中上次的類型 → 活用
   // - 從「看文法」連結返回:接續原畫面(回饋或結果頁)
   // - 回合進行中:接續
   // - 其餘(結果頁或設定畫面):回到設定;範圍重新推算(卡片可能已增加),使用者調整過的範圍
   //   在沒有 ?upto= 時沿用;勾選的形沿用
   useEffect(() => {
     let active = true;
-    const upto = parseUpto(window.location.search);
+    const search = window.location.search;
+    const upto = parseUpto(search);
     const prev = loadDrillState();
+    const mode: DrillMode =
+      parseDrillMode(search) ??
+      (upto !== null ? "conj" : (prev?.mode ?? "conj"));
+    // 沿用記憶體中的助詞搭配(網址沒有 ?mode=)時寫回網址:重新整理後仍是助詞搭配
+    const settle = (next: DrillState) => {
+      setState(next);
+      if (next.mode === "particle" && parseDrillMode(search) === null)
+        syncUrl(next);
+    };
     const returning = returningFromGrammar();
     const sameRange = upto === null || upto === prev?.maxLesson;
-    if (prev && sameRange && (returning || (prev.round && !prev.round.done))) {
-      setState(prev);
+    const prevRound = prev ? currentRound(prev) : null;
+    if (
+      prev &&
+      prev.mode === mode &&
+      sameRange &&
+      (returning || (prevRound && !prevRound.done))
+    ) {
+      settle(prev);
       return;
     }
     const excluded = prev?.excluded ?? [];
+    const noRounds = { round: null, particleRound: null };
     if (prev && prev.source === "manual" && upto === null) {
-      setState({ ...prev, round: null });
+      settle({ ...prev, mode, ...noRounds });
       return;
     }
     void initialRange(upto).then((range) => {
-      if (active) setState({ ...range, excluded, round: null });
+      if (active) settle({ ...range, mode, excluded, ...noRounds });
     });
     return () => {
       active = false;
@@ -137,11 +192,26 @@ export default function DrillPage() {
     };
   }, [maxLesson, lessons]);
 
-  const pool = useMemo<DrillItem[] | null>(() => {
+  // 第 1–maxLesson 課全部載入後才有出題池(載入中為 null)
+  const loaded = useMemo<Lesson[] | null>(() => {
     if (maxLesson === null) return null;
     for (let id = 1; id <= maxLesson; id++) if (!lessons.has(id)) return null;
-    return drillPool([...lessons.values()], maxLesson);
+    return [...lessons.values()];
   }, [lessons, maxLesson]);
+  const pool = useMemo<DrillItem[] | null>(
+    () =>
+      loaded === null || maxLesson === null
+        ? null
+        : drillPool(loaded, maxLesson),
+    [loaded, maxLesson],
+  );
+  const particles = useMemo<ParticleItem[] | null>(
+    () =>
+      loaded === null || maxLesson === null
+        ? null
+        : particlePool(loaded, maxLesson),
+    [loaded, maxLesson],
+  );
 
   const selection = useMemo<DrillSelection | null>(() => {
     if (!state) return null;
@@ -173,9 +243,24 @@ export default function DrillPage() {
   const update = (patch: Partial<DrillState>) =>
     setState((s) => (s ? { ...s, ...patch } : s));
   const setRound = (round: DrillRound | null) => update({ round });
+  const setParticleRound = (particleRound: ParticleRound | null) =>
+    update({ particleRound });
 
   function start() {
-    if (!pool || !selection || !state) return;
+    if (!state) return;
+    if (state.mode === "particle") {
+      if (!particles) return;
+      const questions = makeParticleRound(particles);
+      setParticleRound({
+        questions,
+        index: 0,
+        selected: null,
+        results: [],
+        done: questions.length === 0,
+      });
+      return;
+    }
+    if (!pool || !selection) return;
     const questions = makeDrillRound(pool, selection, {
       maxLesson: state.maxLesson,
     });
@@ -188,7 +273,58 @@ export default function DrillPage() {
     });
   }
 
-  const { round } = state;
+  const { particleRound } = state;
+  if (state.mode === "particle" && particleRound?.done) {
+    return (
+      <ParticleResult
+        results={particleRound.results}
+        furigana={furigana}
+        canRestart={particles !== null}
+        onRestart={start}
+        onChangeRange={() => {
+          setFocusSetup(true);
+          setParticleRound(null);
+        }}
+      />
+    );
+  }
+  if (state.mode === "particle" && particleRound) {
+    const question = particleRound.questions[particleRound.index];
+    return (
+      <ParticleQuestionView
+        key={`${particleRound.index}`}
+        question={question}
+        index={particleRound.index}
+        total={particleRound.questions.length}
+        selected={particleRound.selected}
+        furigana={furigana}
+        tts={ttsEnabled}
+        onAnswer={(selected) =>
+          setParticleRound({
+            ...particleRound,
+            selected,
+            results: [
+              ...particleRound.results,
+              { question, selected, correct: selected === question.answer },
+            ],
+          })
+        }
+        onNext={() =>
+          setParticleRound(
+            particleRound.index + 1 >= particleRound.questions.length
+              ? { ...particleRound, done: true }
+              : {
+                  ...particleRound,
+                  index: particleRound.index + 1,
+                  selected: null,
+                },
+          )
+        }
+      />
+    );
+  }
+
+  const round = state.mode === "conj" ? state.round : null;
   if (round && round.done) {
     return (
       <DrillResult
@@ -239,14 +375,18 @@ export default function DrillPage() {
     <DrillSetup
       state={state}
       pool={pool}
+      particles={particles}
       selection={selection}
       focusHeading={focusSetup}
+      onModeChange={(mode) => {
+        if (mode === state.mode) return;
+        update({ mode, round: null, particleRound: null });
+        syncUrl({ ...state, mode });
+      }}
       onRangeChange={(n) => {
         const maxLesson = clampLesson(n);
         update({ maxLesson, source: "manual" });
-        // 範圍寫回網址(replaceState 不新增歷史紀錄):從「看文法」返回或重新整理時 ?upto= 與範圍一致
-        // (SW 查 precache 時忽略此參數,離線重新整理亦可,urlParams.ts)
-        window.history.replaceState(null, "", `?${UPTO_PARAM}=${maxLesson}`);
+        syncUrl({ mode: state.mode, maxLesson, source: "manual" });
       }}
       onToggle={(group, form) => {
         const key = formKey(group, form);
@@ -281,19 +421,24 @@ function rangeHint(state: DrillState): string | null {
 function DrillSetup({
   state,
   pool,
+  particles,
   selection,
   focusHeading,
+  onModeChange,
   onRangeChange,
   onToggle,
   onSetForms,
   onStart,
 }: {
   state: DrillState;
-  /** 出題池;載入中為 null */
+  /** 活用練習的出題池;載入中為 null */
   pool: DrillItem[] | null;
+  /** 助詞搭配的出題池;載入中為 null */
+  particles: ParticleItem[] | null;
   selection: DrillSelection;
   /** 掛載時焦點移到標題(從結果頁「換範圍」回來) */
   focusHeading: boolean;
+  onModeChange: (mode: DrillMode) => void;
   onRangeChange: (maxLesson: number) => void;
   onToggle: (group: DrillGroup, form: ConjForm) => void;
   /** 一列(基本/進階)的形全選(on)或取消全選 */
@@ -337,6 +482,36 @@ function DrillSetup({
       forms.map((f) => groupFormLesson(group, f)),
     ),
   );
+  const { mode } = state;
+  // 形的 chips 只在活用練習顯示
+  const conjGroups = mode === "conj" ? DRILL_GROUPS : [];
+  // 開始鈕與其下的提示(依類型)
+  const particleCount = particles?.length ?? 0;
+  const canStart =
+    mode === "conj"
+      ? pool !== null && selectedCount > 0
+      : particles !== null && particleCount > 0;
+  // 助詞搭配:範圍內的搭配不足 10 個時為全部;沒有搭配時不標題數
+  const questionCount =
+    mode === "conj"
+      ? DRILL_COUNT
+      : particles === null
+        ? PARTICLE_COUNT
+        : Math.min(PARTICLE_COUNT, particleCount);
+  const startHint =
+    mode === "conj"
+      ? !anyAvailable
+        ? `第 ${firstLesson} 課起才有可練習的活用形。`
+        : pool === null
+          ? "載入單字中…"
+          : selectedCount === 0
+            ? "請至少選一種形。"
+            : null
+      : maxLesson < PARTICLE_FIRST_LESSON
+        ? `第 ${PARTICLE_FIRST_LESSON} 課起才有教材標註的助詞搭配。`
+        : particles === null
+          ? "載入單字中…"
+          : null;
 
   return (
     <div>
@@ -345,10 +520,36 @@ function DrillSetup({
         tabIndex={-1}
         className="px-4 pt-3 text-lg font-bold outline-none"
       >
-        活用練習
+        活用・助詞練習
       </h1>
-      <p className="px-4 pt-1 pb-3 text-sm text-muted-foreground">
-        依課程進度練習動詞與形容詞的活用形;單次練習,不影響複習排程。
+      {/* 分段按鈕(aria-pressed,同課程頁分頁):切換練習類型;範圍兩者共用 */}
+      <div
+        role="group"
+        aria-label="練習類型"
+        className="mx-4 mt-2 flex border-b border-border"
+      >
+        {MODES.map(({ mode: m, label }) => (
+          <button
+            key={m}
+            type="button"
+            aria-pressed={mode === m}
+            onClick={() => onModeChange(m)}
+            className={cn(
+              "-mb-px min-h-11 flex-1 border-b-2 text-sm transition-colors",
+              mode === m
+                ? "border-foreground font-medium"
+                : "border-transparent text-muted-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="px-4 pt-3 pb-3 text-sm text-muted-foreground">
+        {mode === "conj"
+          ? "依課程進度練習動詞與形容詞的活用形;"
+          : "依課程進度練習單字的助詞搭配;"}
+        單次練習,不影響複習排程。
       </p>
 
       <section
@@ -393,7 +594,9 @@ function DrillSetup({
         {hint && <p className="mt-2 text-xs text-muted-foreground">{hint}</p>}
       </section>
 
-      {DRILL_GROUPS.map(({ group, label }) => {
+      {mode === "particle" && <ParticleSetup particles={particles} />}
+
+      {conjGroups.map(({ group, label }) => {
         const headingId = `${rangeId}-${group}`;
         const empty = pool !== null && counts[group] === 0;
         return (
@@ -492,24 +695,14 @@ function DrillSetup({
         after 以背景色往下延伸,蓋住與導覽之間的縫(延伸部分在導覽之下,不影響版面)
       */}
       <div className="sticky bottom-[calc(4rem_+_env(safe-area-inset-bottom))] mt-3 bg-background px-4 pt-3 pb-2 after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-background">
-        <Button
-          onClick={onStart}
-          disabled={pool === null || selectedCount === 0}
-          className="h-12 w-full"
-        >
-          開始練習({DRILL_COUNT} 題)
+        <Button onClick={onStart} disabled={!canStart} className="h-12 w-full">
+          {questionCount > 0 ? `開始練習(${questionCount} 題)` : "開始練習"}
         </Button>
         <p
           className="mt-2 text-center text-xs text-muted-foreground"
           aria-live="polite"
         >
-          {!anyAvailable
-            ? `第 ${firstLesson} 課起才有可練習的活用形。`
-            : pool === null
-              ? "載入單字中…"
-              : selectedCount === 0
-                ? "請至少選一種形。"
-                : null}
+          {startHint}
         </p>
       </div>
     </div>

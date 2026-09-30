@@ -81,6 +81,8 @@ export type VocabItem = z.infer<typeof VocabItemSchema>;
 export type GrammarPoint = z.infer<typeof GrammarPointSchema>;
 ```
 
+`VocabItem.note` 的教材寫法由執行期解讀(pipeline 改動 note 格式時須一併確認):note 恰為「読み物」「会話」「補充單字(自行練習發音)」者是段落標記(`notes.ts`);助詞搭配「［たばこを〜］」「〔〜を します:做作業〕」(〜 = 單字本身,冒號後為中譯)由 `particles.ts` 解析出題(F7.5)。
+
 ### 1.3 範例(`public/data/lessons/L13.json` 縮樣)
 
 ```json

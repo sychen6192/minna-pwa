@@ -1,4 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, vi } from "vitest";
@@ -174,8 +181,13 @@ describe("DrillPage 設定:範圍", () => {
     render(<DrillPage />);
     expect(await rangeSelect()).toHaveValue("22");
     expect(
-      screen.getByRole("heading", { name: "活用練習" }),
+      screen.getByRole("heading", { name: "活用・助詞練習" }),
     ).toBeInTheDocument();
+    // 預設為活用練習(T11.7:同頁另有助詞搭配)
+    expect(screen.getByRole("button", { name: "活用" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(
       screen.getByText("預設為已加入複習的最後一課。"),
     ).toBeInTheDocument();
@@ -538,7 +550,9 @@ describe("DrillPage 作答", () => {
     await user.click(screen.getByRole("button", { name: "看結果" }));
     await user.click(screen.getByRole("button", { name: "換範圍" }));
     // 按鈕已卸載:焦點移到設定畫面的標題(不掉到 body)
-    expect(screen.getByRole("heading", { name: "活用練習" })).toHaveFocus();
+    expect(
+      screen.getByRole("heading", { name: "活用・助詞練習" }),
+    ).toHaveFocus();
     // 設定保留(只勾了て形)
     const verbs = screen.getByRole("group", { name: /^動詞/ });
     expect(
@@ -822,5 +836,389 @@ describe("DrillPage 狀態", () => {
     window.history.replaceState(null, "", "/drill?upto=20");
     render(<DrillPage />);
     expect(await rangeSelect()).toHaveValue("20");
+  });
+});
+
+describe("DrillPage 助詞搭配(T11.7)", () => {
+  const L06: Lesson = {
+    id: 6,
+    title: "第6課",
+    vocab: [
+      {
+        id: "L06-V003",
+        ruby: [{ b: "吸", r: "す" }, { b: "います" }],
+        kana: "すいます",
+        meaning: "吸〔煙〕",
+        pos: "動I",
+        note: "［たばこを〜］",
+      },
+      {
+        id: "L06-V011",
+        ruby: [{ b: "会", r: "あ" }, { b: "います" }],
+        kana: "あいます",
+        meaning: "遇見、碰見〔朋友〕",
+        pos: "動I",
+        note: "［友達に〜］",
+      },
+      {
+        id: "L06-V038",
+        ruby: [{ b: "宿題", r: "しゅくだい" }],
+        kana: "しゅくだい",
+        meaning: "作業",
+        pos: "名",
+        note: "〔〜を します:做作業〕",
+      },
+      {
+        id: "L06-V050",
+        ruby: [{ b: "山田", r: "やまだ" }],
+        kana: "やまだ",
+        meaning: "山田(姓)",
+        pos: "名",
+        note: "補充單字(自行練習發音)",
+      },
+    ],
+    grammar: [],
+    dialogues: [],
+  };
+
+  beforeEach(() => {
+    getLesson.mockImplementation((id: number) =>
+      Promise.resolve(
+        id === 6 ? L06 : id === 14 ? L14 : id === 20 ? L20 : filler(id),
+      ),
+    );
+    // 時鐘停住:換題/作答/進結果頁後的點擊防護(300ms)由 passTapGuard 明確撥過
+    vi.useFakeTimers({ toFake: ["Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 把時鐘撥過點擊防護 */
+  function passTapGuard() {
+    vi.setSystemTime(Date.now() + 1_000);
+  }
+
+  const modeButton = (name: "活用" | "助詞") =>
+    within(screen.getByRole("group", { name: "練習類型" })).getByRole(
+      "button",
+      { name },
+    );
+  const options = () =>
+    within(screen.getByRole("group", { name: "選項" })).getAllByRole("button");
+  const option = (particle: string) =>
+    within(screen.getByRole("group", { name: "選項" })).getByRole("button", {
+      name: particle,
+    });
+
+  /** 題幹(名詞（　）述語)開頭的名詞 → 正解 */
+  const ANSWERS: Record<string, string> = {
+    たばこ: "を",
+    友達: "に",
+    宿題: "を",
+  };
+  function currentAnswer(): string {
+    const stem = (document.activeElement?.textContent ?? "").replace(
+      "選出空格中的助詞:",
+      "",
+    );
+    const key = Object.keys(ANSWERS).find((k) => stem.startsWith(k));
+    if (!key) throw new Error(`不認得的題目:${stem}`);
+    return ANSWERS[key];
+  }
+
+  it("分段鈕切換類型:形的 chips 換成助詞搭配說明,範圍共用;類型寫回網址", async () => {
+    window.history.replaceState(null, "", "/drill?upto=14");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    expect(await rangeSelect()).toHaveValue("14");
+    expect(modeButton("活用")).toHaveAttribute("aria-pressed", "true");
+    expect(modeButton("助詞")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("group", { name: /^動詞/ })).toBeInTheDocument();
+
+    await user.click(modeButton("助詞"));
+    expect(modeButton("助詞")).toHaveAttribute("aria-pressed", "true");
+    expect(modeButton("活用")).toHaveAttribute("aria-pressed", "false");
+    expect(
+      screen.queryByRole("group", { name: /^動詞/ }),
+    ).not.toBeInTheDocument();
+    expect(window.location.search).toBe("?upto=14&mode=particle");
+    // 範圍內的搭配:吸います、会います、宿題(補充單字不算)
+    expect(
+      await screen.findByRole("heading", { name: "助詞搭配 3 個" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/以教材搭配為準/)).toBeInTheDocument();
+    expect(screen.getByText("友達に／と 会う")).toHaveAttribute("lang", "ja");
+    // 搭配不足 10 個:全部出
+    expect(
+      screen.getByRole("button", { name: "開始練習(3 題)" }),
+    ).toBeEnabled();
+    expect(await rangeSelect()).toHaveValue("14");
+
+    // 範圍調整後網址同時帶範圍與類型
+    await user.click(screen.getByRole("button", { name: "範圍增加一課" }));
+    expect(window.location.search).toBe("?upto=15&mode=particle");
+
+    await user.click(modeButton("活用"));
+    expect(window.location.search).toBe("?upto=15");
+    expect(screen.getByRole("group", { name: /^動詞/ })).toBeInTheDocument();
+  });
+
+  it("?mode=particle 直接進入助詞搭配;第 6 課以前沒有搭配:不能開始並提示", async () => {
+    window.history.replaceState(null, "", "/drill?upto=5&mode=particle");
+    render(<DrillPage />);
+    expect(await rangeSelect()).toHaveValue("5");
+    expect(modeButton("助詞")).toHaveAttribute("aria-pressed", "true");
+    expect(
+      await screen.findByText("第 6 課起才有教材標註的助詞搭配。"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "助詞搭配 0 個" }),
+    ).toBeInTheDocument();
+    // 沒有搭配:開始鈕不標題數
+    expect(screen.getByRole("button", { name: /開始練習/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /開始練習/ })).toHaveTextContent(
+      /^開始練習$/,
+    );
+  });
+
+  it("作答一回合:題幹、4 個選項、答對/答錯的回饋(完整搭配、朗讀、中譯);結果頁列錯題", async () => {
+    window.history.replaceState(null, "", "/drill?upto=6&mode=particle");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    const startButton = await screen.findByRole("button", {
+      name: "開始練習(3 題)",
+    });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    await user.click(startButton);
+
+    expect(screen.getByText("第 1 / 3 題")).toBeInTheDocument();
+    expect(screen.getByText("助詞搭配")).toBeInTheDocument();
+    expect(screen.getByText("教材搭配")).toBeInTheDocument();
+    const seen: string[] = [];
+    let wrongChoice = "";
+    for (let i = 0; i < 3; i++) {
+      // 換題後焦點在題幹(螢幕閱讀器先念題目)
+      const stem = document.activeElement?.textContent ?? "";
+      expect(stem).toMatch(/^選出空格中的助詞:.+\(空格\).+教材搭配$/);
+      seen.push(stem);
+      const answer = currentAnswer();
+      // 4 個選項:正解恰一個、依 を・に・が・で・へ・と 的順序
+      const texts = options().map((b) => b.textContent ?? "");
+      expect(texts).toHaveLength(4);
+      expect(texts.filter((t) => t === answer)).toHaveLength(1);
+      expect(texts).toEqual(
+        ["を", "に", "が", "で", "へ", "と"].filter((p) => texts.includes(p)),
+      );
+      for (const b of options()) expect(b).toHaveAttribute("lang", "ja");
+
+      passTapGuard();
+      const status = screen.getByRole("status");
+      if (i === 0) {
+        // 第 1 題答對
+        await user.click(option(answer));
+        expect(within(status).getByText("答對 ✓")).toBeInTheDocument();
+        expect(option(answer)).toHaveClass("border-success");
+      } else if (i === 1) {
+        // 第 2 題答錯:標出正解與所選,附「教材搭配」的說明
+        wrongChoice = texts.find((t) => t !== answer) ?? "";
+        await user.click(option(wrongChoice));
+        expect(within(status).getByText("答錯 ✗")).toBeInTheDocument();
+        expect(option(wrongChoice)).toHaveClass("border-destructive");
+        expect(option(answer)).toHaveClass("border-success");
+        expect(status).toHaveTextContent(/以教材搭配為準/);
+      } else {
+        await user.click(option(answer));
+      }
+      // 作答後:空格填入正解、選項鎖住、焦點移到下一步
+      expect(
+        document.querySelector("[aria-hidden].border-success"),
+      ).toHaveTextContent(answer);
+      for (const b of options()) expect(b).toBeDisabled();
+      const next = screen.getByRole("button", {
+        name: i === 2 ? "看結果" : "下一題",
+      });
+      expect(next).toHaveFocus();
+      passTapGuard();
+      await user.click(next);
+    }
+    expect(new Set(seen).size).toBe(3);
+
+    // 結果頁:分數、錯題(完整搭配、中譯、課、你的答案)
+    expect(screen.getByRole("heading", { name: "練習完成" })).toHaveFocus();
+    expect(screen.getByText("2 / 3")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "錯題(1)" }),
+    ).toBeInTheDocument();
+    const row = screen.getAllByRole("listitem")[0];
+    expect(row).toHaveTextContent(/第 6 課/);
+    expect(row).toHaveTextContent(`你的答案:${wrongChoice}`);
+
+    passTapGuard();
+    await user.click(screen.getByRole("button", { name: "再練一次" }));
+    expect(screen.getByText("第 1 / 3 題")).toBeInTheDocument();
+  });
+
+  it("回饋:完整搭配(ruby)、朗讀用讀音、單字釋義;〔〜を します〕的中譯取 note 說明", async () => {
+    await setSetting("furigana", "show");
+    window.history.replaceState(null, "", "/drill?upto=6&mode=particle");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    const startButton = await screen.findByRole("button", {
+      name: "開始練習(3 題)",
+    });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    await user.click(startButton);
+
+    const checked = new Set<string>();
+    for (let i = 0; i < 3; i++) {
+      const answer = currentAnswer();
+      const stem = document.activeElement?.textContent ?? "";
+      passTapGuard();
+      await user.click(option(answer));
+      const status = screen.getByRole("status");
+      if (stem.includes("たばこ")) {
+        // 單字的 ruby 照設定顯示讀音
+        expect(status).toHaveTextContent("たばこを 吸すいます");
+        expect(status).toHaveTextContent("吸〔煙〕");
+        await user.click(
+          within(status).getByRole("button", {
+            name: "播放 たばこを 吸います 的發音",
+          }),
+        );
+        expect(speak).toHaveBeenLastCalledWith("たばこを すいます");
+        checked.add("吸います");
+      } else if (stem.includes("宿題")) {
+        expect(status).toHaveTextContent("宿題しゅくだいを します");
+        expect(status).toHaveTextContent("做作業");
+        await user.click(
+          within(status).getByRole("button", {
+            name: "播放 宿題を します 的發音",
+          }),
+        );
+        expect(speak).toHaveBeenLastCalledWith("しゅくだいを します");
+        checked.add("宿題");
+      }
+      passTapGuard();
+      await user.click(
+        screen.getByRole("button", { name: i === 2 ? "看結果" : "下一題" }),
+      );
+    }
+    expect(checked).toEqual(new Set(["吸います", "宿題"]));
+  });
+
+  it("雙擊防護:換題後 300ms 內點選項不作答;作答後 300ms 內點「下一題」不換題;結果頁同", async () => {
+    window.history.replaceState(null, "", "/drill?upto=6&mode=particle");
+    render(<DrillPage />);
+    await rangeSelect();
+    const startButton = await screen.findByRole("button", {
+      name: "開始練習(3 題)",
+    });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    fireEvent.click(startButton);
+
+    // 開始鈕的第二下落在選項上:不作答
+    const answer = currentAnswer();
+    fireEvent.click(option(answer));
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+
+    passTapGuard();
+    fireEvent.click(option(answer));
+    expect(screen.getByText("答對 ✓")).toBeInTheDocument();
+    // 作答後立刻再點「下一題」:不換題
+    fireEvent.click(screen.getByRole("button", { name: "下一題" }));
+    expect(screen.getByText("第 1 / 3 題")).toBeInTheDocument();
+
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: "下一題" }));
+    expect(screen.getByText("第 2 / 3 題")).toBeInTheDocument();
+    for (let i = 1; i < 3; i++) {
+      passTapGuard();
+      fireEvent.click(option(currentAnswer()));
+      passTapGuard();
+      fireEvent.click(
+        screen.getByRole("button", { name: i === 2 ? "看結果" : "下一題" }),
+      );
+    }
+    // 結果頁:剛進入時點「再練一次」不作用
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "再練一次" }));
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    passTapGuard();
+    fireEvent.click(screen.getByRole("button", { name: "換範圍" }));
+    // 回到設定(仍是助詞搭配),焦點在標題
+    expect(
+      screen.getByRole("heading", { name: "活用・助詞練習" }),
+    ).toHaveFocus();
+    expect(modeButton("助詞")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("離開再返回:進行中的回合接續;課程頁的 ?upto= 連結回到活用練習,不帶參數的 /drill 沿用上次的類型", async () => {
+    window.history.replaceState(null, "", "/drill?upto=6&mode=particle");
+    const user = userEvent.setup();
+    const first = render(<DrillPage />);
+    await rangeSelect();
+    const startButton = await screen.findByRole("button", {
+      name: "開始練習(3 題)",
+    });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    await user.click(startButton);
+    passTapGuard();
+    await user.click(option(currentAnswer()));
+    first.unmount();
+
+    // 從「測驗」頁的卡片進入(/drill,不帶參數):接續同一題;類型與範圍寫回網址(重新整理仍是助詞搭配)
+    window.history.replaceState(null, "", "/drill");
+    const second = render(<DrillPage />);
+    expect(await screen.findByText("第 1 / 3 題")).toBeInTheDocument();
+    expect(screen.getByText("答對 ✓")).toBeInTheDocument();
+    expect(window.location.search).toBe("?upto=6&mode=particle");
+    second.unmount();
+
+    // 從課程頁的「活用練習」(?upto=6):活用練習的設定畫面
+    window.history.replaceState(null, "", "/drill?upto=6");
+    const third = render(<DrillPage />);
+    expect(await rangeSelect()).toHaveValue("6");
+    expect(modeButton("活用")).toHaveAttribute("aria-pressed", "true");
+    third.unmount();
+
+    // 切到助詞後離開,再以 /drill 進入:沿用助詞
+    render(<DrillPage />);
+    await rangeSelect();
+    await user.click(modeButton("助詞"));
+    cleanup();
+    window.history.replaceState(null, "", "/drill");
+    render(<DrillPage />);
+    await rangeSelect();
+    expect(modeButton("助詞")).toHaveAttribute("aria-pressed", "true");
+    // 範圍重新推算(不寫出),類型寫回網址
+    expect(window.location.search).toBe("?mode=particle");
+  });
+
+  it("不寫入 SRS/DB", async () => {
+    window.history.replaceState(null, "", "/drill?upto=6&mode=particle");
+    const user = userEvent.setup();
+    render(<DrillPage />);
+    await rangeSelect();
+    const startButton = await screen.findByRole("button", {
+      name: "開始練習(3 題)",
+    });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    await user.click(startButton);
+    for (let i = 0; i < 3; i++) {
+      passTapGuard();
+      await user.click(option(currentAnswer()));
+      passTapGuard();
+      await user.click(
+        screen.getByRole("button", { name: i === 2 ? "看結果" : "下一題" }),
+      );
+    }
+    expect(screen.getByText("全部答對 🎉")).toBeInTheDocument();
+    expect(await db.cards.count()).toBe(0);
+    expect(await db.logs.count()).toBe(0);
+    expect(await db.progress.count()).toBe(0);
   });
 });

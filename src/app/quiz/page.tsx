@@ -12,11 +12,11 @@ import type { LessonIndex } from "@/schemas/lesson";
 const PRACTICES: { href: string; title: string; description: ReactNode }[] = [
   {
     href: "/drill",
-    title: "活用練習",
+    title: "活用・助詞練習",
     description: (
       <>
         動詞與形容詞的活用形(<span lang="ja">て形</span>、<span lang="ja">ない形</span>
-        …),依課程進度出題
+        …)與教材的助詞搭配,依課程進度出題
       </>
     ),
   },
@@ -31,7 +31,7 @@ const PRACTICES: { href: string; title: string; description: ReactNode }[] = [
   },
 ];
 
-/** 測驗入口:上方「練習」(活用練習等),下方選一課開始 10 題單字測驗(T7.4) */
+/** 測驗入口:上方「練習」(活用・助詞練習等),下方選一課開始 10 題單字測驗(T7.4) */
 export default function QuizIndexPage() {
   const [index, setIndex] = useState<LessonIndex | null>(null);
   const [error, setError] = useState<string | null>(null);
