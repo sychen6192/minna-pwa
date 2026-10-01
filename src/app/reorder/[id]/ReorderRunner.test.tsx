@@ -289,7 +289,7 @@ describe("ReorderRunner 題目", () => {
 
     await user.click(screen.getByRole("button", { name: "下一題" }));
     expect(
-      await screen.findByText("對不起,請你告訴我這個漢字的念法。"),
+      await screen.findByText("對不起，請你告訴我這個漢字的念法。"),
     ).toBeInTheDocument();
     // 換題後焦點移到題幹
     expect(screen.getByText("依中譯排出日文句子").parentElement).toHaveFocus();
@@ -299,7 +299,7 @@ describe("ReorderRunner 題目", () => {
     getLesson.mockResolvedValue(lessonWith(14, [S15]));
     const user = userEvent.setup();
     render(<ReorderRunner id={14} />);
-    await screen.findByText("對不起,請你告訴我這個漢字的念法。");
+    await screen.findByText("對不起，請你告訴我這個漢字的念法。");
     expect(screen.getByText(/首尾兩塊已固定/)).toBeInTheDocument();
 
     const row = answerRow();
@@ -510,7 +510,7 @@ describe("ReorderRunner 結果", () => {
     ]);
     await user.click(screen.getByRole("button", { name: "確認" }));
     await user.click(screen.getByRole("button", { name: "下一題" }));
-    await screen.findByText("對不起,請你告訴我這個漢字的念法。");
+    await screen.findByText("對不起，請你告訴我這個漢字的念法。");
     await user.click(screen.getByRole("button", { name: "略過" }));
     await user.click(screen.getByRole("button", { name: "看結果" }));
 

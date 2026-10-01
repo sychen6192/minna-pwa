@@ -605,8 +605,10 @@ describe("回傳 null 的情況", () => {
   });
 
   it("排除清單中的 id,即使形狀可推導", () => {
-    const v = { ...item("動I", "借(か)|ります"), id: "L07-V006" };
+    // 教材的 L40-V055 是「離れた」;以ます形的 fixture 驗證排除依 id 而非形狀
+    const v = { ...item("動II", "離(はな)|れます"), id: "L40-V055" };
     expect(CONJUGATION_EXCLUDED.has(v.id)).toBe(true);
+    expect(conjugate({ ...v, id: "L99-V001" }, "te")?.kana).toBe("はなれて");
     expect(conjugate(v, "te")).toBeNull();
     expect(isConjugable(v)).toBe(false);
   });
@@ -637,7 +639,7 @@ describe("conjugationBase:活用的基底(活用練習用)", () => {
   it("不活用的詞性、排除清單、資料不一致:null;回傳複本(不改動輸入)", () => {
     expect(conjugationBase(item("名", "駅(えき)"))).toBeNull();
     expect(
-      conjugationBase({ ...item("動I", "借(か)|ります"), id: "L07-V006" }),
+      conjugationBase({ ...item("動II", "離(はな)|れます"), id: "L40-V055" }),
     ).toBeNull();
     expect(conjugationBase(item("動I", "書(か)|きます", "かく"))).toBeNull();
     const v = item("動I", "書(か)|きます");

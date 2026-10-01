@@ -52,15 +52,15 @@ describe("出題池(全資料)", () => {
       expect(v.note).not.toBe("補充單字(自行練習發音)");
     }
     // 排除清單不在池中
-    for (const id of [
-      "L07-V006",
-      "L32-V010",
-      "L40-V055",
-      "L47-V004",
-      "L50-V010",
-    ]) {
+    for (const id of ["L32-V010", "L40-V055", "L50-V010"]) {
       expect(pool.some((v) => v.id === id)).toBe(false);
     }
+    // 詞性修正後(T12.3):借ります(動II)進入出題池;します〔音／声が〜〕等(動III)與
+    // L06-V010 します 重列,去重只留第 6 課
+    expect(pool.find((v) => v.id === "L07-V006")?.pos).toBe("動II");
+    expect(pool.filter((v) => v.kana === "します").map((v) => v.id)).toEqual([
+      "L06-V010",
+    ]);
     // 気が つきます(L31、L34)只留第 31 課
     expect(
       pool.filter((v) => v.kana === "きがつきます").map((v) => v.lessonId),

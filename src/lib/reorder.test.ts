@@ -43,23 +43,17 @@ function lesson(id: number): Lesson {
   return l;
 }
 
-/** 依 id 取句子;会話另回傳在会話中的 index(isTitleLine 判斷用) */
-function find(id: string): { sentence: Sentence; index?: number } {
+/** 依 id 取句子(文型例句或会話) */
+function sentence(id: string): Sentence {
   const l = lesson(Number(id.slice(1, 3)));
-  for (const g of l.grammar) {
-    const s = g.examples.find((e) => e.id === id);
-    if (s) return { sentence: s };
-  }
-  const index = l.dialogues.findIndex((d) => d.id === id);
-  if (index < 0) throw new Error(`找不到 ${id}`);
-  return { sentence: l.dialogues[index], index };
+  const s = [...l.grammar.flatMap((g) => g.examples), ...l.dialogues].find(
+    (x) => x.id === id,
+  );
+  if (!s) throw new Error(`找不到 ${id}`);
+  return s;
 }
-const sentence = (id: string) => find(id).sentence;
 const texts = (id: string) => chunkRuby(sentence(id).ruby).map(chunkText);
-const reorderable = (id: string) => {
-  const { sentence: s, index } = find(id);
-  return isReorderable(s, index);
-};
+const reorderable = (id: string) => isReorderable(sentence(id));
 
 /** 切塊不變式:各段 b 串接、無讀音段去掉半形空格(帶 r 的段原樣) */
 const withoutBoundarySpaces = (segs: readonly RubySeg[]) =>
@@ -295,12 +289,21 @@ describe("isReorderable", () => {
     expect(texts("L19-S08")).toEqual(["寒い→", "寒く", "なります"]);
   });
 
-  it("排除会話標題行(L41-D01 若不是標題行則可出題)", () => {
-    const { sentence: title } = find("L41-D01");
-    expect(isReorderable(title, 0)).toBe(false);
-    expect(isReorderable(title)).toBe(true); // 3 塊、無句末標點:只有標題規則擋得住
-    for (const id of ["L15-D01", "L23-D01", "L24-D01"]) {
-      expect(reorderable(id)).toBe(false);
+  it("会話標題(dialogueTitle)不是台詞、不在出題池:L41 的標題若當句子則可出題,只靠資料結構擋住", () => {
+    const l = lesson(41);
+    const title = l.dialogueTitle;
+    expect(title && surfaceText(title.ruby)).toBe(
+      "荷物を 預かって いただけませんか",
+    );
+    // 3 塊、無句末標點:形狀規則擋不住,標題須留在 dialogueTitle(不回到 dialogues)
+    expect(title && isReorderable({ id: "L41-title", ruby: title.ruby })).toBe(
+      true,
+    );
+    for (const id of [15, 23, 24, 41]) {
+      const t = lesson(id).dialogueTitle;
+      expect(t, `第 ${id} 課`).toBeDefined();
+      const surfaces = reorderPool(lesson(id)).map((s) => surfaceText(s.ruby));
+      expect(surfaces).not.toContain(t && surfaceText(t.ruby));
     }
   });
 
@@ -475,7 +478,7 @@ describe("reorderPool / makeReorderRound", () => {
     // L36-D04 與 L36-S11 同一句(毎日 運動して、何でも 食べるように して います。)
     expect(ids).toContain("L36-S11");
     expect(ids).not.toContain("L36-D04");
-    expect(isReorderable(l.dialogues[3], 3)).toBe(true);
+    expect(isReorderable(l.dialogues[3])).toBe(true);
   });
 
   it(`一回合至多 ${REORDER_COUNT} 題、不重複;本課較少時照實際句數`, () => {

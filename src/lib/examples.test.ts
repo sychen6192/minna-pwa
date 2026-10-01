@@ -254,17 +254,17 @@ describe("findExampleSentence 同課同表面形(T10.5)", () => {
   // L47:します 有〔聲音〕/〔味道〕/〔氣味〕
   const oto = vocab("します", {
     id: "L47-V004",
-    pos: "動I",
+    pos: "動III",
     note: "〔音／声が〜〕",
   });
   const aji = vocab("します", {
     id: "L47-V005",
-    pos: "動I",
+    pos: "動III",
     note: "〔味が〜〕",
   });
   const nioi = vocab("します", {
     id: "L47-V006",
-    pos: "動I",
+    pos: "動III",
     note: "〔においが〜〕",
   });
   const words = [oto, aji, nioi];

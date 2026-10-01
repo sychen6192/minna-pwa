@@ -9,7 +9,7 @@ import { RubyText, type FuriganaMode } from "@/components/RubyText";
 import { SpeakButton } from "@/components/SpeakButton";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { getLesson } from "@/lib/content";
-import { buildPlayback, isTitleLine, speakersOf, type PlaybackStep } from "@/lib/dialogue";
+import { buildPlayback, speakersOf, type PlaybackStep } from "@/lib/dialogue";
 import { jaLang } from "@/lib/lang";
 import { lessonTabHash, parseLessonHash, type LessonTab } from "@/lib/lessonHash";
 import { displayNote, isSupplementary, noteSection, type VocabSection } from "@/lib/notes";
@@ -918,14 +918,14 @@ function Toolbar({ children }: { children: React.ReactNode }) {
   return <div className="flex flex-wrap items-center gap-2 px-4 pt-2">{children}</div>;
 }
 
-/** 例句/会話的中譯:隱藏中譯時改為點擊揭示 */
+/** 例句/会話/会話標題的中譯:隱藏中譯時改為點擊揭示 */
 function Translation({
   sentence,
   hidden,
   open,
   onToggle,
 }: {
-  sentence: Sentence;
+  sentence: Pick<Sentence, "translation">;
   hidden: boolean;
   open: boolean;
   onToggle: () => void;
@@ -1124,9 +1124,13 @@ function scrollIntoViewNearest(el: HTMLElement, behavior: ScrollBehavior): boole
 /** 自動捲動後的這段時間內(平滑捲動可能仍在進行),上一句還沒捲入不算使用者捲離 */
 const AUTO_SCROLL_SETTLE_MS = 1000;
 
+/** 会話標題中譯的揭示狀態 key(台詞以 D id 為 key,不會撞號) */
+const TITLE_REVEAL_KEY = "dialogueTitle";
+
 /**
  * 会話分頁(F7.2):逐句發音、全部播放(目前句高亮、可停止)與角色扮演。
- * - 標題行(dialogue.ts isTitleLine)顯示為台詞上方的小標,不列入播放與扮演
+ * - 会話標題(`lesson.dialogueTitle`,不在 dialogues 內)顯示為台詞上方的小標,不列入播放與扮演;
+ *   中譯同台詞隨「隱藏中譯」點擊揭示
  * - 扮演:所選說話者的台詞以「顯示台詞」佔位遮住(可點擊偷看);播放到時暫停並顯示「下一句」,
  *   使用者說完再按,該句揭示後繼續。重新播放或換角色時再遮住
  * - 被遮台詞的中譯是開口的提示:沒有隱藏中譯時照常顯示(純文字);隱藏中譯時不顯示
@@ -1240,8 +1244,7 @@ function DialogueList({
     return <Empty>本課沒有会話</Empty>;
   }
 
-  const title = isTitleLine(dialogues[0], 0) ? dialogues[0] : null;
-  const lines = title ? dialogues.slice(1) : dialogues;
+  const title = lesson.dialogueTitle;
 
   // 從第 start 步播放:連續的 speak 一次交給 speakSequence;遇到 wait(扮演的台詞)停下等「下一句」
   const run = (steps: PlaybackStep[], start: number, runId: number) => {
@@ -1371,7 +1374,7 @@ function DialogueList({
           </div>
         )}
       </Toolbar>
-      {/* 会話標題(L15/L23/L24/L41):台詞上方的小標,不是說話者的台詞 */}
+      {/* 会話標題(目前 L15/L23/L24/L41):台詞上方的小標,不是說話者的台詞 */}
       {title && (
         <div className="px-4 pt-3">
           <h2 className="leading-ruby font-bold">
@@ -1381,14 +1384,14 @@ function DialogueList({
             <Translation
               sentence={title}
               hidden={hideTranslations}
-              open={revealed.has(title.id)}
-              onToggle={() => toggleRevealed(title.id)}
+              open={revealed.has(TITLE_REVEAL_KEY)}
+              onToggle={() => toggleRevealed(TITLE_REVEAL_KEY)}
             />
           </div>
         </div>
       )}
       <ul className="py-2">
-        {lines.map((d) => {
+        {dialogues.map((d) => {
           const isRole = role !== null && d.speaker?.trim() === role;
           const masked = isRole && !roleRevealed.has(d.id);
           const current = d.id === currentId;

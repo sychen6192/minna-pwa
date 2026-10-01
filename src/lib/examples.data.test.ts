@@ -32,6 +32,10 @@ describe("語境例句 × 全部教材(T10.5)", () => {
     expect(pairs.filter((p) => p.example !== null).length).toBeGreaterThan(400);
   });
 
+  it("有語境例句的單字 534(T11.9 為 533;T12.3 借ります 修正為動II 後配到活用形 +1)", () => {
+    expect(pairs.filter((p) => p.example !== null)).toHaveLength(534);
+  });
+
   it("不選含「→」的活用對照行", () => {
     const hits = pairs
       .filter((p) => p.example !== null && text(p.example.ruby).includes("→"))
@@ -79,6 +83,41 @@ describe("語境例句 × 全部教材(T10.5)", () => {
     expect(exampleOf("L47-V005")).toBeNull(); // 課內無「味が します」
     expect(exampleOf("L47-V006")).toBeNull(); // 課內無「においが します」
     expect(exampleOf("L01-V014")?.id).toBe("L01-S10"); // ミラーさんは IMCの 社員です。
+    // T12.3 借ります 修正為動II 後配到活用形(L07-S12「カリナさんに ＣＤを 借りました。」較長,不選)
+    expect(exampleOf("L07-V006")?.id).toBe("L07-S15"); // 銀行から お 金を 借りました。
+  });
+});
+
+describe("会話標題(T12.4)", () => {
+  it("標題不是例句:移入 dialogueTitle 後,原配到標題的 3 字改配真正的台詞", () => {
+    // 原配到 L15-D01「ご家族は?」、L24-D01「手伝って くれますか」、L41-D01「荷物を 預かって いただけませんか」
+    const marked = (vocabId: string) => {
+      const m = lessons
+        .flatMap((l) => l.vocab.map((v) => ({ l, v })))
+        .find(({ v }) => v.id === vocabId);
+      const x = m && findExampleMatch(m.v, m.l);
+      if (!x) return null;
+      const t = text(x.sentence.ruby);
+      return `${x.sentence.id} ${x.kind} ${t.slice(0, x.start)}【${t.slice(x.start, x.end)}】${t.slice(x.end)}`;
+    };
+    expect(marked("L15-V025")).toBe("L15-D09 exact 木村さんの 【ご家族】は?");
+    expect(marked("L24-V001")).toBe(
+      "L24-D04 exact 山田さんと ミラーさんが 来て 【くれます】。",
+    );
+    expect(marked("L41-V036")).toBe(
+      "L41-D05 conjugated それで 申し訳ありませんが、【預かって】 おいて いただけませんか。",
+    );
+    const titles = new Set(
+      lessons.flatMap((l) =>
+        l.dialogueTitle ? [text(l.dialogueTitle.ruby)] : [],
+      ),
+    );
+    expect(titles.size).toBe(4);
+    expect(
+      pairs
+        .filter((p) => p.example !== null && titles.has(text(p.example.ruby)))
+        .map((p) => p.v.id),
+    ).toEqual([]);
   });
 });
 
@@ -113,11 +152,11 @@ describe("動詞活用形 × 全部教材(T11.9)", () => {
     return `${t.slice(0, x.m.start)}【${t.slice(x.m.start, x.m.end)}】${t.slice(x.m.end)}`;
   };
 
-  it("有語境例句的動詞 42 → 141(ます形 42 + 活用形 99,記錄於 commit)", () => {
+  it("有語境例句的動詞 42 → 142(ます形 42 + 活用形 100,記錄於 commit;T12.3 借ります +1)", () => {
     const verbs = matches.filter((x) => isVerb(x.v.pos));
     expect(verbs.filter((x) => x.m.kind === "exact")).toHaveLength(42);
-    expect(conjugated).toHaveLength(99);
-    expect(verbs).toHaveLength(141);
+    expect(conjugated).toHaveLength(100);
+    expect(verbs).toHaveLength(142);
   });
 
   it("活用形只配動詞,且只在全課沒有ます形命中時", () => {
@@ -154,6 +193,7 @@ describe("動詞活用形 × 全部教材(T11.9)", () => {
   });
 
   it.each([
+    ["L07-V006", "銀行から お 金を 【借りました】。"], // T12.3 詞性修正為動II 後(資料原樣「お 金」)
     ["L14-V017", "雨が 【降って】 います。"],
     ["L17-V014", "薬を 【飲まなければ】 なりません。"],
     ["L17-V015", "それから 今晩は おふろに 【入らない】で ください。"],

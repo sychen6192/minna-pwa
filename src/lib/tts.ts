@@ -281,7 +281,7 @@ const SLASH_ALT_RE = /／[^\s／]*/g;
 const BRACKET_RE = /[［］〔〕]/g;
 /** 〜 … 接續/省略記號 */
 const ELLIPSIS_RE = /[〜～…‥]/g;
-/** 教材以 ―(U+2015)/—(U+2014)記長音(え―と) */
+/** ―(U+2015)/—(U+2014)視同長音(資料曾以 え―と 記長音,T12.2 已修正為 えーと) */
 const DASH_RE = /[―—]/g;
 /** 單字不需要的標點與空白(に、さん → にさん) */
 const WORD_PUNCT_RE = /[\s、。,\uFF0C・･「」『』!?\uFF01\uFF1F]/g;

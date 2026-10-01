@@ -844,7 +844,7 @@ describe("makeCloze(T11.8)", () => {
     expect(cloze && segText(cloze.after)).toBe("。");
   });
 
-  it("句=字、含→的對照行、会話標題行、中譯標示較晚課次的例句不選", () => {
+  it("句=字、含→的對照行、中譯標示較晚課次的例句不選;会話標題(dialogueTitle)不是候選", () => {
     const samui: VocabItem = {
       id: "L08-V018",
       ruby: [{ b: "寒", r: "さむ" }, { b: "い" }],
@@ -852,26 +852,44 @@ describe("makeCloze(T11.8)", () => {
       meaning: "冷",
       pos: "い形",
     };
-    const bad = lessonWith(
-      8,
-      [samui],
-      [
-        sent("S1", [{ b: "寒", r: "さむ" }, { b: "い" }]),
-        sent("S2", [
-          { b: "寒", r: "さむ" },
-          { b: "い → " },
-          { b: "寒", r: "さむ" },
-          { b: "く なります" },
-        ]),
-        sent(
-          "S3",
-          [{ b: "きょうは " }, { b: "寒", r: "さむ" }, { b: "いですね。" }],
-          "今天很冷呢。(第 19 課)",
-        ),
-      ],
-      [sent("D1", [{ b: "寒", r: "さむ" }, { b: "い 日" }])], // 無 speaker 的第一行 = 標題
-    );
+    const bad: Lesson = {
+      ...lessonWith(
+        8,
+        [samui],
+        [
+          sent("S1", [{ b: "寒", r: "さむ" }, { b: "い" }]),
+          sent("S2", [
+            { b: "寒", r: "さむ" },
+            { b: "い → " },
+            { b: "寒", r: "さむ" },
+            { b: "く なります" },
+          ]),
+          sent(
+            "S3",
+            [{ b: "きょうは " }, { b: "寒", r: "さむ" }, { b: "いですね。" }],
+            "今天很冷呢。(第 19 課)",
+          ),
+        ],
+      ),
+      // 標題可挖空(寒い + 日),但不是台詞
+      dialogueTitle: {
+        ruby: [{ b: "寒", r: "さむ" }, { b: "い 日" }],
+        translation: "寒冷的日子",
+      },
+    };
     expect(makeCloze(samui, bad)).toBeNull();
+    // 同一句若是台詞則會出題:擋住標題的是資料結構
+    expect(
+      makeCloze(samui, {
+        ...bad,
+        dialogues: [
+          {
+            ...sent("D1", [{ b: "寒", r: "さむ" }, { b: "い 日" }]),
+            speaker: "ミラー",
+          },
+        ],
+      })?.sentenceId,
+    ).toBe("D1");
 
     const earlier = lessonWith(
       8,
@@ -1373,6 +1391,41 @@ describe("pickDistractors distinctBy / parseQuizTypes(T11.8)", () => {
     ).toEqual(["b", "c", "d"]);
     const d = pickDistractors(answer, pool, 3, ZERO, (c) => c.meaning);
     expect(d.map((c) => c.meaning).sort()).toEqual(["貓", "鳥"]);
+  });
+
+  it("日→中、中→日:選項顯示的文字(中文 / 日文表面形)不重複(F3.2)", () => {
+    // L47 的動III:3 個「します」〔音／声が〜〕〔味が〜〕〔においが〜〕的 ruby 相同(中→日不顯示 note)
+    const pool = [
+      cand("L47-V003", 47, "動III", "長壽", "長生きします"),
+      cand("L47-V004", 47, "動III", "有〔響動／聲音〕", "します"),
+      cand("L47-V005", 47, "動III", "有〔味道〕", "します"),
+      cand("L47-V006", 47, "動III", "有〔氣味〕", "します"),
+      cand("L47-V031", 47, "動III", "訂婚", "婚約します"),
+      cand("L47-V040", 47, "名", "狗", "いぬ"),
+      cand("L47-V041", 47, "名", "狗", "こいぬ"), // 與 いぬ 同中文
+      cand("L47-V042", 47, "名", "貓", "ねこ"),
+      cand("L47-V043", 47, "名", "鳥", "とり"),
+    ];
+    const shownBy = {
+      "jp-to-zh": (c: QuizCandidate) => c.meaning,
+      "zh-to-jp": (c: QuizCandidate) => c.ruby.map((s) => s.b).join(""),
+    };
+    for (const type of ["jp-to-zh", "zh-to-jp"] as const) {
+      for (let seed = 1; seed <= 20; seed++) {
+        const qs = generateQuiz(47, pool, {
+          types: [type],
+          count: pool.length,
+          rng: seeded(seed),
+        });
+        expect(qs).toHaveLength(pool.length);
+        for (const q of qs) {
+          const shown = (q as McqQuestion).options.map((o) =>
+            shownBy[type](o.candidate),
+          );
+          expect(new Set(shown).size, `${type} ${shown.join(" / ")}`).toBe(4);
+        }
+      }
+    }
   });
 
   it("parseQuizTypes:只留已知題型、依固定順序;無效時 null", () => {

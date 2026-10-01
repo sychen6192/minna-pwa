@@ -257,16 +257,10 @@ export function formIntro(pos: Pos, form: ConjForm): FormIntro | null {
 
 /**
  * 排除清單(id → 理由):規則推導會出錯或資料形狀不適用的字,conjugate 一律回傳 null。
- * TODO(docs/reports/2026-09-uiux-learning-audit.md「資料修正清單」1):L07-V006、L47-V004..006
- * 的詞性以 fixture 修正後,自本清單移除(借ります 為動II、單獨的 します 為動III)。
  */
 export const CONJUGATION_EXCLUDED: ReadonlyMap<string, string> = new Map([
-  ["L07-V006", "借ります 誤標為動I(應為動II):會推導出「借らない」"],
   ["L32-V010", "治ります、直ります:兩個不同動詞並列"],
   ["L40-V055", "離れた:唯一不是ます形的動詞(読み物回填)"],
-  ["L47-V004", "します〔音／声が〜〕誤標為動I(應為動III)"],
-  ["L47-V005", "します〔味が〜〕誤標為動I(應為動III)"],
-  ["L47-V006", "します〔においが〜〕誤標為動I(應為動III)"],
   ["L50-V010", "ございます:ござる 的活用不在基本形練習範圍"],
 ]);
 

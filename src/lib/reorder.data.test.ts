@@ -40,9 +40,7 @@ function seeded(seed: number): () => number {
 const grammarExamples = lessons.flatMap((l) =>
   l.grammar.flatMap((g) => g.examples),
 );
-const dialogueLines = lessons.flatMap((l) =>
-  l.dialogues.map((s, index) => ({ s, index })),
-);
+const dialogueLines = lessons.flatMap((l) => l.dialogues);
 
 describe("例句重組(全資料)", () => {
   it("50 課齊全", () => {
@@ -51,11 +49,10 @@ describe("例句重組(全資料)", () => {
     );
   });
 
+  // T12.4 会話標題移入 dialogueTitle 前後不變(標題行原本就不出題)
   it("可出題句數:文型例句 593 + 会話 167 = 760(各課出題池 751:去掉同課重列句 4、較晚課次的例句 5)", () => {
     const grammar = grammarExamples.filter((s) => isReorderable(s)).length;
-    const dialogue = dialogueLines.filter(({ s, index }) =>
-      isReorderable(s, index),
-    ).length;
+    const dialogue = dialogueLines.filter((s) => isReorderable(s)).length;
     expect({ grammar, dialogue }).toEqual({ grammar: 593, dialogue: 167 });
     const pools = lessons.map((l) => reorderPool(l).length);
     expect(pools.reduce((a, b) => a + b, 0)).toBe(751);
@@ -82,7 +79,7 @@ describe("例句重組(全資料)", () => {
   });
 
   it("全部句子的切塊:接回一致、帶 r 的段不拆、沒有空塊", () => {
-    const all = [...grammarExamples, ...dialogueLines.map(({ s }) => s)];
+    const all = [...grammarExamples, ...dialogueLines];
     expect(all.length).toBeGreaterThan(1400);
     for (const s of all) {
       const chunks = chunkRuby(s.ruby);
@@ -99,7 +96,32 @@ describe("例句重組(全資料)", () => {
     }
   });
 
-  it("「→」活用對照行(12 行)與会話標題行(4 行)都不出題", () => {
+  // T12.5 fix-content 把 furigana 跨越的「…」「「」切成獨立段(無讀音):切塊與可否出題不變
+  it.each([
+    ["L11-S05", false, ["…8つ", "買いました。"]],
+    ["L11-S07", false, ["…5人", "います。"]],
+    ["L11-S09", false, ["…2時間", "勉強します。"]],
+    ["L11-S11", false, ["…3年", "勉強しました。"]],
+    [
+      "L21-S12",
+      true,
+      ["ミラーさんは", "「来週", "東京へ", "出張します」と", "言いました。"],
+    ],
+  ] as const)(
+    "%s(ruby 分段,T12.5):可出題 %s,切塊不變",
+    (id, reorderable, texts) => {
+      const s = grammarExamples.find((x) => x.id === id);
+      if (!s) throw new Error(`找不到 ${id}`);
+      expect(
+        s.ruby.some((seg) => seg.b === "…" || seg.b === "「"),
+        "已分段",
+      ).toBe(true);
+      expect(isReorderable(s)).toBe(reorderable);
+      expect(chunkRuby(s.ruby).map(chunkText)).toEqual(texts);
+    },
+  );
+
+  it("「→」活用對照行(12 行)不出題;会話標題(4 課)不在 dialogues、不在出題池", () => {
     const arrows = grammarExamples.filter((s) =>
       surfaceText(s.ruby).includes("→"),
     );
@@ -118,15 +140,15 @@ describe("例句重組(全資料)", () => {
       "L48-S03",
     ]);
     for (const s of arrows) expect(isReorderable(s)).toBe(false);
-    const titles = lessons
-      .filter((l) =>
-        ["L15-D01", "L23-D01", "L24-D01", "L41-D01"].includes(
-          l.dialogues[0]?.id,
-        ),
-      )
-      .map((l) => l.dialogues[0]);
-    expect(titles).toHaveLength(4);
-    for (const s of titles) expect(isReorderable(s, 0)).toBe(false);
+    const titled = lessons.filter((l) => l.dialogueTitle);
+    expect(titled.map((l) => l.id)).toEqual([15, 23, 24, 41]);
+    for (const l of titled) {
+      const title = surfaceText(l.dialogueTitle?.ruby ?? []);
+      expect(
+        reorderPool(l).filter((s) => surfaceText(s.ruby) === title),
+        `第 ${l.id} 課`,
+      ).toEqual([]);
+    }
   });
 
   it("每一課都有可出題的句子,且都能組成一回合:塊數 3–8、打亂 ≠ 原句、依原句排入即為正解", () => {

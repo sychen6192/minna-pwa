@@ -1,6 +1,20 @@
-# Bundle 量測(T7.4,2026-07-05;T7.5 首頁改儀表板後更新 2026-07-10;Phase 10 後重測 2026-09-29;Phase 11 後重測 2026-09-30)
+# Bundle 量測(T7.4,2026-07-05;T7.5 首頁改儀表板後更新 2026-07-10;Phase 10 後重測 2026-09-29;Phase 11 後重測 2026-09-30;Phase 12 後重測 2026-09-30)
 
 量測方式:`out/index.html` 實際引用的資產逐一 `gzip -9` 加總(`next build` 之 First Load 欄為未壓縮值)。
+
+## 2026-09-30 重新量測(Phase 12 後)
+
+量測方式同下。Phase 12 主要改內容資料與建置期腳本(`scripts/`);執行期的變動(会話標題改讀 `dialogueTitle`、測驗選項依顯示文字去重、活用排除清單縮為 3 筆)都不在首頁引用之列。首頁引用的資產逐項 gzip 大小與 Phase 11 表相同:**JS 合計 165.3 KB ✓**、CSS 7.4 KB,`next build` 首頁 First Load 122 kB。
+
+| 項目 | Phase 11 | Phase 12 |
+|---|---|---|
+| 首頁 JS(gzip) | 165.3 KB | **165.3 KB ✓** |
+| 首頁 First Load(未壓縮) | 122 kB | 122 kB |
+| `/drill` First Load | 201 kB | 200 kB |
+| sw.js(gzip) | 15.4 KB | 15.3 KB |
+| precache 條目 | 423 | 422(差在 JS chunk 數;頁面 HTML 與 RSC 各 160、`/data` 51 檔不變) |
+
+其餘路由的 First Load 與 Phase 11 表相同(`/grammar` 143、`/lessons` 169、`/lessons/[id]` 192、`/practice` 191、`/quiz` 137、`/quiz/[id]` 202、`/reorder` 136、`/reorder/[id]` 175、`/review` 194、`/settings` 176、`/stats` 284 kB)。
 
 ## 2026-09-30 重新量測(Phase 11 後)
 

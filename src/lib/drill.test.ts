@@ -315,8 +315,8 @@ describe("drillPool:範圍內可練的動詞與形容詞", () => {
       }),
     ]),
     lesson(7, [
-      // 排除清單(conjugate 回傳 null)
-      vocab("L07-V006", "動I", "借(か)|ります"),
+      // 排除清單的 id(conjugate 依 id 回傳 null,形狀可推導也一樣;放在範圍內的課才測得到)
+      vocab("L40-V055", "動II", "離(はな)|れます"),
       vocab("L07-V001", "動I", "切(き)|ります"),
     ]),
     lesson(8, [

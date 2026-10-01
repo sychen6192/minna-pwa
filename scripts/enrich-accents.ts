@@ -16,9 +16,9 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { splitMorae } from "../src/lib/pitch";
 import { LessonSchema } from "../src/schemas/lesson";
+import { isMain } from "./lib/cli";
 
 const KANJIUM_URL =
   "https://raw.githubusercontent.com/mifunetoshiro/kanjium/master/data/source_files/raw/accents.txt";
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
 }
 
 // 直接執行才跑 main(測試 import 純函式時不觸發)
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   main().catch((e: unknown) => {
     console.error(e instanceof Error ? e.message : e);
     process.exit(1);

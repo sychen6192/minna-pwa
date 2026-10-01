@@ -1,10 +1,9 @@
 import { toHiragana, toKatakana } from "wanakana";
-import { isTitleLine } from "@/lib/dialogue";
 import { findExampleMatch } from "@/lib/examples";
 import { isSupplementary } from "@/lib/notes";
 import { promptText, refersToLaterLesson } from "@/lib/reorder";
 import { speechText } from "@/lib/tts";
-import type { Lesson, RubySeg, Sentence, VocabItem } from "@/schemas/lesson";
+import type { Lesson, RubySeg, VocabItem } from "@/schemas/lesson";
 
 /** 出題候選 = 單字 + 所屬課號(用於同課/鄰近課干擾項規則) */
 export interface QuizCandidate extends VocabItem {
@@ -78,7 +77,7 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
 
 /** 比對時忽略:空白(含全形)、「、・。」等標點、「〜…」、語境括號「」(NFKC 後的半形標點一併列入) */
 const IGNORED_RE = /[\s、・。,.?!「」〜~…]/g;
-/** 各種橫線視同長音「ー」(教材的 え―と 用 U+2015;羅馬字輸入的 - 由 wanakana 轉為ー) */
+/** 各種橫線視同長音「ー」(資料曾以 U+2015 記 え―と,T12.2 已修正;羅馬字輸入的 - 由 wanakana 轉為ー) */
 const DASH_RE = /[-‐‑‒–—―−]/g;
 /** 可作為輸入題答案的字元:平假名、片假名、長音 */
 const KANA_ONLY_RE = /^[ぁ-ゖァ-ヺー]+$/;
@@ -274,7 +273,7 @@ export function pickDistractors(
   pool: QuizCandidate[],
   count: number,
   rng: Rng = Math.random,
-  /** 選項顯示的文字:給定時選項間(含正解)此值也不重複(聽力的中文、填空的日文表面形) */
+  /** 選項顯示的文字:給定時選項間(含正解)此值也不重複(日→中與聽力的中文、中→日與填空的日文表面形) */
   distinctBy?: (c: QuizCandidate) => string,
 ): QuizCandidate[] {
   const usable = pool.filter(
@@ -424,24 +423,18 @@ export function splitRuby(
  * 把單字所在處挖空(只挖單字本身的表面形,同句只挖一處;動詞的活用形命中不挖,
  * 選項是ます形,挖空處須是單字本身)。不出(回傳 null)的情況:
  * - 慣用語(寒暄、套語多半整句即答案,挖空後沒有可判斷的語境);表面含教材記號者
- * - 句子:含「→」的對照行、正規化後等於單字本身(findExampleMatch 已排除)、会話標題行、
+ * - 句子:含「→」的對照行、正規化後等於單字本身(findExampleMatch 已排除)、
  *   中譯標示較晚課次者(用到還沒教的內容,同例句重組)、句中另有同一字面(挖一處仍看得到答案)、
  *   挖空處切開帶讀音的漢字段(外国 ⊂ 外国人)
+ * 候選是文型例句與会話台詞;会話標題(`Lesson.dialogueTitle`)不是句子,不在候選內。
  * 中譯去掉句尾的課次參照(promptText)。
  */
 export function makeCloze(vocab: VocabItem, lesson: Lesson): Cloze | null {
   if (vocab.pos === "慣用" || !isPlainSurface(vocab)) return null;
   const word = surfaceOf(vocab);
-  const titles = new Set<Sentence>(
-    lesson.dialogues.filter((line, i) => isTitleLine(line, i)),
-  );
   const match = findExampleMatch(vocab, lesson, (m) => {
     const { sentence, start, end, kind } = m;
-    if (
-      kind !== "exact" ||
-      titles.has(sentence) ||
-      refersToLaterLesson(sentence, lesson.id)
-    ) {
+    if (kind !== "exact" || refersToLaterLesson(sentence, lesson.id)) {
       return false;
     }
     const text = surfaceOf(sentence);
@@ -482,7 +475,7 @@ function meaningTokens(meaning: string): string[] {
     .filter((t) => t.length > 0);
 }
 
-/** a 的中文意思提到 b(どちら「哪邊（どこ 的禮貌形）」、こっち「這邊（不如"こちら"禮貌）」) */
+/** a 的中文意思提到 b(どちら「哪邊（どこ 的禮貌形）」、こっち「這邊（不如“こちら”禮貌）」) */
 function mentions(
   a: Pick<VocabItem, "meaning">,
   b: Pick<VocabItem, "kana">,
@@ -576,7 +569,15 @@ function makeMcq(
   rng: Rng,
 ): McqQuestion {
   if (type !== "listen") {
-    const distractors = pickDistractors(answer, pool, optionCount - 1, rng);
+    // 選項顯示的文字不重複(F3.2):日→中顯示中文;中→日只顯示 ruby、不顯示 note,
+    // 同表面不同義的字(L47 します〔音／声が〜〕〔味が〜〕〔においが〜〕、出ます)看起來一樣
+    const distractors = pickDistractors(
+      answer,
+      pool,
+      optionCount - 1,
+      rng,
+      type === "jp-to-zh" ? (c) => c.meaning : surfaceOf,
+    );
     return { type, answer, options: withOptions(answer, distractors, rng) };
   }
   // 聽力:選項為中文,彼此不重複;讀音相同的字(平/片假名寫法不同亦同)聽不出差別、

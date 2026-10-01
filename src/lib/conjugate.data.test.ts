@@ -298,14 +298,10 @@ describe("例外(教材單字)", () => {
 });
 
 describe("排除清單", () => {
-  it("恰為文件所列 7 筆", () => {
+  it("恰為文件所列 3 筆", () => {
     expect([...CONJUGATION_EXCLUDED.keys()].sort()).toEqual([
-      "L07-V006", // 借ります 動I 誤標
       "L32-V010", // 治ります、直ります
       "L40-V055", // 離れた
-      "L47-V004", // します 動I 誤標
-      "L47-V005",
-      "L47-V006",
       "L50-V010", // ございます
     ]);
     for (const id of CONJUGATION_EXCLUDED.keys()) {
@@ -314,15 +310,22 @@ describe("排除清單", () => {
   });
 
   it("各筆的排除理由仍成立(資料修正後失敗:請自 CONJUGATION_EXCLUDED 移除並更新覆蓋數)", () => {
-    // pos 誤標(資料修正清單 1):修正為 動II/動III 後,這幾筆應改由規則推導
-    expect(word("L07-V006").pos).toBe("動I");
-    for (const id of ["L47-V004", "L47-V005", "L47-V006"]) {
-      expect(word(id).pos, id).toBe("動I");
-      expect(word(id).kana, id).toBe("します");
-    }
     expect(word("L40-V055").kana.endsWith("ます")).toBe(false);
     expect(surfaceOf(word("L32-V010").ruby)).toContain("、");
     expect(word("L50-V010").kana).toBe("ございます");
+  });
+
+  it("詞性修正後由規則推導(T12.3,fix-content):借ります 動II → 借りて;します〔音／声が〜〕等 動III → して", () => {
+    expect(word("L07-V006").pos).toBe("動II");
+    expect(show("L07-V006", "te")).toBe("借(か)|りて");
+    expect(show("L07-V006", "nai")).toBe("借(か)|りない");
+    expect(show("L07-V006", "dict")).toBe("借(か)|りる");
+    for (const id of ["L47-V004", "L47-V005", "L47-V006"]) {
+      expect(word(id).pos, id).toBe("動III");
+      expect(show(id, "te"), id).toBe("して");
+      expect(show(id, "nai"), id).toBe("しない");
+      expect(show(id, "dict"), id).toBe("する");
+    }
   });
 
   it("全部動詞/形容詞中,基本形無法活用者恰為排除清單;其餘每一個基本形皆有輸出", () => {
@@ -339,15 +342,15 @@ describe("排除清單", () => {
     }
   });
 
-  it("覆蓋數:動詞 451/458(動I 226/232、動II 128/129、動III 97/97)、形容詞 138/138", () => {
+  it("覆蓋數:動詞 455/458(動I 226/228、動II 129/130、動III 100/100)、形容詞 138/138", () => {
     const count = (pred: (v: VocabItem) => boolean) => {
       const all = conjugable.filter(pred);
       return [all.filter((v) => isConjugable(v)).length, all.length];
     };
-    expect(count((v) => conjClass(v.pos) === "verb")).toEqual([451, 458]);
-    expect(count((v) => v.pos === "動I")).toEqual([226, 232]);
-    expect(count((v) => v.pos === "動II")).toEqual([128, 129]);
-    expect(count((v) => v.pos === "動III")).toEqual([97, 97]);
+    expect(count((v) => conjClass(v.pos) === "verb")).toEqual([455, 458]);
+    expect(count((v) => v.pos === "動I")).toEqual([226, 228]);
+    expect(count((v) => v.pos === "動II")).toEqual([129, 130]);
+    expect(count((v) => v.pos === "動III")).toEqual([100, 100]);
     expect(count((v) => v.pos === "い形")).toEqual([85, 85]);
     expect(count((v) => v.pos === "な形")).toEqual([53, 53]);
   });
@@ -364,10 +367,10 @@ describe("全部教材動詞/形容詞的輸出性質(基本形 + 進階形)", (
   );
 
   it("資料載入完整", () => {
-    expect(ok.length).toBe(589);
+    expect(ok.length).toBe(593);
     const basic = outputs.filter(([v, f]) => basicFormsOf(v.pos).includes(f));
     expect(basic.length).toBe(
-      451 * BASIC_VERB_FORMS.length + 138 * BASIC_ADJ_FORMS.length,
+      455 * BASIC_VERB_FORMS.length + 138 * BASIC_ADJ_FORMS.length,
     );
     expect(outputs.length - basic.length).toBe(ADVANCED_TOTAL);
   });
@@ -471,7 +474,7 @@ describe("全部教材動詞/形容詞的輸出性質(基本形 + 進階形)", (
 });
 
 /** 進階形的輸出總數(練習的字 × 形;動詞 7 形 + 形容詞條件形) */
-const ADVANCED_TOTAL = 2456;
+const ADVANCED_TOTAL = 2466;
 
 describe("進階形(T11.5):教材例句 golden", () => {
   const all = lessons.flatMap((l) => [
@@ -676,6 +679,9 @@ const EXCLUSION_KANA: readonly (readonly [id: string, kana: string])[] = [
   ["L46-V004", "でます"],
   ["L46-V025", "てにはいります"],
   ["L46-V032", "でます"],
+  ["L47-V004", "します"],
+  ["L47-V005", "します"],
+  ["L47-V006", "します"],
   ["L49-V025", "だします"],
   ["L50-V033", "かないます"],
   ["L04-V006", "おわります"],
@@ -938,15 +944,17 @@ describe("進階形(T11.5):例外與排除", () => {
     expect(conditionalOnly).toContain("L38-V036"); // 似て います
     expect(conditionalOnly).toContain("L45-V006"); // うまく いきます
     expect(conditionalOnly).toContain("L20-V001"); // 要ります
-    // 無意志動詞 89 + くれます、交わります
-    expect(conditionalOnly).toHaveLength(91);
+    // します〔音／声が〜〕:不出「音が できる/しよう/しろ」
+    expect(conditionalOnly).toContain("L47-V004");
+    // 無意志動詞 92 + くれます、交わります
+    expect(conditionalOnly).toHaveLength(94);
     const noConditional = verbs
       .filter((v) => conjugate(v, "conditional") === null)
       .map((v) => v.id);
     expect(noConditional).toHaveLength(18); // -aru 敬語 6 + 尊敬語/謙讓語 12
   });
 
-  it("覆蓋數(可活用的 451 個動詞、138 個形容詞中練習者)", () => {
+  it("覆蓋數(可活用的 455 個動詞、138 個形容詞中練習者)", () => {
     const count = (f: ConjForm, cls: string) =>
       conjugable.filter(
         (v) => conjClass(v.pos) === cls && conjugate(v, f) !== null,
@@ -954,13 +962,13 @@ describe("進階形(T11.5):例外與排除", () => {
     expect(
       Object.fromEntries(ADVANCED_VERB_FORMS.map((f) => [f, count(f, "verb")])),
     ).toEqual({
-      potential: 309,
-      volitional: 309,
-      imperative: 309,
-      prohibitive: 316,
-      conditional: 433,
-      passive: 324,
-      causative: 318,
+      potential: 310,
+      volitional: 310,
+      imperative: 310,
+      prohibitive: 317,
+      conditional: 437,
+      passive: 325,
+      causative: 319,
     });
     expect(count("conditional", "iAdj") + count("conditional", "naAdj")).toBe(
       138,

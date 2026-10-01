@@ -7,7 +7,6 @@ import {
   type VocabItem,
 } from "@/schemas/lesson";
 import { SLOW_TEST_TIMEOUT } from "@/test/timeouts";
-import { isTitleLine } from "./dialogue";
 import { findExampleMatch } from "./examples";
 import { isSupplementary } from "./notes";
 import {
@@ -16,6 +15,7 @@ import {
   canListen,
   checkAnswer,
   generateQuiz,
+  interchangeable,
   listenText,
   makeCloze,
   type QuestionType,
@@ -110,6 +110,16 @@ const lessons: Lesson[] = readdirSync(lessonsDir)
 const surface = (segs: RubySeg[]) => segs.map((s) => s.b).join("");
 /** 出題對象:補充單字不出題 */
 const targets = (l: Lesson) => l.vocab.filter((v) => !isSupplementary(v));
+/** 同 QuizRunner:目標課 + 前後兩課 */
+const poolFor = (id: number): QuizCandidate[] =>
+  lessons
+    .filter((l) => Math.abs(l.id - id) <= 2)
+    .flatMap((l) => l.vocab.map((v) => ({ ...v, lessonId: l.id })));
+/** 可重現的偽亂數(Park–Miller) */
+const seeded = (seed: number) => {
+  let x = seed;
+  return () => ((x = (x * 16807) % 2147483647) - 1) / 2147483646;
+};
 
 describe("例句填空 × 全部教材(T11.8)", () => {
   const clozes = lessons.flatMap((l) =>
@@ -120,13 +130,23 @@ describe("例句填空 × 全部教材(T11.8)", () => {
   );
 
   it("可出填空的字數(記錄於 commit)與每課至少一字", () => {
-    expect(clozes).toHaveLength(370);
+    // T12.5 ruby 分段後 370 → 371:L11-V012(見下一個測試)
+    expect(clozes).toHaveLength(371);
     for (const l of lessons) {
       expect(
         clozes.filter((c) => c.l.id === l.id).length,
         `第 ${l.id} 課`,
       ).toBeGreaterThan(0);
     }
+  });
+
+  it("L11-V012 8つ 挖 L11-S05:T12.5 把「…8」(r=やっ)分成 {…}{8/やっ} 後,挖空不再切開帶讀音的段", () => {
+    expect(clozes.find((c) => c.v.id === "L11-V012")?.cloze).toEqual({
+      sentenceId: "L11-S05",
+      before: [{ b: "…" }],
+      after: [{ b: " " }, { b: "買", r: "か" }, { b: "いました。" }],
+      translation: "…買了 8 個。",
+    });
   });
 
   it("挖空處恰為單字表面形、同句只出現一次;前後段接回即原句", () => {
@@ -158,17 +178,20 @@ describe("例句填空 × 全部教材(T11.8)", () => {
     expect(conjugatedOnly.filter((v) => ids.has(v.id))).toEqual([]);
   });
 
-  it("不出慣用語;不選含→的對照行、会話標題行與較晚課次的例句", () => {
+  it("不出慣用語;不選含→的對照行、較晚課次的例句與会話標題(dialogueTitle)", () => {
     expect(clozes.filter((c) => c.v.pos === "慣用")).toEqual([]);
     for (const { l, v, cloze } of clozes) {
       expect(surface(cloze.before) + surface(cloze.after), v.id).not.toContain(
         "→",
       );
       expect(cloze.translation, v.id).not.toMatch(/第\s*\d+\s*課[）)]\s*$/);
-      const titleIds = l.dialogues
-        .filter((line, i) => isTitleLine(line, i))
-        .map((line) => line.id);
-      expect(titleIds, v.id).not.toContain(cloze.sentenceId);
+      // 標題不在 dialogues(上一個測試已確認 sentenceId 是本課的例句或台詞)
+      if (l.dialogueTitle) {
+        expect(
+          surface(cloze.before) + surface(v.ruby) + surface(cloze.after),
+          v.id,
+        ).not.toBe(surface(l.dialogueTitle.ruby));
+      }
     }
   });
 });
@@ -178,7 +201,9 @@ describe("聽力題 × 全部教材(T11.8)", () => {
   const listenable = all.filter(canListen);
 
   it("可出聽力題的字數(記錄於 commit);排除的是 kana 含記號或表面含〜…者", () => {
-    expect(listenable).toHaveLength(1988);
+    // T12.2 修正 L04-V050 え―と(U+2015)→ えーと 後 1988 → 1989
+    expect(listenable).toHaveLength(1989);
+    expect(listenable.map((v) => v.id)).toContain("L04-V050");
     for (const v of all.filter((w) => !canListen(w))) {
       expect(
         /[^ぁ-ゖァ-ヺー]/.test(v.kana) || /[〜…]/.test(surface(v.ruby)),
@@ -212,12 +237,54 @@ describe("聽力題 × 全部教材(T11.8)", () => {
   });
 });
 
+describe("ruby 分段的 4 個單字(T12.5):可答讀音、出題判定與朗讀文字不變", () => {
+  // fix-content 把 furigana 跨越的 〜 與送り仮名切成獨立段;讀音只取假名後不變,這些結果也不該變
+  it.each([
+    {
+      id: "L02-V036",
+      answers: ["ご"],
+      input: false,
+      listen: false,
+      listenAs: "ご",
+      speech: "ご",
+    },
+    {
+      id: "L02-V039",
+      answers: ["ちがいます"],
+      input: true,
+      listen: true,
+      listenAs: "違います。",
+      speech: "ちがいます",
+    },
+    {
+      id: "L23-V013",
+      answers: ["や"],
+      input: false,
+      listen: false,
+      listenAs: "や",
+      speech: "や",
+    },
+    {
+      id: "L37-V030",
+      answers: ["じゅう"],
+      input: false,
+      listen: false,
+      listenAs: "じゅう",
+      speech: "じゅう",
+    },
+  ])("$id", ({ id, answers, input, listen, listenAs, speech }) => {
+    const v = vocab.find((w) => w.id === id);
+    if (!v) throw new Error(`找不到 ${id}`);
+    expect(v.ruby, "已分段").toHaveLength(2);
+    expect(acceptedAnswers(v)).toEqual(answers);
+    expect(canInput(v)).toBe(input);
+    expect(canListen(v)).toBe(listen);
+    expect(listenText(v)).toBe(listenAs);
+    expect(speechText(v)).toBe(speech);
+  });
+});
+
 describe("聽力、填空的干擾項 × 教材:可互換的字不同時出現(T11.8)", () => {
-  /** 同 QuizRunner:目標課 + 前後兩課 */
-  const poolFor = (id: number): QuizCandidate[] =>
-    lessons
-      .filter((l) => Math.abs(l.id - id) <= 2)
-      .flatMap((l) => l.vocab.map((v) => ({ ...v, lessonId: l.id })));
   /** 同時當選項會都算對的字(中譯分不出來、禮貌形、同義) */
   const pairs: [number, string, string][] = [
     [2, "それ", "あれ"],
@@ -241,13 +308,11 @@ describe("聽力、填空的干擾項 × 教材:可互換的字不同時出現(T
         const lesson = lessons.find((l) => l.id === lessonId);
         const pool = poolFor(lessonId);
         for (let seed = 1; seed <= 30; seed++) {
-          let x = seed;
-          const rng = () => ((x = (x * 16807) % 2147483647) - 1) / 2147483646;
           const qs = generateQuiz(lessonId, pool, {
             types: [type],
             lesson,
             listenAvailable: true,
-            rng,
+            rng: seeded(seed),
           });
           for (const q of qs) {
             if (q.type === "input") continue;
@@ -265,6 +330,61 @@ describe("聽力、填空的干擾項 × 教材:可互換的字不同時出現(T
         }
       }
       expect(checked).toBeGreaterThan(100);
+    },
+    SLOW_TEST_TIMEOUT,
+  );
+});
+
+describe("中文標點全形化(T12.6):並列的意思以全形逗號切開,可互換的字不同時當干擾項", () => {
+  const byId = new Map(vocab.map((v) => [v.id, v]));
+  const item = (id: string) => {
+    const v = byId.get(id);
+    if (!v) throw new Error(id);
+    return v;
+  };
+
+  // 原資料的小型變體「﹐」(U+FE50)不在 MEANING_SEP_RE,「去﹐進入」整串當成一個詞而比不到「去」
+  it.each([
+    ["L05-V001", "去", "L37-V040", "去，進入"],
+    ["L15-V003", "使用、用", "L37-V039", "利用，用"],
+    ["L05-V017", "朋友", "L37-V046", "朋友，友人"],
+    ["L06-V047", "然後", "L37-V047", "之後，然後"],
+  ])("%s「%s」× %s「%s」可互換", (a, meaningA, b, meaningB) => {
+    expect([item(a).meaning, item(b).meaning]).toEqual([meaningA, meaningB]);
+    expect(interchangeable(item(a), item(b))).toBe(true);
+    expect(interchangeable(item(b), item(a))).toBe(true);
+  });
+});
+
+describe("日→中、中→日的選項 × 全部教材:顯示的文字不重複(F3.2)", () => {
+  // 中→日只顯示 ruby、不顯示 note:同表面不同義的字(L47 的 3 個 します、出ます〔バスが〜〕〔本が〜〕…)
+  // 不同時當選項;T12.3 詞性修正後 L47 的 します 與 長生きします、婚約します 同為動III
+  it.each([["jp-to-zh"], ["zh-to-jp"]] as QuestionType[][])(
+    "%s",
+    (type) => {
+      const shown = (c: QuizCandidate) =>
+        type === "jp-to-zh" ? c.meaning : surface(c.ruby);
+      const dups: string[] = [];
+      let checked = 0;
+      for (const l of lessons) {
+        const pool = poolFor(l.id);
+        for (let seed = 1; seed <= 5; seed++) {
+          const qs = generateQuiz(l.id, pool, {
+            types: [type],
+            count: pool.length,
+            rng: seeded(seed),
+          });
+          for (const q of qs) {
+            if (q.type === "input") continue;
+            checked++;
+            const texts = q.options.map((o) => shown(o.candidate));
+            if (new Set(texts).size !== texts.length)
+              dups.push(`${q.answer.id} ${texts.join(" / ")}`);
+          }
+        }
+      }
+      expect(checked).toBeGreaterThan(10000);
+      expect([...new Set(dups)]).toEqual([]);
     },
     SLOW_TEST_TIMEOUT,
   );
